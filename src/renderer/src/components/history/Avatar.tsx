@@ -56,6 +56,11 @@ export function Avatar({ name, email, size = 28 }: Props) {
     setFailed(src ? failedUrls.has(src) : false)
   }, [src])
 
+  // The app-wide TooltipLayer tooltip (instant, styled) instead of the slow
+  // native `title`: name on the first line, email dimmed underneath.
+  const tipTitle = name.trim() || email.trim()
+  const tipEmail = email.trim()
+
   return (
     <span
       className="avatar"
@@ -65,7 +70,8 @@ export function Avatar({ name, email, size = 28 }: Props) {
         fontSize: Math.round(size * 0.4),
         background: avatarColor(email || name)
       }}
-      title={name}
+      data-tip={tipTitle}
+      data-tip-sub={tipEmail && tipEmail !== tipTitle ? tipEmail : undefined}
     >
       {/* Flex centering aligns the line box, whose ascent/descent are asymmetric, so
           uppercase initials land ~1px below the optical center at small sizes. Trimming

@@ -6,12 +6,13 @@ import { useFileFilter } from '@/components/common/FileFilter'
 import { Resizer } from '@/components/common/Resizer'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
+import { coAuthorsOf } from '@/lib/coauthors'
 import { parseRefs, pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
 import { navTarget } from '@/lib/useListKeyNav'
 import { useSpinDelay } from '@/lib/useSpinDelay'
-import { Avatar } from './Avatar'
+import { AvatarStack } from './AvatarStack'
 import { RefChip } from './CommitSummary'
 
 interface Props {
@@ -196,7 +197,11 @@ export function HistoryView({
                     : undefined
                 }
               >
-                <Avatar name={commit.authorName} email={commit.authorEmail} size={28} />
+                <AvatarStack
+                  author={{ name: commit.authorName, email: commit.authorEmail }}
+                  coAuthors={coAuthorsOf(commit)}
+                  size={28}
+                />
                 <div className="commit__main">
                   <div className="commit__subject" data-tip={commit.subject} data-tip-overflow="">
                     {commit.subject}
