@@ -31,10 +31,33 @@ describe('gravatarUrl', () => {
 })
 
 describe('githubEmailAvatarUrl', () => {
-  it('resolves new-style stealth emails by user id', () => {
-    expect(githubEmailAvatarUrl('41898282+claude[bot]@users.noreply.github.com', 64)).toBe(
-      'https://avatars.githubusercontent.com/u/41898282?s=64&v=4'
+  it('resolves human stealth emails by user id', () => {
+    expect(githubEmailAvatarUrl('1234567+danipen@users.noreply.github.com', 64)).toBe(
+      'https://avatars.githubusercontent.com/u/1234567?s=64&v=4'
     )
+  })
+
+  it('maps known bots to their App icon, never their identicon /u/ avatar', () => {
+    expect(githubEmailAvatarUrl('41898282+github-actions[bot]@users.noreply.github.com', 64)).toBe(
+      'https://avatars.githubusercontent.com/in/15368?s=64&v=4'
+    )
+    expect(githubEmailAvatarUrl('49699333+dependabot[bot]@users.noreply.github.com', 64)).toBe(
+      'https://avatars.githubusercontent.com/in/29110?s=64&v=4'
+    )
+    // Copilot's machine user has no [bot] suffix — mapped by user id.
+    expect(githubEmailAvatarUrl('198982749+Copilot@users.noreply.github.com', 64)).toBe(
+      'https://avatars.githubusercontent.com/in/1143301?s=64&v=4'
+    )
+  })
+
+  it('maps known bots by login when the stealth email has no id', () => {
+    expect(githubEmailAvatarUrl('github-actions[bot]@users.noreply.github.com', 64)).toBe(
+      'https://avatars.githubusercontent.com/in/15368?s=64&v=4'
+    )
+  })
+
+  it('defers unknown bots to the authed lookup (their /u/ is an identicon)', () => {
+    expect(githubEmailAvatarUrl('999999999+claude[bot]@users.noreply.github.com', 64)).toBeNull()
   })
 
   it('resolves legacy stealth emails by login, url-encoded', () => {
