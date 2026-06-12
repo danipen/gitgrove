@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'bun:test'
 import { createHash } from 'node:crypto'
 
-import { avatarColor, gravatarUrl, initials } from './avatar'
+import {
+  avatarColor,
+  githubEmailAvatarUrl,
+  gravatarUrl,
+  initials,
+  withAvatarSize
+} from './avatar'
 
 describe('gravatarUrl', () => {
   it('hashes the email with SHA-256 and builds the avatar URL', async () => {
@@ -21,6 +27,44 @@ describe('gravatarUrl', () => {
     const a = await gravatarUrl(' user@example.com ')
     const b = await gravatarUrl('USER@EXAMPLE.COM')
     expect(a).toBe(b)
+  })
+})
+
+describe('githubEmailAvatarUrl', () => {
+  it('resolves new-style stealth emails by user id', () => {
+    expect(githubEmailAvatarUrl('41898282+claude[bot]@users.noreply.github.com', 64)).toBe(
+      'https://avatars.githubusercontent.com/u/41898282?s=64&v=4'
+    )
+  })
+
+  it('resolves legacy stealth emails by login, url-encoded', () => {
+    expect(githubEmailAvatarUrl('octo cat@users.noreply.github.com', 64)).toBe(
+      'https://avatars.githubusercontent.com/octo%20cat?s=64&v=4'
+    )
+  })
+
+  it('normalizes case and padding', () => {
+    expect(githubEmailAvatarUrl(' 42+Octocat@USERS.NOREPLY.GITHUB.COM ')).not.toBeNull()
+  })
+
+  it('returns null for ordinary emails (those go through lookup/Gravatar)', () => {
+    expect(githubEmailAvatarUrl('daniel.penalba@unity3d.com')).toBeNull()
+  })
+})
+
+describe('withAvatarSize', () => {
+  it('adds a size to an url without one', () => {
+    expect(withAvatarSize('https://avatars.githubusercontent.com/u/42?v=4', 64)).toBe(
+      'https://avatars.githubusercontent.com/u/42?v=4&s=64'
+    )
+  })
+
+  it('overrides an existing size', () => {
+    expect(withAvatarSize('https://example.com/a?s=460', 64)).toBe('https://example.com/a?s=64')
+  })
+
+  it('passes through unparseable urls untouched', () => {
+    expect(withAvatarSize('not a url', 64)).toBe('not a url')
   })
 })
 

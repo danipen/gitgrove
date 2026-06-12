@@ -5,6 +5,7 @@
 import type {
   AddAccountResult,
   AppInfo,
+  AvatarLookupResult,
   BranchChangesAction,
   BranchInfo,
   ChangedFile,
@@ -81,6 +82,7 @@ export const IPC = {
   accountsAddToken: 'accounts:add-token',
   accountsRemove: 'accounts:remove',
   accountsHasOAuthClient: 'accounts:has-oauth-client',
+  accountsLookupAvatar: 'accounts:avatar-lookup',
   // branches
   createBranch: 'repo:branch:create',
   deleteBranch: 'repo:branch:delete',
@@ -289,6 +291,12 @@ export interface GitGroveApi {
    * github.com, or one remembered from a previous Enterprise sign-in).
    */
   hasOAuthClient(host: string): Promise<boolean>
+  /**
+   * Resolve a commit email to the connected host's avatar URL (exact hits and
+   * detectable misses — the avatar fallback chain's first stop). The search
+   * runs in main because it needs the account token.
+   */
+  lookupAvatarUrl(email: string): Promise<AvatarLookupResult>
   // ── Branches ──
   /**
    * Create a branch, optionally from a base ref and optionally carrying or

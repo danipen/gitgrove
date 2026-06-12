@@ -61,7 +61,7 @@ export interface DeviceCodeGrant {
   intervalSec: number
 }
 
-type FetchLike = (url: string, init: RequestInit) => Promise<Response>
+export type FetchLike = (url: string, init: RequestInit) => Promise<Response>
 
 async function postForm(
   url: string,
