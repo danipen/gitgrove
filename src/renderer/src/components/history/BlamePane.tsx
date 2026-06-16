@@ -84,25 +84,27 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
   // The editor owns the scroll; the gutter follows. `scrollTop` is the editor's
   // logical offset; `viewportH` (the shared body height) bounds the window.
   const cvRef = useRef<CodeViewHandle<undefined>>(null)
-  const bodyRef = useRef<HTMLDivElement>(null)
+  // Body node via a state-backed callback ref: it mounts only once blame has
+  // loaded (the loading/error branches don't render it), so a plain ref + `[]`
+  // effect would measure null and leave the gutter window at zero rows.
+  const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewportH, setViewportH] = useState(0)
 
   useLayoutEffect(() => {
-    const el = bodyRef.current
-    if (!el) return
-    const measure = () => setViewportH(el.clientHeight)
+    if (!bodyEl) return
+    const measure = () => setViewportH(bodyEl.clientHeight)
     measure()
     const ro = new ResizeObserver(measure)
-    ro.observe(el)
+    ro.observe(bodyEl)
     return () => ro.disconnect()
-  }, [])
+  }, [bodyEl])
 
   // Wheeling over the gutter must scroll the editor too (separate columns don't
   // share native scroll). Forward the delta to the CodeView; its `onScroll`
   // then moves both. Non-passive so the page never scrolls underneath.
   useEffect(() => {
-    const el = bodyRef.current?.querySelector<HTMLElement>('.blame-gutter')
+    const el = bodyEl?.querySelector<HTMLElement>('.blame-gutter')
     if (!el) return
     const onWheel = (e: WheelEvent) => {
       const cv = cvRef.current?.getInstance()
@@ -113,7 +115,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
-  }, [lines])
+  }, [bodyEl])
 
   const codeOptions = useMemo<CodeViewOptions<undefined>>(
     () => ({
@@ -173,7 +175,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
   return (
     <div className="blame">
       <BlameBreadcrumb stack={stack} onBack={() => setStack(popReblame(stack))} />
-      <div className="blame-body" ref={bodyRef}>
+      <div className="blame-body" ref={setBodyEl}>
         <div className="blame-gutter" aria-hidden="true">
           <div
             className="blame-gutter__content"
