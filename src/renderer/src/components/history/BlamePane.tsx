@@ -1,4 +1,4 @@
-import type { CodeViewFileItem, CodeViewOptions } from '@pierre/diffs/react'
+import type { CodeViewFileItem, CodeViewOptions } from '@pierre/diffs'
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import type { BlameLine } from '@shared/types'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
