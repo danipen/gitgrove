@@ -1,8 +1,9 @@
-import type { ChangedFile, Commit, DiffPayload } from '@shared/types'
+import type { BlameLine, ChangedFile, Commit, DiffPayload } from '@shared/types'
 import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { type DiffMode, DiffViewer } from '@/components/common/DiffViewer'
 import { Resizer } from '@/components/common/Resizer'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
+import { type BlameFrame, popReblame, pushReblame } from '@/lib/blame'
 import { splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
@@ -35,6 +36,11 @@ interface Props extends FileHistoryTarget {
 /** Fixed commit-row height — mirrors `.fh-commit` in global.css. */
 const FH_ROW_H = 58
 
+/** A reblame stack frame for a revision/path (working tree when `ref` is null). */
+function frameFor(ref: string | null, path: string): BlameFrame {
+  return { ref, path, label: ref ? ref.slice(0, 7) : 'working tree' }
+}
+
 /**
  * A full-window overlay (below the toolbar) answering "what happened to this
  * file?": the commits that touched it on the left, and a right pane that
@@ -54,8 +60,15 @@ export function FileHistoryOverlay({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [mode, setMode] = useState<FileHistoryMode>(initialMode)
-  // Anchor revision: the commit selected in the list, or null = working tree.
-  const [selectedHash, setSelectedHash] = useState<string | null>(baseRef)
+  // Blame navigation. `stack[0]` is the anchored revision (a commit selected in
+  // the list, or null = working tree); each reblame pushes the clicked line's
+  // parent. `blamedHash` is the file-history commit the list highlights — kept
+  // in sync with what's actually shown: it follows reblame (reported by the
+  // BlamePane) but isn't the raw reblamed ref, which often isn't in the list.
+  const [stack, setStack] = useState<BlameFrame[]>(() => [frameFor(baseRef, path)])
+  const [blamedHash, setBlamedHash] = useState<string | null>(baseRef)
+  const frame = stack[stack.length - 1]
+  const anchorRef = stack[0].ref
   // The working-tree row only makes sense when the file actually has
   // uncommitted changes. `baseRef === null` is passed exclusively from the
   // Changes tab, whose menu only appears on dirty working files — so it's our
@@ -77,7 +90,20 @@ export function FileHistoryOverlay({
   const bodyRef = useRef<HTMLDivElement>(null)
 
   const spin = useSpinDelay(loading)
-  const selectedCommit = commits.find((c) => c.hash === selectedHash) ?? null
+  const selectedCommit = commits.find((c) => c.hash === blamedHash) ?? null
+
+  // Anchor the blame at a revision the user picked (list row, arrow keys, or the
+  // working-tree row), resetting any reblame walk. The list highlight follows.
+  const anchorTo = useCallback(
+    (ref: string | null) => {
+      setStack([frameFor(ref, path)])
+      setBlamedHash(ref)
+    },
+    [path]
+  )
+  const reblame = useCallback((line: BlameLine) => setStack((s) => pushReblame(s, line)), [])
+  const back = useCallback(() => setStack((s) => popReblame(s)), [])
+  const onBlamedAt = useCallback((hash: string | null) => setBlamedHash(hash), [])
 
   // Escape closes the overlay (alongside the ✕ button).
   useEffect(() => {
@@ -124,7 +150,7 @@ export function FileHistoryOverlay({
     let cancelled = false
     setFilesLoading(true)
     ;(async () => {
-      if (selectedHash == null) {
+      if (blamedHash == null) {
         setCommitFiles([])
         if (mode !== 'diff') {
           setDiff(null)
@@ -141,7 +167,7 @@ export function FileHistoryOverlay({
         setFilesLoading(false)
         return
       }
-      const files = await window.gitgrove.commitFiles(repoPath, selectedHash)
+      const files = await window.gitgrove.commitFiles(repoPath, blamedHash)
       if (cancelled) return
       setCommitFiles(files)
       if (mode !== 'diff') {
@@ -158,7 +184,7 @@ export function FileHistoryOverlay({
         setFilesLoading(false)
         return
       }
-      const payload = await window.gitgrove.commitDiff(repoPath, selectedHash, file)
+      const payload = await window.gitgrove.commitDiff(repoPath, blamedHash, file)
       if (cancelled) return
       setDiff(payload)
       setFilesLoading(false)
@@ -171,44 +197,45 @@ export function FileHistoryOverlay({
     return () => {
       cancelled = true
     }
-  }, [mode, selectedHash, repoPath, path])
+  }, [mode, blamedHash, repoPath, path])
 
   const rowHeight = useCallback(() => FH_ROW_H, [])
   const vs = useVirtualScroll({ count: commits.length, rowHeight })
 
-  // The list is the full history from HEAD, so a commit selected on open (from
-  // the History tab) can sit far down — scroll it into view once it's loaded.
-  const scrolledRef = useRef(false)
-  // biome-ignore lint/correctness/useExhaustiveDependencies: run once after load; ensureVisible is stable.
+  // Keep the list pinned to the revision being blamed: as the user reblames
+  // (walks back) or selects, scroll that commit into view so it's always clear
+  // which revision the gutter annotates. The list is the file's full history,
+  // so a far-down commit (e.g. selected on open from the History tab) scrolls
+  // in too; `ensureVisible` is a no-op when the row is already showing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ensureVisible is stable; follow blamedHash + load.
   useEffect(() => {
-    if (scrolledRef.current || commits.length === 0) return
-    scrolledRef.current = true
-    if (selectedHash == null) return
-    const idx = commits.findIndex((c) => c.hash === selectedHash)
+    if (blamedHash == null || commits.length === 0) return
+    const idx = commits.findIndex((c) => c.hash === blamedHash)
     if (idx >= 0) vs.ensureVisible(idx)
-  }, [commits.length])
+  }, [blamedHash, commits.length])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (commits.length === 0) return
     // The working tree (null) sits above commit[0]; arrow across the boundary.
-    if (selectedHash == null) {
+    if (blamedHash == null) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setSelectedHash(commits[0].hash)
+        anchorTo(commits[0].hash)
       }
       return
     }
-    const current = commits.findIndex((c) => c.hash === selectedHash)
+    const current = commits.findIndex((c) => c.hash === blamedHash)
+    if (current < 0) return
     if (showWorkingTree && e.key === 'ArrowUp' && current === 0) {
       e.preventDefault()
-      setSelectedHash(null)
+      anchorTo(null)
       return
     }
     const page = Math.max(1, Math.floor(vs.viewportH / FH_ROW_H) - 1)
     const target = navTarget(e.key, current, commits.length, page)
     if (target === null) return
     e.preventDefault()
-    if (target !== current) setSelectedHash(commits[target].hash)
+    if (target !== current) anchorTo(commits[target].hash)
   }
 
   return (
@@ -263,8 +290,8 @@ export function FileHistoryOverlay({
           {showWorkingTree && (
             <button
               type="button"
-              className={`fh-commit fh-commit--wt${selectedHash === null ? ' is-active' : ''}`}
-              onClick={() => setSelectedHash(null)}
+              className={`fh-commit fh-commit--wt${blamedHash === null ? ' is-active' : ''}`}
+              onClick={() => anchorTo(null)}
             >
               <span className="fh-commit__wt-disc">
                 <Icon.Changes size={14} />
@@ -310,7 +337,7 @@ export function FileHistoryOverlay({
               <div className="vlist__content" style={{ transform: `translateY(${-vs.top}px)` }}>
                 {commits.slice(vs.start, vs.end).map((commit, i) => {
                   const idx = vs.start + i
-                  const active = selectedHash === commit.hash
+                  const active = blamedHash === commit.hash
                   // The newest commit is the version currently checked out.
                   const current = idx === 0
                   return (
@@ -328,7 +355,7 @@ export function FileHistoryOverlay({
                       }}
                       onClick={() => {
                         vs.viewportEl?.focus()
-                        setSelectedHash(commit.hash)
+                        anchorTo(commit.hash)
                       }}
                     >
                       <Avatar name={commit.authorName} email={commit.authorEmail} size={26} />
@@ -380,11 +407,16 @@ export function FileHistoryOverlay({
 
           {mode === 'blame' ? (
             <BlamePane
-              key={`${selectedHash ?? 'wt'}:${path}`}
+              key={`${anchorRef ?? 'wt'}:${path}`}
               repoPath={repoPath}
-              path={path}
-              baseRef={selectedHash}
+              path={frame.path}
+              blameRef={frame.ref}
               theme={theme}
+              reblamed={stack.length > 1}
+              frameLabel={blamedHash ? blamedHash.slice(0, 7) : 'working tree'}
+              onReblame={reblame}
+              onBack={back}
+              onBlamedAt={onBlamedAt}
             />
           ) : (
             <DiffViewer

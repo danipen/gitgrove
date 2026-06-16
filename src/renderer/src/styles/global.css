@@ -1762,8 +1762,10 @@ button {
   height: 20px; /* must equal --diffs-line-height */
   display: flex;
   align-items: center;
-  padding: 0 10px 0 13px;
+  gap: 7px;
+  padding: 0 8px 0 13px;
   box-sizing: border-box;
+  line-height: 1;
 }
 /* Per-line age heat stripe at the very left edge (older → newer). */
 .blame-cell__age {
@@ -1773,36 +1775,12 @@ button {
   bottom: 0;
   width: 3px;
 }
-.blame-cell__btn,
-.blame-cell__static {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  width: 100%;
-  background: none;
-  border: none;
-  color: var(--fg-faint);
-  padding: 0;
-  text-align: left;
-  font: inherit;
-  line-height: 1;
-}
-.blame-cell__btn {
-  cursor: pointer;
-}
-.blame-cell__btn:hover {
-  color: var(--fg);
-}
-.blame-cell__btn:hover .blame-cell__sha {
-  color: var(--accent);
-}
-.blame-cell__sha {
+.blame-cell .avatar {
   flex: 0 0 auto;
-  font-family: var(--font-mono);
-  color: var(--fg-muted);
 }
-.blame-cell__author {
+/* Commit summary — the load-bearing label (the short sha was just noise).
+   Takes the row's slack and ellipsizes; its full text is in the hover tip. */
+.blame-cell__msg {
   flex: 1;
   min-width: 0;
   color: var(--fg-muted);
@@ -1810,9 +1788,37 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.blame-cell__date {
+.blame-cell__msg--wt {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+.blame-cell__when {
   flex: 0 0 auto;
   color: var(--fg-faint);
+}
+/* "Blame prior to this change" — always shown so it's discoverable; it lights
+   up on hover. Lines with nothing earlier to blame (root / boundary) render an
+   empty slot of the same size so the relative date stays column-aligned. */
+.blame-cell__reblame {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+}
+.blame-cell__reblame:hover {
+  color: var(--accent);
+  background: var(--bg-active);
+}
+.blame-cell__reblame--empty {
+  pointer-events: none;
 }
 .blame-code {
   flex: 1;

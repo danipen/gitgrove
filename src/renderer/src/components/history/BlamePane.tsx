@@ -8,12 +8,9 @@ import {
   ageRange,
   ageScale,
   BLAME_LINE_HEIGHT,
-  type BlameFrame,
   blameWindow,
   canReblame,
-  isRunStart,
-  popReblame,
-  pushReblame
+  isRunStart
 } from '@/lib/blame'
 import { splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
@@ -23,11 +20,25 @@ import { Avatar } from './Avatar'
 
 interface Props {
   repoPath: string
-  /** File path at the initial revision. */
+  /** File path at the current (possibly reblamed) revision — rename-correct. */
   path: string
-  /** Initial revision to blame, or null for the working tree. */
-  baseRef: string | null
+  /** Current revision to blame, or null for the working tree. */
+  blameRef: string | null
   theme: ResolvedTheme
+  /** True once the user has walked back from the anchored revision. */
+  reblamed: boolean
+  /** Compact label of the current revision (short sha / "working tree"). */
+  frameLabel: string
+  /** Walk back to the parent of the clicked line's commit. */
+  onReblame: (line: BlameLine) => void
+  /** Pop one reblame step. */
+  onBack: () => void
+  /** Report the file-history commit this blame is effectively at, so the commit
+   *  list can highlight it. The revision actually blamed (a reblame's parent)
+   *  is often *not* a file-touching commit and so isn't in the list; the blame's
+   *  newest line, by contrast, always is — it's the most recent change at or
+   *  before that revision. `null` for the working tree. */
+  onBlamedAt: (hash: string | null) => void
 }
 
 /** Snap a CSS-pixel value onto the device-pixel grid (dpr read fresh). */
@@ -36,7 +47,7 @@ function roundToDevicePixel(value: number): number {
   return Math.round(value * dpr) / dpr
 }
 
-/** Short local date for the gutter (e.g. "Apr 21, 2026"). */
+/** Short local date for tooltips (e.g. "Apr 21, 2026"). */
 function shortDate(iso: string): string {
   if (!iso) return ''
   return new Date(iso).toLocaleDateString(undefined, {
@@ -51,29 +62,33 @@ function shortDate(iso: string): string {
  * is rendered by Pierre's virtualized `CodeView`; the gutter is a separate
  * column we virtualize ourselves and drive off the editor's `onScroll`, with a
  * line height pinned (`--diffs-line-height`, see global.css) so the two stay
- * aligned row-for-row at any scroll position. Clicking a line's commit reblames
- * the file at that commit's parent; a breadcrumb walks back.
+ * aligned row-for-row at any scroll position. The reblame stack lives in the
+ * overlay (it also drives the commit list's selection); clicking a line's
+ * "blame prior" button reblames the file at that commit's parent.
  */
-export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
-  // Reblame history. The bottom frame is the file as opened; each click pushes
-  // the clicked line's parent revision + its path there (rename-correct).
-  const [stack, setStack] = useState<BlameFrame[]>(() => [
-    { ref: baseRef, path, label: baseRef ? baseRef.slice(0, 7) : 'working tree' }
-  ])
-  const frame = stack[stack.length - 1]
-
+export function BlamePane({
+  repoPath,
+  path,
+  blameRef,
+  theme,
+  reblamed,
+  frameLabel,
+  onReblame,
+  onBack,
+  onBlamedAt
+}: Props) {
   const [lines, setLines] = useState<BlameLine[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const spin = useSpinDelay(loading)
 
-  // (Re)load blame whenever the current frame changes.
+  // (Re)load blame whenever the revision/path being blamed changes.
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     window.gitgrove
-      .blame(repoPath, frame.path, frame.ref ?? undefined)
+      .blame(repoPath, path, blameRef ?? undefined)
       .then((result) => {
         if (cancelled) return
         setLines(result)
@@ -88,7 +103,25 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
     return () => {
       cancelled = true
     }
-  }, [repoPath, frame.ref, frame.path])
+  }, [repoPath, blameRef, path])
+
+  // Tell the overlay which file-history commit this blame is effectively at, so
+  // the commit list highlights it. The working tree maps to `null`; otherwise
+  // it's the blame's most recent committed line (always a file-touching commit,
+  // hence in the list — unlike the raw reblamed parent ref).
+  useEffect(() => {
+    if (!lines) return
+    if (blameRef === null) {
+      onBlamedAt(null)
+      return
+    }
+    let newest: BlameLine | null = null
+    for (const l of lines) {
+      if (l.notCommitted) continue
+      if (newest === null || Date.parse(l.date) > Date.parse(newest.date)) newest = l
+    }
+    onBlamedAt(newest?.hash ?? blameRef)
+  }, [lines, blameRef, onBlamedAt])
 
   // ── Synced scroll ────────────────────────────────────────────────────────
   // Pierre scrolls its code on a *native* (compositor-driven) scroll. Following
@@ -223,22 +256,26 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
   const contents = useMemo(() => (lines ? lines.map((l) => l.content).join('\n') : ''), [lines])
   const item = useMemo<CodeViewFileItem<undefined>>(
     () => ({
-      id: `${frame.ref ?? 'wt'}:${frame.path}`,
+      id: `${blameRef ?? 'wt'}:${path}`,
       type: 'file',
-      file: { name: splitPath(frame.path).name, contents }
+      file: { name: splitPath(path).name, contents }
     }),
-    [frame.ref, frame.path, contents]
+    [blameRef, path, contents]
   )
   const items = useMemo(() => [item], [item])
   // Age span of the file's commits, for the per-line heat stripe + legend.
   const range = useMemo(() => ageRange(lines ?? []), [lines])
 
-  const back = () => setStack(popReblame(stack))
-
   if (error) {
     return (
       <div className="blame">
-        <BlameHead stack={stack} onBack={back} showLegend={false} />
+        <BlameHead
+          reblamed={reblamed}
+          frameLabel={frameLabel}
+          path={path}
+          onBack={onBack}
+          showLegend={false}
+        />
         <div className="center-state">
           <div className="icon-ring">
             <Icon.History size={22} />
@@ -253,7 +290,13 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
   if (spin || !lines) {
     return (
       <div className="blame">
-        <BlameHead stack={stack} onBack={back} showLegend={false} />
+        <BlameHead
+          reblamed={reblamed}
+          frameLabel={frameLabel}
+          path={path}
+          onBack={onBack}
+          showLegend={false}
+        />
         {spin && (
           <div className="center-state">
             <div className="spinner" />
@@ -268,52 +311,26 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
 
   return (
     <div className="blame">
-      <BlameHead stack={stack} onBack={back} showLegend />
+      <BlameHead
+        reblamed={reblamed}
+        frameLabel={frameLabel}
+        path={path}
+        onBack={onBack}
+        showLegend
+      />
       <div className="blame-body" ref={setBodyEl}>
         <div className="blame-gutter" aria-hidden="true">
           <div className="blame-gutter__content">
             {visible.map((line, i) => {
               const index = win.start + i
               const runStart = isRunStart(lines, index)
-              const reblameable = canReblame(line)
               // Per-line age stripe (older → newer), on every line so a block
               // reads as one continuous colored band beside its source.
               const stripe = ageColor(ageFraction(Date.parse(line.date), range.min, range.max))
-              const meta = (
-                <>
-                  <span className="blame-cell__sha">
-                    {line.notCommitted ? 'Uncommitted' : line.shortHash}
-                  </span>
-                  {!line.notCommitted && (
-                    <>
-                      <Avatar name={line.authorName} email={line.authorEmail} size={14} />
-                      <span className="blame-cell__author">{line.authorName}</span>
-                      <span className="blame-cell__date">{shortDate(line.date)}</span>
-                    </>
-                  )}
-                </>
-              )
               return (
                 <div key={index} className="blame-cell" style={{ top: index * BLAME_LINE_HEIGHT }}>
                   <span className="blame-cell__age" style={{ background: stripe }} />
-                  {runStart &&
-                    (reblameable ? (
-                      <button
-                        type="button"
-                        className="blame-cell__btn"
-                        data-tip={`${line.summary}\nBlame parent (${line.previous?.hash.slice(0, 7)})`}
-                        onClick={() => setStack((s) => pushReblame(s, line))}
-                      >
-                        {meta}
-                      </button>
-                    ) : (
-                      <span
-                        className="blame-cell__static"
-                        data-tip={line.notCommitted ? 'Not committed yet' : line.summary}
-                      >
-                        {meta}
-                      </span>
-                    ))}
+                  {runStart && <BlameCell line={line} onReblame={onReblame} />}
                 </div>
               )
             })}
@@ -354,22 +371,69 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
 }
 
 /**
+ * One run-start gutter cell: who last touched the block and when, plus a
+ * "blame prior" button to walk back. The short sha is intentionally dropped —
+ * it's noise; the avatar (name + email on hover), the commit summary, and a
+ * relative date carry the meaning, mirroring the commit list beside it. The
+ * button slot is always present — an empty placeholder when there's nothing
+ * earlier to blame — so the relative date stays column-aligned down the gutter.
+ */
+function BlameCell({ line, onReblame }: { line: BlameLine; onReblame: (line: BlameLine) => void }) {
+  if (line.notCommitted) {
+    return <span className="blame-cell__msg blame-cell__msg--wt">Uncommitted changes</span>
+  }
+  return (
+    <>
+      <Avatar
+        name={line.authorName}
+        email={line.authorEmail}
+        size={16}
+        tooltip={`${line.authorName} <${line.authorEmail}>`}
+      />
+      {/* The commit that last touched this line: short sha + full message,
+          always shown (not only when the message is clipped) so the sha — the
+          one identifier dropped from the row itself — is always a hover away. */}
+      <span className="blame-cell__msg" data-tip={`${line.shortHash} · ${line.summary}`}>
+        {line.summary}
+      </span>
+      <span className="blame-cell__when" data-tip={new Date(line.date).toLocaleString()}>
+        {shortDate(line.date)}
+      </span>
+      {canReblame(line) ? (
+        <button
+          type="button"
+          className="blame-cell__reblame"
+          data-tip={`Blame prior to this change, made on ${shortDate(line.date)} (${line.previous?.hash.slice(0, 7)})`}
+          onClick={() => onReblame(line)}
+        >
+          <Icon.BlamePrior size={14} />
+        </button>
+      ) : (
+        <span className="blame-cell__reblame blame-cell__reblame--empty" aria-hidden="true" />
+      )}
+    </>
+  )
+}
+
+/**
  * Blame header — styled like the diff viewer's header for a consistent feel.
  * Right side carries the age legend (older → newer); the left gains a Back
  * control and the reblamed revision only once the user has walked back from
- * the base (whose details the common commit summary already shows).
+ * the anchor (whose details the common commit summary already shows).
  */
 function BlameHead({
-  stack,
+  reblamed,
+  frameLabel,
+  path,
   onBack,
   showLegend
 }: {
-  stack: BlameFrame[]
+  reblamed: boolean
+  frameLabel: string
+  path: string
   onBack: () => void
   showLegend: boolean
 }) {
-  const reblamed = stack.length > 1
-  const frame = stack[stack.length - 1]
   return (
     <div className="blame-head">
       {reblamed && (
@@ -378,7 +442,7 @@ function BlameHead({
             <Icon.Undo size={13} /> Back
           </button>
           <span className="blame-head__label">
-            Blaming <code>{splitPath(frame.path).name}</code> @ <strong>{frame.label}</strong>
+            Blaming <code>{splitPath(path).name}</code> @ <strong>{frameLabel}</strong>
           </span>
         </>
       )}

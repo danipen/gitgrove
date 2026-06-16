@@ -418,5 +418,14 @@ export const Icon = {
       <path d="M20.5 3.5h-17v17" />
       <rect x="7" y="7" width="8.5" height="8.5" rx="1" />
     </Svg>
+  ),
+  /** An "earlier versions" stack — GitHub's blame-prior glyph: a sheet with two
+   *  progressively smaller pages behind it, reading as "step back in history". */
+  BlamePrior: (p: IconProps) => (
+    <Svg {...p}>
+      <rect x="9.5" y="4" width="11" height="16" rx="2" />
+      <path d="M6 6.5v11" />
+      <path d="M3 9v6" />
+    </Svg>
   )
 }

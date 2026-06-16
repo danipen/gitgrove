@@ -6,6 +6,9 @@ interface Props {
   name: string
   email: string
   size?: number
+  /** Richer hover label (e.g. "Dana <dana@example.com>"); shown via the app
+   *  tooltip layer. When set it replaces the plain native-title name. */
+  tooltip?: string
 }
 
 // Module-level caches that outlive any single row. The history list is
@@ -20,7 +23,7 @@ const failedUrls = new Set<string>()
 /** Round author avatar: a colored initials disc that a Gravatar image covers
  *  once (and if) it loads. The initials always render underneath, so swapping
  *  in the image — or falling back when there is none — never blinks. */
-export function Avatar({ name, email, size = 28 }: Props) {
+export function Avatar({ name, email, size = 28, tooltip }: Props) {
   const cacheKey = `${email.trim().toLowerCase()}|${size}`
   const [src, setSrc] = useState<string | null>(() => resolvedUrls.get(cacheKey) ?? null)
 
@@ -65,7 +68,8 @@ export function Avatar({ name, email, size = 28 }: Props) {
         fontSize: Math.round(size * 0.4),
         background: avatarColor(email || name)
       }}
-      title={name}
+      title={tooltip ? undefined : name}
+      data-tip={tooltip}
     >
       {/* Flex centering aligns the line box, whose ascent/descent are asymmetric, so
           uppercase initials land ~1px below the optical center at small sizes. Trimming
