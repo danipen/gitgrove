@@ -178,9 +178,7 @@ export function FileHistoryOverlay({
           History of <code>{path}</code>
         </span>
         <span className="fh-head__spacer" />
-        {mode === 'blame' && !selectedCommit && (
-          <span className="fh-head__hint">working tree</span>
-        )}
+        {mode === 'blame' && !selectedCommit && <span className="fh-head__hint">working tree</span>}
         {/* View switch lives in the overlay chrome — present in both modes and
             out of the content's way (it acts on the whole right pane). */}
         <div className="segmented">
