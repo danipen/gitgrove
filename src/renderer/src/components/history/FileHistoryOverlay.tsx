@@ -1,6 +1,7 @@
 import type { ChangedFile, Commit, DiffPayload } from '@shared/types'
-import { useCallback, useEffect, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { type DiffMode, DiffViewer } from '@/components/common/DiffViewer'
+import { Resizer } from '@/components/common/Resizer'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
@@ -56,12 +57,17 @@ export function FileHistoryOverlay({
   // Anchor revision: the commit selected in the list, or null = working tree.
   const [selectedHash, setSelectedHash] = useState<string | null>(baseRef)
 
-  // Diff-pane state for the selected commit.
+  // The selected commit's files (drives the common summary header) and, in Diff
+  // mode, the diff payload for this file.
   const [diff, setDiff] = useState<DiffPayload | null>(null)
   const [commitFiles, setCommitFiles] = useState<ChangedFile[]>([])
-  const [diffLoading, setDiffLoading] = useState(false)
+  const [filesLoading, setFilesLoading] = useState(false)
   const [diffMode, setDiffMode] = usePersistentState<DiffMode>('gg.fileHistory.diffMode', 'unified')
   const [wrap, setWrap] = usePersistentState('gg.fileHistory.wrap', false)
+  // Width of the commit list, dragged via the splitter. Applied as a CSS var so
+  // a drag mutates the DOM directly without re-rendering the list/diff.
+  const [commitsWidth, setCommitsWidth] = usePersistentState('gg.fileHistory.commitsWidth', 320)
+  const bodyRef = useRef<HTMLDivElement>(null)
 
   const spin = useSpinDelay(loading)
   const selectedCommit = commits.find((c) => c.hash === selectedHash) ?? null
@@ -107,38 +113,43 @@ export function FileHistoryOverlay({
     }
   }, [mode, selectedHash, commits])
 
-  // Load the selected commit's change for this file. The file's name at an
-  // older commit can differ (rename), so match by current path or old path,
-  // then fall back to the basename.
+  // Load the selected commit's files (for the common summary header) and, in
+  // Diff mode, this file's diff. The file's name at an older commit can differ
+  // (rename), so match by current path or old path, then fall back to basename.
   useEffect(() => {
-    if (mode !== 'diff' || selectedHash == null) {
+    if (selectedHash == null) {
       setDiff(null)
       setCommitFiles([])
       return
     }
     let cancelled = false
-    setDiffLoading(true)
+    setFilesLoading(true)
     ;(async () => {
       const files = await window.gitgrove.commitFiles(repoPath, selectedHash)
       if (cancelled) return
       setCommitFiles(files)
+      if (mode !== 'diff') {
+        setDiff(null)
+        setFilesLoading(false)
+        return
+      }
       const name = splitPath(path).name
       const file =
         files.find((f) => f.path === path || f.oldPath === path) ??
         files.find((f) => splitPath(f.path).name === name)
       if (!file) {
         setDiff(null)
-        setDiffLoading(false)
+        setFilesLoading(false)
         return
       }
       const payload = await window.gitgrove.commitDiff(repoPath, selectedHash, file)
       if (cancelled) return
       setDiff(payload)
-      setDiffLoading(false)
+      setFilesLoading(false)
     })().catch(() => {
       if (!cancelled) {
         setDiff(null)
-        setDiffLoading(false)
+        setFilesLoading(false)
       }
     })
     return () => {
@@ -167,12 +178,39 @@ export function FileHistoryOverlay({
           History of <code>{path}</code>
         </span>
         <span className="fh-head__spacer" />
+        {mode === 'blame' && !selectedCommit && (
+          <span className="fh-head__hint">working tree</span>
+        )}
+        {/* View switch lives in the overlay chrome — present in both modes and
+            out of the content's way (it acts on the whole right pane). */}
+        <div className="segmented">
+          <button
+            type="button"
+            className={mode === 'diff' ? 'is-active' : ''}
+            onClick={() => setMode('diff')}
+            title="View the change in the selected commit"
+          >
+            <Icon.Diff size={15} /> Diff
+          </button>
+          <button
+            type="button"
+            className={mode === 'blame' ? 'is-active' : ''}
+            onClick={() => setMode('blame')}
+            title="Annotate each line with the commit that last changed it"
+          >
+            <Icon.History size={15} /> Blame
+          </button>
+        </div>
         <button type="button" className="icon-btn" onClick={onClose} title="Close (Esc)">
           <Icon.Close size={16} />
         </button>
       </div>
 
-      <div className="fh-body">
+      <div
+        className="fh-body"
+        ref={bodyRef}
+        style={{ '--fh-commits-w': `${commitsWidth}px` } as CSSProperties}
+      >
         <div className="fh-commits">
           {spin ? (
             <div className="center-state">
@@ -236,8 +274,7 @@ export function FileHistoryOverlay({
                         </div>
                         <div className="fh-commit__meta">
                           <span className="fh-commit__author">{commit.authorName}</span>
-                          <span>· {commit.relativeDate}</span>
-                          <span className="commit__hash">· {commit.shortHash}</span>
+                          <span className="fh-commit__when">· {commit.relativeDate}</span>
                         </div>
                       </div>
                     </button>
@@ -249,32 +286,25 @@ export function FileHistoryOverlay({
           )}
         </div>
 
+        <Resizer
+          orientation="x"
+          size={commitsWidth}
+          min={240}
+          max={560}
+          onPreview={(w) => bodyRef.current?.style.setProperty('--fh-commits-w', `${w}px`)}
+          onCommit={setCommitsWidth}
+        />
+
         <div className="fh-main">
-          <div className="fh-toolbar">
-            <div className="segmented">
-              <button
-                type="button"
-                className={mode === 'diff' ? 'is-active' : ''}
-                onClick={() => setMode('diff')}
-                title="View the change in the selected commit"
-              >
-                <Icon.Diff size={15} /> Diff
-              </button>
-              <button
-                type="button"
-                className={mode === 'blame' ? 'is-active' : ''}
-                onClick={() => setMode('blame')}
-                title="Annotate each line with the commit that last changed it"
-              >
-                <Icon.History size={15} /> Blame
-              </button>
-            </div>
-            {mode === 'blame' && (
-              <span className="fh-toolbar__hint">
-                {selectedCommit ? `at ${selectedCommit.shortHash}` : 'working tree'}
-              </span>
-            )}
-          </div>
+          {/* The commit details panel is the shared context for both views. */}
+          {selectedCommit && (
+            <CommitSummary
+              key={selectedCommit.hash}
+              commit={selectedCommit}
+              files={commitFiles}
+              filesLoading={filesLoading}
+            />
+          )}
 
           {mode === 'blame' ? (
             <BlamePane
@@ -285,25 +315,15 @@ export function FileHistoryOverlay({
               theme={theme}
             />
           ) : (
-            <>
-              {selectedCommit && (
-                <CommitSummary
-                  key={selectedCommit.hash}
-                  commit={selectedCommit}
-                  files={commitFiles}
-                  filesLoading={diffLoading}
-                />
-              )}
-              <DiffViewer
-                diff={diff}
-                loading={diffLoading}
-                mode={diffMode}
-                wrap={wrap}
-                theme={theme}
-                onModeChange={setDiffMode}
-                onWrapChange={setWrap}
-              />
-            </>
+            <DiffViewer
+              diff={diff}
+              loading={filesLoading}
+              mode={diffMode}
+              wrap={wrap}
+              theme={theme}
+              onModeChange={setDiffMode}
+              onWrapChange={setWrap}
+            />
           )}
         </div>
       </div>

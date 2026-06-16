@@ -242,20 +242,22 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
   )
 }
 
-/** One-line "Blaming … @ <rev> · Back" breadcrumb; Back appears once reblamed. */
+/**
+ * Reblame breadcrumb — only shown once the user has walked back from the base
+ * revision (the common commit-summary header already names the base). Says
+ * which file/revision is now being blamed and offers a step back.
+ */
 function BlameBreadcrumb({ stack, onBack }: { stack: BlameFrame[]; onBack: () => void }) {
+  if (stack.length <= 1) return null
   const frame = stack[stack.length - 1]
-  const where = frame.ref ? frame.label : 'working tree'
   return (
     <div className="blame-crumb">
       <span className="blame-crumb__label">
-        Blaming <code>{splitPath(frame.path).name}</code> @ <strong>{where}</strong>
+        Blaming <code>{splitPath(frame.path).name}</code> @ <strong>{frame.label}</strong>
       </span>
-      {stack.length > 1 && (
-        <button type="button" className="blame-crumb__back" onClick={onBack}>
-          <Icon.Undo size={13} /> Back
-        </button>
-      )}
+      <button type="button" className="blame-crumb__back" onClick={onBack}>
+        <Icon.Undo size={13} /> Back
+      </button>
     </div>
   )
 }

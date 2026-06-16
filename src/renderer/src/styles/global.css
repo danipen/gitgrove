@@ -1549,16 +1549,25 @@ button {
   margin-top: 3px;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 6px;
   font-size: 11px;
   color: var(--fg-faint);
   min-width: 0;
 }
+/* Author ellipsizes when tight; the relative date stays on one line beside it
+   (without flex/nowrap, "1 year, 10 months ago" wraps into a tall column). */
 .fh-commit__author {
+  flex: 0 1 auto;
+  min-width: 0;
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.fh-commit__when {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .fh-main {
   flex: 1;
@@ -1566,17 +1575,9 @@ button {
   display: flex;
   flex-direction: column;
 }
-.fh-toolbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 46px;
-  padding: 0 14px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-panel);
-}
-.fh-toolbar__hint {
+/* "working tree" indicator beside the view switch when blaming uncommitted
+   content (no commit summary to anchor to). */
+.fh-head__hint {
   font-size: 11.5px;
   color: var(--fg-faint);
   font-family: var(--font-mono);
