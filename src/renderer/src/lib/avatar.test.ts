@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'bun:test'
 import { createHash } from 'node:crypto'
 
-import {
-  avatarColor,
-  githubEmailAvatarUrl,
-  gravatarUrl,
-  initials,
-  withAvatarSize
-} from './avatar'
+import { avatarColor, githubEmailAvatarUrl, gravatarUrl, initials, withAvatarSize } from './avatar'
 
 describe('gravatarUrl', () => {
   it('hashes the email with SHA-256 and builds the avatar URL', async () => {

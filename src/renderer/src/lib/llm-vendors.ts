@@ -94,9 +94,7 @@ export class LlmVendorDetector {
     if (emailMatch) return emailMatch
     const trimmedName = name.trim()
     if (!trimmedName) return null
-    return (
-      this.vendors.find((v) => v.namePatterns.some((p) => p.test(trimmedName))) ?? null
-    )
+    return this.vendors.find((v) => v.namePatterns.some((p) => p.test(trimmedName))) ?? null
   }
 
   /** Convenience: the detected vendor's icon URL at `size` px, or null. */
