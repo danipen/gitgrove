@@ -1,0 +1,276 @@
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.toolbar {
+  height: var(--toolbar-h);
+  flex: 0 0 var(--toolbar-h);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 0;
+  background: linear-gradient(180deg, var(--toolbar-grad-top), var(--toolbar-grad-bottom));
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
+}
+
+.toolbar__drag-pad {
+  width: 78px;
+  height: 100%;
+  flex: 0 0 auto;
+}
+
+.toolbar > *:not(.toolbar__drag-pad) {
+  -webkit-app-region: no-drag;
+}
+
+/* Windows/Linux: the toolbar doubles as the title bar (no native frame). Pad the
+   left edge where the macOS traffic-light drag-pad would sit, and let the caption
+   buttons run flush to the right edge. */
+:root[data-platform='win32'] .toolbar,
+:root[data-platform='linux'] .toolbar {
+  padding-left: 10px;
+  padding-right: 0;
+}
+
+/* ── Window controls (custom caption buttons; Windows/Linux) ──────────────── */
+.winctl {
+  display: flex;
+  /* Fill the full title-bar height so the buttons (and their hover fill) reach
+     the top/right edges like native caption buttons, rather than floating. */
+  align-self: stretch;
+  margin-left: 8px;
+}
+.winctl__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Native width; height comes from the stretched bar so the hover fill spans
+     edge-to-edge while the 10px glyph stays vertically centered. */
+  width: 46px;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  transition: background 0.12s, color 0.12s;
+}
+.winctl__btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.winctl__btn:active {
+  background: var(--bg-active);
+}
+.winctl__btn--close:hover {
+  background: #e81123;
+  color: #fff;
+}
+.winctl__btn--close:active {
+  background: #c50f1f;
+  color: #fff;
+}
+
+.toolbar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--fg);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+.toolbar__brand:hover {
+  background: var(--bg-hover);
+}
+
+.toolbar__brand svg {
+  color: var(--st-added);
+}
+
+/* The menu-toggle chevron lives inside the brand button (Windows/Linux) so the
+   whole brand is one hover/click block. It's muted (not the brand's accent
+   green) and sits snug to the label; points right when collapsed, rotating to
+   point left when expanded. */
+.toolbar__brand .toolbar__brand-chevron {
+  color: var(--fg-muted);
+  margin-left: -2px;
+  transform: rotate(-90deg);
+  transition: transform 0.18s ease;
+}
+.toolbar__brand.is-expanded .toolbar__brand-chevron {
+  transform: rotate(90deg);
+}
+
+/* ── Custom menu bar (collapsible; Windows/Linux title bar) ───────────────── */
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  -webkit-app-region: no-drag;
+}
+.menubar__item {
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.menubar__item:hover,
+.menubar__item.is-open {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+
+.toolbar__sep {
+  width: 1px;
+  height: 24px;
+  background: var(--border-strong);
+  margin: 0 4px;
+}
+
+.toolbar__spacer {
+  flex: 1;
+}
+
+.toolbar__refresh {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg-muted);
+}
+.toolbar__refresh:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.toolbar__refresh:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.toolbar__refresh.is-spinning svg {
+  animation: spin 0.7s linear infinite;
+}
+/* ── Pill / dropdown trigger ─────────────────────────────────────────────── */
+.pill {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  max-width: 320px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  transition: background 0.12s, border-color 0.12s;
+}
+/* Determinate progress fill behind a pill's content (checkout / sync ops).
+   The pill's other children are lifted with position:relative so the
+   absolutely-positioned fill paints underneath them. */
+.pill > :not(.pill__fill) {
+  position: relative;
+}
+.pill__fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--accent-soft);
+  transition: width 0.15s ease-out;
+  pointer-events: none;
+}
+.pill:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.pill:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pill__icon {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+  display: flex;
+}
+/* The two-line pills get a comfortable minimum so a short value ("main") can't
+   shrink the pill down to just its caption + chevron. The narrow sync-chevron
+   button has no stack, so :has keeps it out. */
+.pill:has(.pill__stack) {
+  min-width: 150px;
+}
+/* Two-line label: a small muted caption on top ("Repository", "Branch", or the
+   sync action) with the live value/state below — the GitHub-Desktop toolbar
+   read. The stack truncates as one unit so the icon and chevron stay put. */
+.pill__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+/* The caption ("Repository"/"Branch") and the sync sub ("Up to date") are the
+   same quiet voice — keep them identical so the toolbar's secondary lines match. */
+.pill__caption,
+.pill__sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--fg-faint);
+}
+.pill__label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.pill__chev {
+  color: var(--fg-faint);
+  flex: 0 0 auto;
+  display: flex;
+}
+.pill__chev.is-spinning svg {
+  animation: spin 0.7s linear infinite;
+}
+/* ── Sync button (toolbar) ───────────────────────────────────────────────── */
+.sync {
+  display: flex;
+  align-items: stretch;
+}
+.sync__main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  border-right: none;
+}
+.sync__chev {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  padding: 0 6px;
+}
+.sync-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--bg-active);
+  color: var(--fg-muted);
+}
+.sync-badge--behind {
+  color: var(--st-modified);
+}
+.sync-badge--ahead {
+  color: var(--st-added);
+}

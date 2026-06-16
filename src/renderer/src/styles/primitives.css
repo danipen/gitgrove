@@ -1,0 +1,756 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Shared primitives — widgets reused by 2+ features. If a rule here stops
+   being shared, push it down to its feature file; when a feature rule gets a
+   second caller, promote it up to here. See CLAUDE.md (CSS conventions).
+   ───────────────────────────────────────────────────────────────────────── */
+/* ── Popover (+ virtual list, branch glyph, repo list) ───────────────────── */
+/* ── Popover ─────────────────────────────────────────────────────────────── */
+.popover-backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above the File History overlay (60) so toolbar popovers (repo / branch /
+     sync) open over it; still below modals (70) and tooltips (90). */
+  z-index: 64;
+  /* The toolbar is a `-webkit-app-region: drag` region; without this, clicks
+     landing over it are swallowed by the OS as a window-drag gesture and never
+     reach the backdrop, leaving the popover open. Marking the backdrop no-drag
+     lets it intercept those clicks so clicking the toolbar dismisses the popover. */
+  -webkit-app-region: no-drag;
+}
+
+/* App-wide hover tooltip (see TooltipLayer). Sits above everything — including
+   modals (70) and context menus (80) — so a truncated label always reveals
+   itself wherever it's hovered. */
+.tooltip {
+  position: fixed;
+  z-index: 90;
+  max-width: min(380px, calc(100vw - 16px));
+  padding: 5px 9px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--popover-shadow);
+  white-space: normal;
+  word-break: break-word;
+  pointer-events: none;
+  animation: pop-in 0.1s ease-out;
+}
+/* Dimmed second line (`data-tip-sub`), e.g. the email under an author name. */
+.tooltip__sub {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+/* Caret: a small rotated square that points at the cursor. Only the two edges
+   facing away from the bubble carry a border so it reads as a seamless arrow. */
+.tooltip__arrow {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  transform: rotate(45deg);
+}
+.tooltip--above .tooltip__arrow {
+  bottom: -5px;
+  border-top: none;
+  border-left: none;
+}
+.tooltip--below .tooltip__arrow {
+  top: -5px;
+  border-bottom: none;
+  border-right: none;
+}
+.popover {
+  position: fixed;
+  z-index: 65;
+  min-width: 260px;
+  max-width: 420px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--popover-shadow);
+  overflow: hidden;
+  animation: pop-in 0.1s ease-out;
+}
+.popover__search {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.popover__search input {
+  width: 100%;
+  height: 30px;
+  padding: 0 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.popover__search input:focus {
+  border-color: var(--accent-border);
+}
+.popover__list {
+  /* Custom main-thread scrolling (see BranchSwitcher): native overflow scroll
+     runs on the compositor thread and outruns the windowed render on fast
+     flings, leaving unpainted frames. We translate the content ourselves so a
+     frame is only ever shown once its rows are painted. */
+  overflow: hidden;
+  position: relative;
+  min-height: 0;
+  background: var(--bg-elevated);
+}
+/* In-flow spacer: gives the viewport its flex-basis (clamped by the popover's
+   max-height) since the translated content below is absolutely positioned. */
+.vlist__sizer {
+  width: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.vlist__content {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  will-change: transform;
+}
+/* Popover lists inset their rows so the hover pill clears the rounded edge. */
+.popover__list .vlist__content {
+  left: 6px;
+  right: 6px;
+}
+.vlist__bar {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+}
+.vlist__thumb {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  border-radius: 4px;
+  background: var(--border-strong);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.popover__list:hover .vlist__thumb,
+.wfl:hover .vlist__thumb,
+.commit-list:hover .vlist__thumb,
+.vlist__thumb:active {
+  opacity: 0.7;
+}
+.vlist__thumb:hover,
+.vlist__thumb:active {
+  opacity: 0.9;
+}
+.popover__group-label {
+  padding: 8px 8px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--fg-faint);
+}
+.popover__sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+.popover__item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  text-align: left;
+  color: var(--fg);
+  min-width: 0;
+}
+.popover__item:hover {
+  background: var(--bg-hover);
+}
+/* Two distinct visual languages, never confused:
+   - Current item (the checked-out branch / open repo) = a soft *accent* fill.
+     Blue is reserved for it alone — the one persistent "you are here".
+   - The transient cursor (keyboard highlight, hover, and the row whose context
+     menu is open) = a neutral *grey* fill + hairline ring — "the row you're
+     about to act on". Grey, so it can never be mistaken for the current item. */
+.popover__item.is-active {
+  background: var(--accent-soft);
+}
+.popover__item.is-kbd,
+.popover__item.is-context,
+.stash-item.is-kbd {
+  background: var(--bg-hover);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+/* When the cursor/target lands on the current item, keep its accent fill and
+   lay the ring on top so the cursor stays legible. The compound out-specifies
+   the grey rule above, so blue wins for the current row. */
+.popover__item.is-active.is-kbd,
+.popover__item.is-active.is-context {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+.popover__item-main {
+  flex: 1;
+  min-width: 0;
+}
+.popover__item-title {
+  /* Block (not flex) so text-overflow can render the ellipsis on the text. */
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popover__item-sub {
+  font-size: 11px;
+  color: var(--fg-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.popover__item .icon-muted {
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+/* Branch glyph drawn as a single cached mask image (decoded once, composited
+   cheaply per row) instead of a live SVG element — keeps virtualized-list rows
+   cheap to paint so fast scrolling never reveals an unpainted (white) frame. */
+.branch-glyph {
+  width: 14px;
+  height: 14px;
+  background-color: currentColor;
+  -webkit-mask: var(--branch-glyph) center / 14px 14px no-repeat;
+  mask: var(--branch-glyph) center / 14px 14px no-repeat;
+}
+.popover__item-remove {
+  opacity: 0;
+  color: var(--fg-faint);
+  background: none;
+  border: none;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+}
+.popover__item:hover .popover__item-remove {
+  opacity: 1;
+}
+.popover__item-remove:hover {
+  color: var(--st-deleted);
+  background: var(--bg-active);
+}
+.popover__footer {
+  border-top: 1px solid var(--border);
+  padding: 6px;
+}
+.popover__empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+/* Natively-scrolled repo list (short rows, no virtualization needed). */
+.repo-list {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 4px 6px 6px;
+}
+/* ── Cursor-anchored context menu (RepoSwitcher) ──────────────────────────── */
+.ctx-menu__backdrop {
+  position: fixed;
+  inset: 0;
+  /* Above modals (70) so a right-click menu raised from a file list inside a
+     dialog (e.g. Stash review) layers over the backdrop instead of behind it. */
+  z-index: 79;
+  /* See .popover-backdrop: override the toolbar drag region so clicks there
+     dismiss the menu instead of being eaten as a window-drag gesture. */
+  -webkit-app-region: no-drag;
+}
+.ctx-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 196px;
+  padding: 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--popover-shadow);
+  animation: pop-in 0.1s ease-out;
+}
+.ctx-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 9px;
+  border-radius: var(--radius-sm);
+  background: none;
+  border: none;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.ctx-menu__item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.ctx-menu__item:disabled {
+  opacity: 0.45;
+}
+.ctx-menu__item.is-danger {
+  color: var(--st-deleted);
+}
+.ctx-menu__item.is-danger:hover:not(:disabled) {
+  background: var(--bg-active);
+}
+.ctx-menu__icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+.ctx-menu__item.is-danger .ctx-menu__icon {
+  color: inherit;
+}
+.ctx-menu__label {
+  flex: 1;
+  white-space: nowrap;
+}
+.ctx-menu__sep {
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--border);
+}
+.tag {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--fg-muted);
+}
+.tag--current {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* Round author avatar: a colored initials disc with the Gravatar image (when
+   one exists) layered on top — see Avatar.tsx. */
+.avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+  color: #fff;
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+.avatar__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Fade in over the initials the first time. Revisited (cached) images mount
+     already-visible, so scrolling back over them in the list doesn't re-fade. */
+  transition: opacity 0.15s ease;
+}
+/* ── Resizers ────────────────────────────────────────────────────────────── */
+.resizer-x {
+  flex: 0 0 5px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+}
+.resizer-x::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+.resizer-x:hover::after,
+.resizer-x.is-dragging::after {
+  background: var(--accent);
+}
+.resizer-y {
+  flex: 0 0 5px;
+  cursor: row-resize;
+  position: relative;
+}
+.resizer-y::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 2px;
+  bottom: 2px;
+  transition: background 0.15s;
+}
+.resizer-y:hover::after,
+.resizer-y.is-dragging::after {
+  background: var(--accent);
+}
+.segmented {
+  display: inline-flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
+}
+.segmented button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.segmented button:hover {
+  color: var(--fg);
+}
+.segmented button.is-active {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+/* Hairline dividers between segments (the macOS pattern): with many options
+   the unselected ones otherwise blur into one long pill. Centered in the 2px
+   gap; hidden next to the active segment so its highlight reads as one clean
+   shape. (Not on hover — our hover has no background fill, so a vanishing
+   divider would just look broken.) With two segments one is always active,
+   so both its dividers vanish — the classic pair looks exactly as before. */
+.segmented button + button::before {
+  content: '';
+  position: absolute;
+  left: -1.5px;
+  top: 22%;
+  bottom: 22%;
+  width: 1px;
+  background: var(--border-strong);
+}
+.segmented button.is-active::before,
+.segmented button.is-active + button::before {
+  background: transparent;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg-muted);
+}
+.icon-btn:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.icon-btn.is-active {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+/* ── States: empty / loading / error ─────────────────────────────────────── */
+.center-state {
+  flex: 1;
+  /* Also fill height when the parent isn't a flex container (e.g. .diff-body,
+     which is overflow:auto block) so the state stays vertically centered. */
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  color: var(--fg-faint);
+  padding: 32px;
+  text-align: center;
+}
+.center-state h3 {
+  margin: 0;
+  color: var(--fg-muted);
+  font-weight: 600;
+  font-size: 15px;
+}
+.center-state p {
+  margin: 0;
+  max-width: 360px;
+  line-height: 1.5;
+  font-size: 12.5px;
+}
+/* Object size line on the Git LFS diff panel — the one number that matters. */
+.center-state .diff-lfs-size {
+  color: var(--fg-muted);
+  font-weight: 600;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+/* Commit movement on the submodule diff panel: old → new short hashes. */
+.center-state .submodule-move {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.center-state .submodule-move code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-active);
+  color: var(--fg);
+}
+.center-state .icon-ring {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid var(--border-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.spinner--sm {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
+.list-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 18px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-border);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  font-size: 13px;
+  box-shadow: 0 6px 20px var(--accent-glow);
+}
+.btn-primary:hover {
+  filter: brightness(1.07);
+}
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--fg);
+  font-weight: 500;
+}
+.btn-ghost:hover {
+  background: var(--bg-hover);
+}
+/* ── Toast (transient notification card) ─────────────────────────────────── */
+/* An elevated card on the app surface — not a tinted banner — so it reads as
+   part of the popover/dialog family. The kind only drives the tint
+   (badge + countdown), set once here and consumed below. */
+.toast {
+  --toast-tint: var(--accent);
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  max-width: 70vw;
+  padding: 11px 13px 13px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--fg);
+  font-size: 12.5px;
+  box-shadow: var(--popover-shadow);
+  /* Clips the countdown bar to the rounded corners. */
+  overflow: hidden;
+  animation: pop-in 0.12s ease-out;
+}
+.toast--success {
+  --toast-tint: var(--st-added);
+}
+.toast--error {
+  --toast-tint: var(--st-deleted);
+}
+/* Bottom-right, matching the update banner's spot, for feedback that follows
+   a card shown there (so the user's eye doesn't have to jump). */
+.toast--corner {
+  left: auto;
+  right: 18px;
+  transform: none;
+}
+.toast__badge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--toast-tint);
+  /* White glyph works on both themes: every tint is dark enough in light mode. */
+  color: #fff;
+}
+.toast__message {
+  /* Let the user select/copy error text; break long git messages cleanly. */
+  user-select: text;
+  overflow-wrap: anywhere;
+}
+.toast__close {
+  flex: 0 0 auto;
+  display: flex;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+}
+.toast__close:hover {
+  color: var(--fg);
+}
+/* Time-left bar along the bottom edge. Its animationend *is* the auto-dismiss
+   (see Toast.tsx), so pausing it on hover also holds the toast open. */
+.toast__countdown {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 3px;
+  background: var(--toast-tint);
+  transform-origin: left;
+  animation-name: toast-countdown;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.toast:hover .toast__countdown {
+  animation-play-state: paused;
+}
+@keyframes toast-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+/* ── Small button variants (About / update banner) ───────────────────────── */
+.btn-primary--sm {
+  padding: 7px 13px;
+  font-size: 12px;
+  box-shadow: none;
+}
+.btn-ghost--sm {
+  padding: 6px 11px;
+  font-size: 12px;
+}
+/* ── Modal (About) ───────────────────────────────────────────────────────── */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 12, 0.5);
+  backdrop-filter: blur(3px);
+  animation: pop-in 0.12s ease-out;
+}
+.modal {
+  position: relative;
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--popover-shadow);
+  animation: pop-in 0.12s ease-out;
+}
+.modal__close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: none;
+  color: var(--fg-faint);
+}
+.modal__close:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.btn-danger {
+  background: var(--st-deleted);
+  border-color: var(--st-deleted);
+  color: #fff;
+  box-shadow: none;
+}
+.popover__item--footer {
+  position: static !important;
+  height: 34px;
+  width: 100%;
+}
+/* ── Tree slot context menu (rendered by @pierre/trees, styled like ours) ── */
+.tree-menu {
+  min-width: 200px;
+  padding: 5px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+}
+/* Matched substring inside a filtered list item (files, branches, repos). */
+.hl {
+  background: var(--accent-glow);
+  color: inherit;
+  border-radius: 2px;
+}

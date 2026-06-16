@@ -1,0 +1,446 @@
+/* ── Image diff viewer ─────────────────────────────────────────────────────
+   Single previews and the four-mode visual diff (onion skin — with its blink
+   autoplay — / side by side / differences / swipe). The stage fills the pane;
+   every control floats over it so the pixels keep all the room. One shared
+   transform moves every mode (see lib/usePanZoom.ts). */
+
+/* The diff body becomes a fixed (non-scrolling) flex cell: the stage owns
+   panning, the page must never scroll under it. */
+.diff-body--image {
+  overflow: hidden;
+  display: flex;
+}
+.img-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  outline: none; /* focus ring would frame the whole pane; keys still work */
+}
+.img-stage-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+/* The pan/zoom surface. Touch-action off: the pointer gestures are ours. */
+.img-viewport {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  touch-action: none;
+  cursor: grab;
+}
+.img-viewport:active {
+  cursor: grabbing;
+}
+
+/* The composed frame both revisions share, moved by one GPU transform.
+   Deliberately NOT `will-change: transform`: that pins the element to a
+   permanent composited layer which Chromium rasterizes at its *transformed*
+   size — at 64× a 1125×750 image becomes a 72000×48000px texture, and two of
+   them (swipe's old+new worlds) blow past the tile-memory budget, so Chromium
+   drops tiles and the picture tears/blinks mid-zoom. Without will-change the
+   transform still composites (the glide transition promotes it for its
+   duration), but rasterization stays viewport-tiled — only visible tiles are
+   painted, bounded at any zoom. */
+.img-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.img-world--gliding {
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The transparency backdrop: a viewport-filling, untransformed twin painting
+   constant 16px screen tiles, clipped to the world's screen rect (geometry
+   set inline by stage.tsx World). Never on the transformed element — Chromium
+   rasterizes the gradient at layout resolution, so counter-scaled tiles alias
+   and fade at deep zooms; and never sized to the full scaled world rect — at
+   deep zoom that element exhausts tile memory. Viewport-bounded + clipped is
+   safe at any zoom. */
+.img-checkerboard {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(var(--img-checker) 0% 25%, transparent 0% 50%) 0 0;
+  background-size: 16px 16px;
+  pointer-events: none;
+}
+.img-checkerboard--gliding {
+  /* Mirrors the world's glide: the clip rect interpolates on the same curve as
+     its translate/scale (both linear in scale), so backdrop and artwork move
+     as one. The pattern phase (background-position) snaps — identical tiles
+     make the jump invisible. */
+  transition: clip-path 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.img-world[data-pixelated] .img-layer,
+.img-world[data-pixelated] .img-diff-canvas {
+  image-rendering: pixelated;
+}
+
+/* One revision, centered in the frame. The hairline tint says which side is
+   which without stealing attention (red = old, green = new — diff colors). */
+.img-layer {
+  position: absolute;
+  display: block;
+  user-select: none;
+}
+.img-layer--old {
+  outline: 1px solid color-mix(in srgb, var(--st-deleted) 55%, transparent);
+}
+.img-layer--new {
+  outline: 1px solid color-mix(in srgb, var(--st-added) 55%, transparent);
+}
+.img-diff-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+/* ── Floating controls ──
+   (The diff-mode switcher lives in the diff header, not over the stage —
+   the same spot text diffs show Split/Unified.) */
+
+/* Zoom cluster, bottom right (the UVCS spot). The anchor toggle joins it
+   below a separator when the revisions differ in size. */
+.img-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: stretch;
+  z-index: 3;
+}
+.img-zoom__sep {
+  height: 1px;
+  margin: 2px 3px;
+  background: var(--border);
+}
+.img-zoom .icon-btn {
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+}
+.img-zoom__pct {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 4px 2px;
+  font-variant-numeric: tabular-nums;
+}
+.img-zoom__pct:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+/* Change narration, bottom left: dimensions/sizes per side, diff stats. */
+.img-hud {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  z-index: 3;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  pointer-events: none;
+}
+.img-hud__side {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+  color: var(--fg-muted);
+  border-left: 2px solid transparent;
+}
+.img-hud__side--old {
+  border-left-color: var(--st-deleted);
+}
+.img-hud__side--new {
+  border-left-color: var(--st-added);
+}
+.img-hud__arrow {
+  color: var(--fg-faint);
+}
+.img-hud__stat {
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-weight: 600;
+}
+
+/* "Old / New" tags pinned to a pane corner (side by side, swipe). */
+.img-side-chip {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+  color: var(--st-deleted);
+  z-index: 2;
+  pointer-events: none;
+}
+.img-side-chip--new {
+  color: var(--st-added);
+}
+.img-side-chip--right {
+  left: auto;
+  right: 10px;
+}
+
+/* ── Side by side ── */
+.img-sbs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.img-sbs__pane + .img-sbs__pane {
+  border-left: 1px solid var(--border);
+}
+
+/* ── Floating pills (top center) ──
+   The per-mode control strip: the onion blend, the differences tolerance +
+   region navigation, the blink transport. One shape so the modes read as one
+   viewer. */
+.img-pill {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+  z-index: 3;
+}
+.img-pill input[type='range'] {
+  accent-color: var(--accent);
+}
+/* Buttons inside pills are quiet, small and round — the stock 30px bordered
+   icon button would dominate the strip. */
+.img-pill .icon-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+}
+.img-pill .icon-btn:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.img-pill__label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.img-pill__value {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+/* ── Onion skin ── */
+.img-onion-slider input[type='range'] {
+  width: 220px;
+}
+/* The play/pause keeps a bordered circle: a bare triangle next to the slider
+   reads as a chevron, not a button. A couple px larger than the bare pill
+   arrows — it's the pill's one real action. */
+.img-onion-slider .icon-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* ── Swipe ── */
+.img-swipe {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+.img-swipe__reveal {
+  position: absolute;
+  inset: 0;
+}
+/* The divider is a 14px invisible strip — the whole line drags like a
+   splitter, with comfortable tolerance — drawing the visible 2px line via
+   ::before. Whole CSS pixels only for the line: it sits at arbitrary
+   subpixel offsets while dragging, so a fractional width rasterizes as 1 or
+   2 device pixels depending on position and visibly flickers. No shadow
+   halo either (it read as gray bars beside the line). */
+.img-swipe__divider {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  margin-left: -7px;
+  z-index: 2;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.img-swipe__divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--accent);
+}
+/* Purely visual — the strip owns the pointer; fades away at far-out zoom
+   levels where 32px would cover the whole picture. */
+.img-swipe__handle {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-elevated);
+  /* Same weight as the divider line, so knob and line read as one tool. */
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  pointer-events: none;
+  transition: opacity 140ms ease;
+}
+.img-swipe__divider:hover .img-swipe__handle {
+  /* The tint must stay opaque: --accent-soft alone is translucent and would
+     let the divider line show through the knob. */
+  background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
+}
+.img-swipe__handle--hidden {
+  opacity: 0;
+}
+
+/* ── Differences ── */
+.img-diff-toolbar input[type='range'] {
+  width: 130px;
+}
+/* The value slot reserves three digits, so the centered pill keeps one exact
+   width as the slider sweeps 0 → 9 → 99 — it must never shift under the
+   cursor mid-drag. */
+.img-diff-toolbar__readout {
+  width: 3ch;
+  text-align: right;
+}
+/* Region navigation: its own pill stacked under the tolerance pill, so it
+   can appear and disappear (regions come and go with the tolerance) without
+   moving the slider. Deliberately quieter and shorter than the tolerance
+   pill — secondary wayfinding, not a control bar. */
+.img-region-nav {
+  top: 46px;
+  padding: 4px 10px;
+  gap: 5px;
+}
+/* When the tolerance pill is hidden (no delta the slider could affect — see
+   DifferencesMode toleranceMatters), the nav pill takes its top spot. */
+.img-region-nav--solo {
+  top: 10px;
+}
+/* Keep "2 of 12" from nudging the arrows while stepping through regions. */
+.img-region-nav__count {
+  min-width: 52px;
+  text-align: center;
+}
+/* Focus ring around the active changed region. Border width is set inline,
+   counter-scaled against the world transform (~2 screen px at any zoom). */
+.img-region-focus {
+  position: absolute;
+  border-style: solid;
+  border-color: var(--accent);
+  pointer-events: none;
+}
+
+/* ── Pixel inspector ──
+   Bottom left, stacked above the HUD: coordinates plus old → new texels.
+   pointer-events off — it reports the cursor, it must never catch it. */
+.img-inspector {
+  position: absolute;
+  left: 12px;
+  bottom: 46px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  z-index: 3;
+  pointer-events: none;
+}
+.img-inspector__pos {
+  color: var(--fg);
+  font-weight: 600;
+}
+.img-inspector__arrow,
+.img-inspector__none {
+  color: var(--fg-faint);
+}
+.img-inspector__color {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.img-inspector__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  /* The sample color paints as a gradient layer (set inline) over this
+     checkerboard, so translucent texels read like they do on the stage. */
+  background-size:
+    auto,
+    6px 6px;
+}
+
+.img-computing {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+  color: var(--fg-muted);
+  font-size: 12px;
+  z-index: 3;
+}

@@ -1,0 +1,172 @@
+/* ── Conflict-resolution panel (replaces the diff pane for conflicts) ────── */
+.conflict-pane {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.conflict-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 16px 0;
+}
+.conflict-head__badge {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--st-modified-soft);
+  color: var(--st-modified);
+}
+.conflict-head__file {
+  display: flex;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  user-select: text;
+}
+.conflict-head__dir {
+  color: var(--fg-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conflict-head__name {
+  font-weight: 600;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.conflict-chip {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--st-modified-soft);
+  color: var(--st-modified);
+  font-size: 11px;
+  font-weight: 600;
+}
+.conflict-chip--clear {
+  background: var(--st-added-soft);
+  color: var(--st-added);
+}
+.conflict-intro {
+  margin: 8px 0 0;
+  padding: 0 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.conflict-intro code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg);
+}
+/* The split resolve button: primary half = the single best next step,
+   caret = the alternatives. Mirrors the commit composer's split button. */
+.conflict-resolve {
+  display: inline-flex;
+  align-items: stretch;
+}
+.conflict-resolve__main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflict-resolve__caret {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 8px;
+  border: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* The full-height hairline divider between the two halves. */
+.conflict-resolve__caret::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--on-accent);
+  opacity: 0.25;
+}
+.conflict-resolve__caret:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.conflict-resolve__caret:disabled {
+  opacity: 0.55;
+}
+.conflict-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 16px 12px;
+}
+.conflict-tools .btn-ghost--sm,
+.conflict-tools .btn-primary--sm {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.conflict-tools__spacer {
+  flex: 1;
+}
+.conflict-tools .segmented button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.conflict-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+.conflict-sides-labels {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: var(--fg-faint);
+}
+.conflict-sides-labels span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conflict-sides-labels code {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+.conflict-diff {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  user-select: text;
+}
+.conflict-diff pierre-diff,
+.conflict-diff .pierre-diffs {
+  display: block;
+}

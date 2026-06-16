@@ -1,0 +1,222 @@
+/* ── Update banner (bottom-right) ────────────────────────────────────────── */
+.update-banner {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 55;
+  width: 300px;
+  max-width: calc(100vw - 36px);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--popover-shadow);
+  animation: pop-in 0.14s ease-out;
+}
+.update-banner--ready {
+  border-color: var(--accent-border);
+}
+.update-banner__row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.update-banner__title {
+  flex: 1;
+  min-width: 0;
+}
+.update-banner__pct {
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+}
+.update-banner__close {
+  display: flex;
+  border: none;
+  background: none;
+  color: var(--fg-faint);
+  opacity: 0.8;
+}
+.update-banner__close:hover {
+  opacity: 1;
+  color: var(--fg);
+}
+.update-banner__icon {
+  display: flex;
+  flex: none;
+}
+.update-banner__icon--warn {
+  color: var(--st-deleted);
+}
+.update-banner__track {
+  margin-top: 10px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+.update-banner__bar {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.update-banner__hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--fg-faint);
+}
+.update-banner__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+/* ── Operation banner (merge/rebase/cherry-pick/revert in progress) ──────── */
+/* Visible but never alarming: an in-progress op is a normal state, not an
+   error. Amber accent while conflicts remain, green once it's ready.
+   Layout (shared with .stash-reminder): text and actions share the row —
+   compact buttons keep the text's column wide — and the actions wrap to
+   their own row only when the sidebar gets too narrow for both. */
+.op-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--st-modified);
+  background: var(--st-modified-soft);
+}
+.op-banner--ready {
+  box-shadow: inset 3px 0 0 var(--st-added);
+  background: var(--st-added-soft);
+}
+.op-banner__icon {
+  display: flex;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--st-modified);
+}
+.op-banner--ready .op-banner__icon {
+  color: var(--st-added);
+}
+.op-banner__text {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.op-banner__text strong {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.op-banner__text strong code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.op-banner__text span {
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+.op-banner__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  /* Centered against the text block, not pinned to its first line. */
+  align-self: center;
+}
+/* In-banner buttons sit a notch smaller than their dialog cousins — the
+   actions are secondary to the message beside them, and the saved width is
+   exactly what keeps the text from wrapping into a skinny column. */
+.op-banner__actions .btn-primary--sm,
+.op-banner__actions .btn-ghost--sm,
+.stash-reminder__actions .btn-primary--sm,
+.stash-reminder__actions .btn-ghost--sm {
+  padding: 4px 10px;
+}
+/* ── Welcome-back stash reminder (changes left behind while branching) ───── */
+/* Same calm banner shape as .op-banner, accent-tinted: returning to changes
+   you set aside is good news, not a warning. */
+.stash-reminder {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--accent-soft);
+}
+.stash-reminder__icon {
+  display: flex;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+.stash-reminder__text {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.stash-reminder__text strong {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.stash-reminder__text span {
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+/* The banner's single control: a small split button. Restore (the everyday
+   action) is the wide half; the caret half opens the Review / Discard menu.
+   Same joined-halves reading as the composer's commit button, sized down. */
+.stash-reminder__actions {
+  display: flex;
+  gap: 0;
+  align-items: center;
+  /* Centered against the text block, like .op-banner__actions. */
+  align-self: center;
+}
+.stash-reminder__restore {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.stash-reminder__caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  align-self: stretch;
+  padding: 0 8px;
+  border: 1px solid var(--accent-border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* The full-height hairline divider between the two halves. */
+.stash-reminder__caret::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--on-accent);
+  opacity: 0.25;
+}
+.stash-reminder__caret:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.stash-reminder__caret:disabled {
+  opacity: 0.55;
+}
+.stash-reminder__caret svg {
+  opacity: 0.85;
+}

@@ -1,0 +1,104 @@
+/* ── Diff area ───────────────────────────────────────────────────────────── */
+.diff-pane {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.diff-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  height: 46px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.diff-head__path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  /* body sets user-select:none for a native feel; let the path be copyable. */
+  user-select: text;
+}
+.diff-head__badge {
+  flex: 0 0 auto;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: 12px;
+}
+.diff-head__badge.st-added,
+.diff-head__badge.st-untracked {
+  color: var(--st-added);
+}
+.diff-head__badge.st-modified {
+  color: var(--st-modified);
+}
+.diff-head__badge.st-deleted {
+  color: var(--st-deleted);
+}
+.diff-head__badge.st-renamed {
+  color: var(--st-renamed);
+}
+.diff-head__badge.st-conflicted {
+  color: var(--st-conflicted);
+}
+.diff-head__badge.st-ignored {
+  color: var(--fg-faint);
+}
+.diff-head__file {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  overflow: hidden;
+}
+.diff-head__dir {
+  color: var(--fg-faint);
+  /* shrink the directory prefix (with an ellipsis) before the filename */
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.diff-head__name {
+  color: var(--fg);
+  font-weight: 600;
+  white-space: nowrap;
+  /* keep the basename fully visible */
+  flex: 0 0 auto;
+}
+.diff-head__spacer {
+  flex: 1;
+}
+.diff-stat {
+  display: inline-flex;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.diff-stat__add {
+  color: var(--st-added);
+}
+.diff-stat__del {
+  color: var(--st-deleted);
+}
+.diff-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  /* body sets user-select:none for native chrome feel; re-enable it here so
+     diff code is selectable. The property inherits across pierre's shadow DOM,
+     and pierre keeps its own user-select:none on gutters/line numbers. */
+  user-select: text;
+}
+.diff-body pierre-diff,
+.diff-body .pierre-diffs {
+  display: block;
+}
