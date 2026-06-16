@@ -936,6 +936,40 @@ button {
   flex-direction: column;
   min-height: 0;
   flex: 1;
+  /* Anchors the deep-reveal overlay (.history__reveal) to the whole pane. */
+  position: relative;
+}
+/* Blocking overlay while the log pages deep enough to reach a commit opened
+   from the blame gutter — a super-old commit can take seconds to load, and the
+   stale list otherwise sits there with no feedback. Ordinary infinite-scroll
+   paging uses the bottom spinner (.commit-list__more), not this. */
+.history__reveal {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  text-align: center;
+  color: var(--fg-faint);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(2px);
+  animation: pop-in 0.12s ease-out;
+}
+.history__reveal p {
+  margin: 0;
+  font-size: 12.5px;
+}
+.history__reveal code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-active);
+  color: var(--fg);
 }
 /* Windowed list viewport: owns its scroll on the main thread (see
    VirtualScroll.tsx) — overflow hidden + a translated content layer, never

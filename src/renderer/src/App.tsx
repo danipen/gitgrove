@@ -149,6 +149,10 @@ export function App() {
   const [commitFilesLoading, setCommitFilesLoading] = useState(false)
   const [commitSelPath, setCommitSelPath] = useState<string | null>(null)
   const [commitSelCount, setCommitSelCount] = useState(1)
+  // Hash being revealed from the blame gutter when it sits past the loaded
+  // window: paging the log deep enough to reach a super-old commit can take a
+  // moment, so HistoryView shows a blocking overlay for it. Null otherwise.
+  const [revealingCommit, setRevealingCommit] = useState<string | null>(null)
 
   // Commit-selection request token: selecting a commit fires an async
   // `commitFiles` fetch, and a slow one can resolve after the user has already
@@ -463,14 +467,31 @@ export function App() {
       if (!repoPath) return
       setFileHistory(null)
       setTab('history')
-      let list = logLoadedRef.current ? commitsRef.current : await loadLog(repoPath).catch(() => [])
-      if (!list.some((c) => c.hash === hash)) {
-        const index = await window.gitgrove.commitIndex(repoPath, hash).catch(() => -1)
-        if (index < 0) return
-        list = await loadLog(repoPath, undefined, { minCount: index + 1 }).catch(() => list)
+      // Fast path: already paged in — select it straight away, no overlay.
+      const loaded = logLoadedRef.current ? commitsRef.current.find((c) => c.hash === hash) : null
+      if (loaded) {
+        selectCommit(loaded)
+        return
       }
-      const target = list.find((c) => c.hash === hash)
-      if (target) selectCommit(target)
+      // Otherwise we may have to page the log deep to reach it (a super-old
+      // commit can take seconds). Flag it *before* the async index lookup and
+      // deep load so the History tab's blocking overlay appears the instant we
+      // switch tabs — not after a stale/partial list has flashed in.
+      setRevealingCommit(hash)
+      try {
+        let list = logLoadedRef.current
+          ? commitsRef.current
+          : await loadLog(repoPath).catch(() => [])
+        if (!list.some((c) => c.hash === hash)) {
+          const index = await window.gitgrove.commitIndex(repoPath, hash).catch(() => -1)
+          if (index < 0) return
+          list = await loadLog(repoPath, undefined, { minCount: index + 1 }).catch(() => list)
+        }
+        const target = list.find((c) => c.hash === hash)
+        if (target) selectCommit(target)
+      } finally {
+        setRevealingCommit(null)
+      }
     },
     [loadLog, selectCommit]
   )
@@ -1659,6 +1680,7 @@ export function App() {
                 hasMore={logHasMore}
                 loadingMore={commitsLoadingMore}
                 onLoadMore={loadMoreLog}
+                revealing={revealingCommit}
                 selectedCommit={selectedCommit}
                 onSelectCommit={selectCommit}
                 commitFiles={commitFiles}
