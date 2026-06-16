@@ -82,3 +82,45 @@ export function pushReblame(stack: BlameFrame[], line: BlameLine): BlameFrame[] 
 export function popReblame(stack: BlameFrame[]): BlameFrame[] {
   return stack.length > 1 ? stack.slice(0, -1) : stack
 }
+
+// ── Age heat: the gutter stripe + legend that show how old each line is ──────
+
+/**
+ * Map a normalized line age (0 = oldest in the file, 1 = newest) to a heat
+ * color — older reads pale, newer reads warm and saturated. Used by both the
+ * per-line gutter stripe and the header legend so they share one scale.
+ */
+export function ageColor(t: number): string {
+  const c = Math.max(0, Math.min(1, t))
+  const saturation = Math.round(35 + c * 50)
+  const lightness = Math.round(86 - c * 40)
+  return `hsl(28 ${saturation}% ${lightness}%)`
+}
+
+/** Evenly spaced age colors (old → new) for the legend swatches. */
+export function ageScale(steps = 7): string[] {
+  return Array.from({ length: steps }, (_, i) => ageColor(steps <= 1 ? 1 : i / (steps - 1)))
+}
+
+/**
+ * Fraction of a timestamp within `[min, max]`, clamped to [0,1]. Returns 1 when
+ * the range is empty (single commit) or the time is unknown, so such lines read
+ * as "newest" rather than colorless.
+ */
+export function ageFraction(ms: number, min: number, max: number): number {
+  if (!Number.isFinite(ms) || max <= min) return 1
+  return Math.max(0, Math.min(1, (ms - min) / (max - min)))
+}
+
+/** Min/max author timestamps (ms) across blame lines — the file's age span. */
+export function ageRange(lines: BlameLine[]): { min: number; max: number } {
+  let min = Number.POSITIVE_INFINITY
+  let max = Number.NEGATIVE_INFINITY
+  for (const line of lines) {
+    const ms = Date.parse(line.date)
+    if (!Number.isFinite(ms)) continue
+    if (ms < min) min = ms
+    if (ms > max) max = ms
+  }
+  return { min, max }
+}

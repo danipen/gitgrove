@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test'
 import type { BlameLine } from '@shared/types'
 import {
+  ageColor,
+  ageFraction,
+  ageRange,
+  ageScale,
   BLAME_LINE_HEIGHT,
   blameWindow,
   canReblame,
@@ -93,5 +97,46 @@ describe('reblame stack', () => {
     const two = pushReblame(base, line({ previous: { hash: 'c'.repeat(40), filename: 'f' } }))
     expect(popReblame(two)).toHaveLength(1)
     expect(popReblame(base)).toBe(base)
+  })
+})
+
+describe('age heat', () => {
+  it('ageFraction normalizes within range and clamps', () => {
+    expect(ageFraction(50, 0, 100)).toBeCloseTo(0.5)
+    expect(ageFraction(0, 0, 100)).toBe(0)
+    expect(ageFraction(100, 0, 100)).toBe(1)
+    expect(ageFraction(-10, 0, 100)).toBe(0)
+    expect(ageFraction(999, 0, 100)).toBe(1)
+  })
+
+  it('ageFraction treats an empty range or unknown time as newest', () => {
+    expect(ageFraction(5, 10, 10)).toBe(1)
+    expect(ageFraction(Number.NaN, 0, 100)).toBe(1)
+  })
+
+  it('ageColor darkens with age and is stable at the ends', () => {
+    expect(ageColor(0)).toBe('hsl(28 35% 86%)')
+    expect(ageColor(1)).toBe('hsl(28 85% 46%)')
+    // Clamps out-of-range input.
+    expect(ageColor(-1)).toBe(ageColor(0))
+    expect(ageColor(2)).toBe(ageColor(1))
+  })
+
+  it('ageScale spans oldest → newest', () => {
+    const scale = ageScale(5)
+    expect(scale).toHaveLength(5)
+    expect(scale[0]).toBe(ageColor(0))
+    expect(scale[4]).toBe(ageColor(1))
+  })
+
+  it('ageRange finds the min/max author timestamps, ignoring unknowns', () => {
+    const lines = [
+      line({ date: '2020-01-01T00:00:00.000Z' }),
+      line({ date: '2026-01-01T00:00:00.000Z' }),
+      line({ date: '' }) // working-tree / unknown — skipped
+    ]
+    const { min, max } = ageRange(lines)
+    expect(min).toBe(Date.parse('2020-01-01T00:00:00.000Z'))
+    expect(max).toBe(Date.parse('2026-01-01T00:00:00.000Z'))
   })
 })

@@ -3,6 +3,10 @@ import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import type { BlameLine } from '@shared/types'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
+  ageColor,
+  ageFraction,
+  ageRange,
+  ageScale,
   BLAME_LINE_HEIGHT,
   type BlameFrame,
   blameWindow,
@@ -140,11 +144,15 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
     [frame.ref, frame.path, contents]
   )
   const items = useMemo(() => [item], [item])
+  // Age span of the file's commits, for the per-line heat stripe + legend.
+  const range = useMemo(() => ageRange(lines ?? []), [lines])
+
+  const back = () => setStack(popReblame(stack))
 
   if (error) {
     return (
       <div className="blame">
-        <BlameBreadcrumb stack={stack} onBack={() => setStack(popReblame(stack))} />
+        <BlameHead stack={stack} onBack={back} showLegend={false} />
         <div className="center-state">
           <div className="icon-ring">
             <Icon.History size={22} />
@@ -159,7 +167,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
   if (spin || !lines) {
     return (
       <div className="blame">
-        <BlameBreadcrumb stack={stack} onBack={() => setStack(popReblame(stack))} />
+        <BlameHead stack={stack} onBack={back} showLegend={false} />
         {spin && (
           <div className="center-state">
             <div className="spinner" />
@@ -174,7 +182,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
 
   return (
     <div className="blame">
-      <BlameBreadcrumb stack={stack} onBack={() => setStack(popReblame(stack))} />
+      <BlameHead stack={stack} onBack={back} showLegend />
       <div className="blame-body" ref={setBodyEl}>
         <div className="blame-gutter" aria-hidden="true">
           <div
@@ -185,6 +193,9 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
               const index = win.start + i
               const runStart = isRunStart(lines, index)
               const reblameable = canReblame(line)
+              // Per-line age stripe (older → newer), on every line so a block
+              // reads as one continuous colored band beside its source.
+              const stripe = ageColor(ageFraction(Date.parse(line.date), range.min, range.max))
               const meta = (
                 <>
                   <span className="blame-cell__sha">
@@ -200,11 +211,8 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
                 </>
               )
               return (
-                <div
-                  key={index}
-                  className={`blame-cell${runStart ? ' is-run-start' : ''}`}
-                  style={{ top: index * BLAME_LINE_HEIGHT }}
-                >
+                <div key={index} className="blame-cell" style={{ top: index * BLAME_LINE_HEIGHT }}>
+                  <span className="blame-cell__age" style={{ background: stripe }} />
                   {runStart &&
                     (reblameable ? (
                       <button
@@ -237,27 +245,72 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
           onScroll={(st) => setScrollTop(st)}
           className="blame-code"
         />
+        {/* Hairlines across both columns at each commit boundary so it's clear
+            which source lines belong to which blame band. */}
+        <div className="blame-rules" aria-hidden="true">
+          <div
+            className="blame-rules__content"
+            style={{ transform: `translateY(${-scrollTop}px)` }}
+          >
+            {visible.map((_, i) => {
+              const index = win.start + i
+              if (index === 0 || !isRunStart(lines, index)) return null
+              return (
+                <div
+                  key={index}
+                  className="blame-rule"
+                  style={{ top: index * BLAME_LINE_HEIGHT }}
+                />
+              )
+            })}
+          </div>
+        </div>
       </div>
     </div>
   )
 }
 
 /**
- * Reblame breadcrumb — only shown once the user has walked back from the base
- * revision (the common commit-summary header already names the base). Says
- * which file/revision is now being blamed and offers a step back.
+ * Blame header — styled like the diff viewer's header for a consistent feel.
+ * Right side carries the age legend (older → newer); the left gains a Back
+ * control and the reblamed revision only once the user has walked back from
+ * the base (whose details the common commit summary already shows).
  */
-function BlameBreadcrumb({ stack, onBack }: { stack: BlameFrame[]; onBack: () => void }) {
-  if (stack.length <= 1) return null
+function BlameHead({
+  stack,
+  onBack,
+  showLegend
+}: {
+  stack: BlameFrame[]
+  onBack: () => void
+  showLegend: boolean
+}) {
+  const reblamed = stack.length > 1
   const frame = stack[stack.length - 1]
   return (
-    <div className="blame-crumb">
-      <span className="blame-crumb__label">
-        Blaming <code>{splitPath(frame.path).name}</code> @ <strong>{frame.label}</strong>
-      </span>
-      <button type="button" className="blame-crumb__back" onClick={onBack}>
-        <Icon.Undo size={13} /> Back
-      </button>
+    <div className="blame-head">
+      {reblamed && (
+        <>
+          <button type="button" className="blame-head__back" onClick={onBack}>
+            <Icon.Undo size={13} /> Back
+          </button>
+          <span className="blame-head__label">
+            Blaming <code>{splitPath(frame.path).name}</code> @ <strong>{frame.label}</strong>
+          </span>
+        </>
+      )}
+      <span className="blame-head__spacer" />
+      {showLegend && (
+        <div className="blame-legend" data-tip="Line age — older to newer">
+          <span className="blame-legend__cap">Older</span>
+          <span className="blame-legend__scale">
+            {ageScale().map((c) => (
+              <span key={c} style={{ background: c }} />
+            ))}
+          </span>
+          <span className="blame-legend__cap">Newer</span>
+        </div>
+      )}
     </div>
   )
 }

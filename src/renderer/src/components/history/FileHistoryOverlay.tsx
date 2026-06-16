@@ -62,8 +62,10 @@ export function FileHistoryOverlay({
   const [diff, setDiff] = useState<DiffPayload | null>(null)
   const [commitFiles, setCommitFiles] = useState<ChangedFile[]>([])
   const [filesLoading, setFilesLoading] = useState(false)
-  const [diffMode, setDiffMode] = usePersistentState<DiffMode>('gg.fileHistory.diffMode', 'unified')
-  const [wrap, setWrap] = usePersistentState('gg.fileHistory.wrap', false)
+  // Split/Unified and wrap are app-global preferences (same keys the main diff
+  // pane uses) so the choice is consistent everywhere and persists across runs.
+  const [diffMode, setDiffMode] = usePersistentState<DiffMode>('gg.diffMode', 'split')
+  const [wrap, setWrap] = usePersistentState('gg.diffWrap', false)
   // Width of the commit list, dragged via the splitter. Applied as a CSS var so
   // a drag mutates the DOM directly without re-rendering the list/diff.
   const [commitsWidth, setCommitsWidth] = usePersistentState('gg.fileHistory.commitsWidth', 320)
@@ -106,25 +108,32 @@ export function FileHistoryOverlay({
     }
   }, [repoPath, path, baseRef])
 
-  // Diff needs a concrete commit — pick the newest once history lands.
+  // Load what the right pane needs for the selection. `null` is the working
+  // tree (the current on-disk state): no commit summary, and Diff mode shows
+  // the uncommitted changes. For a commit we load its files (for the common
+  // summary) plus, in Diff mode, this file's diff — matching by current/old
+  // path then basename, since the name at an older commit can differ (rename).
   useEffect(() => {
-    if (mode === 'diff' && selectedHash == null && commits.length > 0) {
-      setSelectedHash(commits[0].hash)
-    }
-  }, [mode, selectedHash, commits])
-
-  // Load the selected commit's files (for the common summary header) and, in
-  // Diff mode, this file's diff. The file's name at an older commit can differ
-  // (rename), so match by current path or old path, then fall back to basename.
-  useEffect(() => {
-    if (selectedHash == null) {
-      setDiff(null)
-      setCommitFiles([])
-      return
-    }
     let cancelled = false
     setFilesLoading(true)
     ;(async () => {
+      if (selectedHash == null) {
+        setCommitFiles([])
+        if (mode !== 'diff') {
+          setDiff(null)
+          setFilesLoading(false)
+          return
+        }
+        const payload = await window.gitgrove.workingDiff(repoPath, {
+          path,
+          status: 'modified',
+          staged: false
+        })
+        if (cancelled) return
+        setDiff(payload)
+        setFilesLoading(false)
+        return
+      }
       const files = await window.gitgrove.commitFiles(repoPath, selectedHash)
       if (cancelled) return
       setCommitFiles(files)
@@ -162,8 +171,21 @@ export function FileHistoryOverlay({
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (commits.length === 0) return
-    const page = Math.max(1, Math.floor(vs.viewportH / FH_ROW_H) - 1)
+    // The working tree (null) sits above commit[0]; arrow across the boundary.
+    if (selectedHash == null) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSelectedHash(commits[0].hash)
+      }
+      return
+    }
     const current = commits.findIndex((c) => c.hash === selectedHash)
+    if (e.key === 'ArrowUp' && current === 0) {
+      e.preventDefault()
+      setSelectedHash(null)
+      return
+    }
+    const page = Math.max(1, Math.floor(vs.viewportH / FH_ROW_H) - 1)
     const target = navTarget(e.key, current, commits.length, page)
     if (target === null) return
     e.preventDefault()
@@ -210,6 +232,27 @@ export function FileHistoryOverlay({
         style={{ '--fh-commits-w': `${commitsWidth}px` } as CSSProperties}
       >
         <div className="fh-commits">
+          {/* The working tree is the current, on-disk revision — pinned at the
+              top and selected by default, the way the current branch is marked
+              in the branch list. */}
+          <button
+            type="button"
+            className={`fh-commit fh-commit--wt${selectedHash === null ? ' is-active' : ''}`}
+            onClick={() => setSelectedHash(null)}
+          >
+            <span className="fh-commit__wt-disc">
+              <Icon.Changes size={14} />
+            </span>
+            <div className="fh-commit__main">
+              <div className="fh-commit__subject">
+                Working tree
+                <span className="tag tag--current">current</span>
+              </div>
+              <div className="fh-commit__meta">
+                <span className="fh-commit__author">Uncommitted changes</span>
+              </div>
+            </div>
+          </button>
           {spin ? (
             <div className="center-state">
               <div className="spinner" />
