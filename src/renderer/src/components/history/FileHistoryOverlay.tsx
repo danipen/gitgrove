@@ -56,6 +56,11 @@ export function FileHistoryOverlay({
   const [mode, setMode] = useState<FileHistoryMode>(initialMode)
   // Anchor revision: the commit selected in the list, or null = working tree.
   const [selectedHash, setSelectedHash] = useState<string | null>(baseRef)
+  // The working-tree row only makes sense when the file actually has
+  // uncommitted changes. `baseRef === null` is passed exclusively from the
+  // Changes tab, whose menu only appears on dirty working files — so it's our
+  // signal that there's a working version worth showing (and selecting).
+  const showWorkingTree = baseRef === null
 
   // The selected commit's files (drives the common summary header) and, in Diff
   // mode, the diff payload for this file.
@@ -86,13 +91,15 @@ export function FileHistoryOverlay({
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  // Load the file's commit timeline (follows renames).
+  // Load the file's full commit timeline from HEAD (follows renames), so the
+  // newest commit is the version currently checked out — it gets the "current"
+  // badge. `baseRef` only chooses the initial selection, not the list scope.
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
     window.gitgrove
-      .fileHistory(repoPath, path, baseRef ?? undefined)
+      .fileHistory(repoPath, path)
       .then((cs) => {
         if (cancelled) return
         setCommits(cs)
@@ -106,7 +113,7 @@ export function FileHistoryOverlay({
     return () => {
       cancelled = true
     }
-  }, [repoPath, path, baseRef])
+  }, [repoPath, path])
 
   // Load what the right pane needs for the selection. `null` is the working
   // tree (the current on-disk state): no commit summary, and Diff mode shows
@@ -169,6 +176,18 @@ export function FileHistoryOverlay({
   const rowHeight = useCallback(() => FH_ROW_H, [])
   const vs = useVirtualScroll({ count: commits.length, rowHeight })
 
+  // The list is the full history from HEAD, so a commit selected on open (from
+  // the History tab) can sit far down — scroll it into view once it's loaded.
+  const scrolledRef = useRef(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run once after load; ensureVisible is stable.
+  useEffect(() => {
+    if (scrolledRef.current || commits.length === 0) return
+    scrolledRef.current = true
+    if (selectedHash == null) return
+    const idx = commits.findIndex((c) => c.hash === selectedHash)
+    if (idx >= 0) vs.ensureVisible(idx)
+  }, [commits.length])
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (commits.length === 0) return
     // The working tree (null) sits above commit[0]; arrow across the boundary.
@@ -180,7 +199,7 @@ export function FileHistoryOverlay({
       return
     }
     const current = commits.findIndex((c) => c.hash === selectedHash)
-    if (e.key === 'ArrowUp' && current === 0) {
+    if (showWorkingTree && e.key === 'ArrowUp' && current === 0) {
       e.preventDefault()
       setSelectedHash(null)
       return
@@ -232,27 +251,26 @@ export function FileHistoryOverlay({
         style={{ '--fh-commits-w': `${commitsWidth}px` } as CSSProperties}
       >
         <div className="fh-commits">
-          {/* The working tree is the current, on-disk revision — pinned at the
-              top and selected by default, the way the current branch is marked
-              in the branch list. */}
-          <button
-            type="button"
-            className={`fh-commit fh-commit--wt${selectedHash === null ? ' is-active' : ''}`}
-            onClick={() => setSelectedHash(null)}
-          >
-            <span className="fh-commit__wt-disc">
-              <Icon.Changes size={14} />
-            </span>
-            <div className="fh-commit__main">
-              <div className="fh-commit__subject">
-                Working tree
-                <span className="tag tag--current">current</span>
+          {/* The working tree (current, on-disk revision) is pinned at the top
+              and selected by default — but only when the file has uncommitted
+              changes, the way the current branch is marked in the branch list. */}
+          {showWorkingTree && (
+            <button
+              type="button"
+              className={`fh-commit fh-commit--wt${selectedHash === null ? ' is-active' : ''}`}
+              onClick={() => setSelectedHash(null)}
+            >
+              <span className="fh-commit__wt-disc">
+                <Icon.Changes size={14} />
+              </span>
+              <div className="fh-commit__main">
+                <div className="fh-commit__subject">Working tree</div>
+                <div className="fh-commit__meta">
+                  <span className="fh-commit__author">Uncommitted changes</span>
+                </div>
               </div>
-              <div className="fh-commit__meta">
-                <span className="fh-commit__author">Uncommitted changes</span>
-              </div>
-            </div>
-          </button>
+            </button>
+          )}
           {spin ? (
             <div className="center-state">
               <div className="spinner" />
@@ -285,7 +303,10 @@ export function FileHistoryOverlay({
               <div className="vlist__sizer" style={{ height: vs.totalHeight }} aria-hidden="true" />
               <div className="vlist__content" style={{ transform: `translateY(${-vs.top}px)` }}>
                 {commits.slice(vs.start, vs.end).map((commit, i) => {
+                  const idx = vs.start + i
                   const active = selectedHash === commit.hash
+                  // The newest commit is the version currently checked out.
+                  const current = idx === 0
                   return (
                     <button
                       key={commit.hash}
@@ -295,7 +316,7 @@ export function FileHistoryOverlay({
                       aria-selected={active}
                       style={{
                         position: 'absolute',
-                        top: vs.rowTop(vs.start + i),
+                        top: vs.rowTop(idx),
                         left: 0,
                         right: 0
                       }}
@@ -306,12 +327,15 @@ export function FileHistoryOverlay({
                     >
                       <Avatar name={commit.authorName} email={commit.authorEmail} size={26} />
                       <div className="fh-commit__main">
-                        <div
-                          className="fh-commit__subject"
-                          data-tip={commit.subject}
-                          data-tip-overflow=""
-                        >
-                          {commit.subject}
+                        <div className="fh-commit__subject">
+                          <span
+                            className="fh-commit__subject-text"
+                            data-tip={commit.subject}
+                            data-tip-overflow=""
+                          >
+                            {commit.subject}
+                          </span>
+                          {current && <span className="tag tag--current">current</span>}
                         </div>
                         <div className="fh-commit__meta">
                           <span className="fh-commit__author">{commit.authorName}</span>

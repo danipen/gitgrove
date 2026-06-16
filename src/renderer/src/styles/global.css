@@ -1550,7 +1550,13 @@ button {
   min-width: 0;
 }
 .fh-commit__subject {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 500;
+}
+.fh-commit__subject-text {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1583,12 +1589,6 @@ button {
 .fh-commit--wt {
   flex: 0 0 auto;
   border-bottom: 1px solid var(--border);
-}
-.fh-commit--wt .fh-commit__subject {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  overflow: visible;
 }
 .fh-commit__wt-disc {
   flex: 0 0 auto;
