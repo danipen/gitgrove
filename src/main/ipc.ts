@@ -36,10 +36,12 @@ import { rejectStoredCredential } from './git/credential-store'
 import { getGlobalIdentity, getIdentity, setGlobalIdentity, setIdentity } from './git/identity'
 import { enableLfs, getLfsHealth } from './git/lfs'
 import {
+  getBlame,
   getBranches,
   getCommitDiff,
   getCommitFiles,
   getConflictSides,
+  getFileHistory,
   getLog,
   getMergePreview,
   getMergeToolName,
@@ -131,6 +133,12 @@ export function registerIpc(ctx: IpcContext): void {
     }
   )
   ipcMain.handle(IPC.log, (_e, repoPath: string, options?: LogOptions) => getLog(repoPath, options))
+  ipcMain.handle(IPC.fileHistory, (_e, repoPath: string, path: string, ref?: string) =>
+    getFileHistory(repoPath, path, ref)
+  )
+  ipcMain.handle(IPC.blame, (_e, repoPath: string, path: string, ref?: string) =>
+    getBlame(repoPath, path, ref)
+  )
   ipcMain.handle(IPC.commitFiles, (_e, repoPath: string, hash: string) =>
     getCommitFiles(repoPath, hash)
   )

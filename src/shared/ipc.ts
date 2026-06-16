@@ -5,6 +5,7 @@
 import type {
   AddAccountResult,
   AppInfo,
+  BlameLine,
   BranchChangesAction,
   BranchInfo,
   ChangedFile,
@@ -54,6 +55,8 @@ export const IPC = {
   branches: 'repo:branches',
   checkout: 'repo:checkout',
   log: 'repo:log',
+  fileHistory: 'repo:file-history',
+  blame: 'repo:blame',
   commitFiles: 'repo:commit:files',
   workingDiff: 'repo:diff:working',
   commitDiff: 'repo:diff:commit',
@@ -219,6 +222,10 @@ export interface GitGroveApi {
     opts?: { changes?: BranchChangesAction }
   ): Promise<CheckoutResult>
   log(repoPath: string, options?: LogOptions): Promise<Commit[]>
+  /** Commits that touched a single file, newest first (follows renames). */
+  fileHistory(repoPath: string, path: string, ref?: string): Promise<Commit[]>
+  /** Per-line authorship for a file; no `ref` blames the working tree. */
+  blame(repoPath: string, path: string, ref?: string): Promise<BlameLine[]>
   commitFiles(repoPath: string, hash: string): Promise<ChangedFile[]>
   workingDiff(repoPath: string, file: ChangedFile, area?: DiffArea): Promise<DiffPayload>
   commitDiff(repoPath: string, hash: string, file: ChangedFile): Promise<DiffPayload>
