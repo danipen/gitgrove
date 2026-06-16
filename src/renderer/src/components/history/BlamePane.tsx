@@ -7,6 +7,7 @@ import {
   ageFraction,
   ageRange,
   ageScale,
+  BLAME_GUTTER_OFFSET,
   BLAME_LINE_HEIGHT,
   type BlameFrame,
   blameWindow,
@@ -187,7 +188,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
         <div className="blame-gutter" aria-hidden="true">
           <div
             className="blame-gutter__content"
-            style={{ transform: `translateY(${-scrollTop}px)` }}
+            style={{ transform: `translateY(${-scrollTop + BLAME_GUTTER_OFFSET}px)` }}
           >
             {visible.map((line, i) => {
               const index = win.start + i
@@ -250,7 +251,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
         <div className="blame-rules" aria-hidden="true">
           <div
             className="blame-rules__content"
-            style={{ transform: `translateY(${-scrollTop}px)` }}
+            style={{ transform: `translateY(${-scrollTop + BLAME_GUTTER_OFFSET}px)` }}
           >
             {visible.map((_, i) => {
               const index = win.start + i
