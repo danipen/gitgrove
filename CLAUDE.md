@@ -59,7 +59,7 @@ handlers), `menu.ts`, `watcher.ts` (pushes `repo:changed`), `updater.ts`, `store
 folder imports stay relative, cross-folder go through `@/`); `lib/` (pure logic + hooks —
 `lib/staging.ts` is the **heart of hunk-level staging**: checkboxes are pure renderer
 state, git touched only at commit time; the change block is rendered to a unified patch
-and `git apply --cached`'d); `styles/global.css` (two themes, one layout).
+and `git apply --cached`'d); `styles/` (two themes, one layout — see **CSS** below).
 
 ## Commands
 
@@ -83,6 +83,42 @@ trust types and tests. **Always use the `playwright-cli` skill for this** (it's
 installed) — don't hand-roll Playwright calls. The flow: `bun run dev:debug`, then attach
 over CDP and exercise/screenshot the change. (`scripts/verify-ui.mjs` shows the launch
 pattern.) Beauty and UX are verified on screen, not in the diff.
+
+## CSS
+
+Styling is **global by design** — not CSS Modules. One layout, two themes, shared
+primitives, and a single z-index ladder, so the cascade is a deliberate tool, not an
+accident. `styles/global.css` is a **manifest** (`@import`s only); Vite inlines them at
+build time, so it still ships as one stylesheet (zero runtime cost). Files are **tiered by
+reuse** so "common vs specific" is answerable by *which file a rule lives in*:
+
+- `base.css` — the design system: tokens, the two `[data-theme]` palettes, reset, shared
+  keyframes (`spin`, `pop-in`), and the **z-index layering contract** (the one global
+  stacking order — keep new overlays on that ladder).
+- `layout.css` — the app skeleton (shell, sidebar frame, workspace column).
+- `primitives.css` — **common**: widgets reused by 2+ features (popover, tooltip, menus,
+  buttons, modal shell, toast, segmented, icon-btn, avatar, resizers, virtual list, …).
+- `features/*.css` — **specific**: one file per feature folder (`toolbar`, `history`,
+  `diff`, `blame`, `changes`, `conflict`, `screens`, `banners`, `dialogs`, `image-diff`).
+
+Rules for keeping it maintainable:
+
+- **The reuse rule (load-bearing).** A class used by **2+ features → `primitives.css`**;
+  used by **1 → that feature's file**. When a feature rule gains a second caller, *promote*
+  it to primitives in the same change; when a primitive loses its second caller, push it
+  down. This keeps `primitives.css` an honest inventory of what's shared — and stops two
+  features quietly reinventing the same widget.
+- **One class-prefix namespace per file**, so a class name tells you its file (`.blame-*`/
+  `.fh-*` → `blame.css`, `.wfl__*` → `changes.css`). CSS comments already cite their
+  component (`BlamePane.tsx`); when you touch a component, add the reverse `// styles:`
+  pointer to its file so the link is one hop in both directions.
+- **`@import` order is the cascade.** base → layout → primitives → features, and a feature
+  that restyles another's element loads after it (`diff` before `blame`/`image-diff`;
+  `changes` before `dialogs`). Reordering imports can silently change which rule wins.
+- **Comments are load-bearing** here too (compositor/scroll-timeline tricks, sub-pixel
+  rounding, tile-memory notes). Don't strip rationale when moving rules between files.
+- **Verify visually.** CSS isn't typechecked; a split or refactor is only done once the app
+  renders identically on screen (Playwright) with no console errors — see above.
 
 ## Conventions
 
