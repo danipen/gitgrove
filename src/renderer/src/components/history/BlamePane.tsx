@@ -8,9 +8,11 @@ import {
   ageRange,
   ageScale,
   BLAME_LINE_HEIGHT,
+  blameRuns,
   blameWindow,
   canReblame,
-  isRunStart
+  isRunStart,
+  stickyRun
 } from '@/lib/blame'
 import { splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
@@ -268,6 +270,8 @@ export function BlamePane({
   const items = useMemo(() => [item], [item])
   // Age span of the file's commits, for the per-line heat stripe + legend.
   const range = useMemo(() => ageRange(lines ?? []), [lines])
+  // Blame runs (one per labelled band), precomputed for the sticky-header lookup.
+  const runs = useMemo(() => blameRuns(lines ?? []), [lines])
 
   if (error) {
     return (
@@ -311,6 +315,12 @@ export function BlamePane({
 
   const win = blameWindow(scrollTop, viewportH, lines.length)
   const visible: BlameLine[] = lines.slice(win.start, win.end)
+  // Header of the block crossing the top edge: floated so a tall block keeps its
+  // label in view instead of a blank band. Positioned in gutter-viewport coords
+  // off React's scrollTop (it can't ride the compositor follow — it must hold at
+  // the top, not translate with the block), so it may trail a frame on a fling
+  // and lands exact at rest; the age stripes and code stay compositor-locked.
+  const sticky = stickyRun(runs, scrollTop)
 
   return (
     <div className="blame">
@@ -340,6 +350,19 @@ export function BlamePane({
               )
             })}
           </div>
+          {sticky && (
+            <div className="blame-cell blame-cell--sticky" style={{ top: Math.round(sticky.top) }}>
+              <span
+                className="blame-cell__age"
+                style={{
+                  background: ageColor(
+                    ageFraction(Date.parse(sticky.run.line.date), range.min, range.max)
+                  )
+                }}
+              />
+              <BlameCell line={sticky.run.line} onReblame={onReblame} onOpenCommit={onOpenCommit} />
+            </div>
+          )}
         </div>
         <CodeView<undefined>
           key={`${theme}`}

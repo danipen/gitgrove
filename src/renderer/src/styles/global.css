@@ -1767,6 +1767,17 @@ button {
   box-sizing: border-box;
   line-height: 1;
 }
+/* Sticky block header: once a block's first line scrolls above the gutter top,
+   its label floats here over the still-scrolling content (the next block's
+   header rides up and pushes it out — see stickyRun in lib/blame). It sits in
+   the gutter directly (not the compositor-followed content layer), so it needs
+   its own panel fill to mask the rows sliding underneath, plus a soft drop
+   shadow to read as floating. */
+.blame-cell--sticky {
+  z-index: 2;
+  background: var(--bg-panel);
+  box-shadow: 0 4px 8px -4px rgba(0, 0, 0, 0.25);
+}
 /* Per-line age heat stripe at the very left edge (older → newer). */
 .blame-cell__age {
   position: absolute;

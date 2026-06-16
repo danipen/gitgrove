@@ -47,6 +47,74 @@ export function isRunStart(lines: BlameLine[], index: number): boolean {
   return lines[index - 1].hash !== lines[index].hash
 }
 
+/** A run of consecutive lines from one commit, with the line carrying its label. */
+export interface BlameRun {
+  /** First line index in the run. */
+  start: number
+  /** Exclusive end — the next run's start, or `lines.length` for the last run. */
+  end: number
+  /** The run-start line, whose author/message/date label the band. */
+  line: BlameLine
+}
+
+/**
+ * Collapse the per-line blame into its runs (one entry per labelled band).
+ * Computed once when blame loads so the sticky-header lookup is a binary search
+ * rather than an O(run) walk on every scroll frame.
+ */
+export function blameRuns(lines: BlameLine[]): BlameRun[] {
+  const runs: BlameRun[] = []
+  for (let i = 0; i < lines.length; i++) {
+    if (isRunStart(lines, i)) runs.push({ start: i, end: lines.length, line: lines[i] })
+  }
+  for (let r = 0; r < runs.length - 1; r++) runs[r].end = runs[r + 1].start
+  return runs
+}
+
+/** The run containing `lineIndex`, or null if out of range (binary search). */
+export function runAt(runs: BlameRun[], lineIndex: number): BlameRun | null {
+  let lo = 0
+  let hi = runs.length - 1
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1
+    const run = runs[mid]
+    if (lineIndex < run.start) hi = mid - 1
+    else if (lineIndex >= run.end) lo = mid + 1
+    else return run
+  }
+  return null
+}
+
+/** A run pinned to the gutter top, with its current top offset (gutter px). */
+export interface BlameSticky {
+  run: BlameRun
+  /** Top offset within the gutter viewport: 0 when pinned, negative once the
+   *  next run's start pushes it up; never positive (it hugs the top edge). */
+  top: number
+}
+
+/**
+ * The block header to float at the gutter's top edge for the current scroll, so
+ * a tall block keeps its author/message/date in view instead of a blank band.
+ * Returns null while the active block's own first line is still on screen (the
+ * normal run-start cell already shows the label there) or at the very top.
+ *
+ * The header pins at `top: 0` until the *next* block's first line reaches the
+ * top, then rides up with it — clamped to one line above that line — so the two
+ * never overlap and the handoff reads as one header pushing out the last.
+ */
+export function stickyRun(
+  runs: BlameRun[],
+  scrollTop: number,
+  lineHeight = BLAME_LINE_HEIGHT
+): BlameSticky | null {
+  if (runs.length === 0 || scrollTop <= 0) return null
+  const run = runAt(runs, Math.floor(scrollTop / lineHeight))
+  if (!run || scrollTop <= run.start * lineHeight) return null
+  const pushedUp = (run.end - 1) * lineHeight - scrollTop
+  return { run, top: Math.min(0, pushedUp) }
+}
+
 /**
  * A line can be reblamed only when git gave us a prior version to walk back to
  * (`previous`) and it isn't an uncommitted working-tree line. Root commits and

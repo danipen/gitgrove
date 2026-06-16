@@ -6,11 +6,14 @@ import {
   ageRange,
   ageScale,
   BLAME_LINE_HEIGHT,
+  blameRuns,
   blameWindow,
   canReblame,
   isRunStart,
   popReblame,
-  pushReblame
+  pushReblame,
+  runAt,
+  stickyRun
 } from './blame'
 
 const line = (over: Partial<BlameLine>): BlameLine => ({
@@ -59,6 +62,64 @@ describe('isRunStart', () => {
   it('starts a run at index 0', () => expect(isRunStart(lines, 0)).toBe(true))
   it('continues a run for the same commit', () => expect(isRunStart(lines, 1)).toBe(false))
   it('starts a new run when the commit changes', () => expect(isRunStart(lines, 2)).toBe(true))
+})
+
+describe('blame runs', () => {
+  // 0-1: commit a, 2-6: commit b (a tall block), 7: commit c.
+  const lines = [
+    line({ hash: 'a'.repeat(40), summary: 'A' }),
+    line({ hash: 'a'.repeat(40) }),
+    line({ hash: 'b'.repeat(40), summary: 'B' }),
+    line({ hash: 'b'.repeat(40) }),
+    line({ hash: 'b'.repeat(40) }),
+    line({ hash: 'b'.repeat(40) }),
+    line({ hash: 'b'.repeat(40) }),
+    line({ hash: 'c'.repeat(40), summary: 'C' })
+  ]
+  const runs = blameRuns(lines)
+  const h = BLAME_LINE_HEIGHT
+
+  it('collapses lines into labelled bands with half-open bounds', () => {
+    expect(runs.map((r) => [r.start, r.end])).toEqual([
+      [0, 2],
+      [2, 7],
+      [7, 8]
+    ])
+    expect(runs.map((r) => r.line.summary)).toEqual(['A', 'B', 'C'])
+  })
+
+  it('runAt finds the band holding a line, null outside the file', () => {
+    expect(runAt(runs, 0)).toBe(runs[0])
+    expect(runAt(runs, 4)).toBe(runs[1])
+    expect(runAt(runs, 7)).toBe(runs[2])
+    expect(runAt(runs, -1)).toBeNull()
+    expect(runAt(runs, 8)).toBeNull()
+  })
+
+  describe('stickyRun', () => {
+    it('has nothing to float at the very top', () => {
+      expect(stickyRun(runs, 0)).toBeNull()
+      expect(stickyRun([], 100)).toBeNull()
+    })
+
+    it('floats a block once its first line scrolls off the top', () => {
+      // Half of line 0 (block A) scrolled away → A's header pins at the top.
+      expect(stickyRun(runs, 0.5 * h)).toEqual({ run: runs[0], top: 0 })
+      // Deep inside the tall block B → B's header pinned.
+      expect(stickyRun(runs, 4 * h)).toEqual({ run: runs[1], top: 0 })
+    })
+
+    it('lets the next block push the header up so they never overlap', () => {
+      // Last line of B at the top: next block starts at index 7, header rides
+      // up to one line above it → top = (7-1)*h - 6.5*h = -0.5*h.
+      expect(stickyRun(runs, 6.5 * h)).toEqual({ run: runs[1], top: -0.5 * h })
+    })
+
+    it('stops floating when the block’s own first line reaches the top', () => {
+      // Block C's first line (index 7) exactly at the top — its real cell shows.
+      expect(stickyRun(runs, 7 * h)).toBeNull()
+    })
+  })
 })
 
 describe('canReblame', () => {
