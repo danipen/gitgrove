@@ -1765,7 +1765,11 @@ button {
   gap: 7px;
   padding: 0 8px 0 13px;
   box-sizing: border-box;
-  line-height: 1;
+  /* Normal line-height (not 1): flex centers the row in its 20px height anyway,
+     and `.blame-cell__msg` clips with overflow:hidden for its ellipsis — a 1.0
+     line box is exactly the font size, so glyph descenders (g, p, y) get cropped
+     at the baseline. The extra leading gives them room. */
+  line-height: 1.4;
 }
 /* Sticky block header: once a block's first line scrolls above the gutter top,
    its label floats here over the still-scrolling content (the next block's
