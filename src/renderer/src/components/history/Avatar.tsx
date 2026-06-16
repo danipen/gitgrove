@@ -13,6 +13,9 @@ interface Props {
   name: string
   email: string
   size?: number
+  /** Richer hover label (e.g. "Dana <dana@example.com>"); shown via the app
+   *  tooltip layer. When set it replaces the plain native-title name. */
+  tooltip?: string
 }
 
 // Module-level caches that outlive any single row. The history list is
@@ -102,6 +105,12 @@ export function Avatar({ name, email, size = 28 }: Props) {
   // Bumped when a url fails so the `src` pick below re-runs; the url itself
   // lands in `failedUrls`, shared by every Avatar showing this person.
   const [, setFailCount] = useState(0)
+/** Round author avatar: a colored initials disc that a Gravatar image covers
+ *  once (and if) it loads. The initials always render underneath, so swapping
+ *  in the image — or falling back when there is none — never blinks. */
+export function Avatar({ name, email, size = 28, tooltip }: Props) {
+  const cacheKey = `${email.trim().toLowerCase()}|${size}`
+  const [src, setSrc] = useState<string | null>(() => resolvedUrls.get(cacheKey) ?? null)
 
   // Resolve the candidate list once per identity+size and remember it, so
   // later mounts read it synchronously instead of dropping to initials for a

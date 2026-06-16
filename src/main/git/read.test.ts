@@ -6,13 +6,17 @@ import { join } from 'node:path'
 
 import {
   countConflictMarkers,
+  getBlame,
   getBranches,
   getCommitFiles,
+  getCommitIndex,
   getConflictSides,
+  getFileHistory,
   getLog,
   getMergePreview,
   getMergeToolName,
   getRemoteWebUrl,
+  parseBlamePorcelain,
   parseMergeTreeNames,
   parseRawNumstat,
   parseRecentBranches,
@@ -101,6 +105,31 @@ describe('resolveRepoRoot', () => {
 
   it('returns null outside a repo', async () => {
     expect(await resolveRepoRoot(tmpdir())).toBeNull()
+  })
+})
+
+describe('getCommitIndex', () => {
+  it("returns a commit's 0-based position in git log HEAD", async () => {
+    // History (newest first): renameHash, secondHash, firstHash.
+    expect(await getCommitIndex(repo, renameHash)).toBe(0)
+    expect(await getCommitIndex(repo, secondHash)).toBe(1)
+    expect(await getCommitIndex(repo, firstHash)).toBe(2)
+  })
+
+  it('returns -1 for a commit that is not an ancestor of HEAD', async () => {
+    // A commit on a side branch never merged into main would never appear in
+    // `git log HEAD`, so there's no position to page to.
+    git(['checkout', '-q', '-b', 'side-index'])
+    writeFileSync(join(repo, 'side.txt'), 'side\n')
+    git(['add', '.'])
+    git(['commit', '-q', '-m', 'side commit'])
+    const sideHash = git(['rev-parse', 'HEAD'])
+    git(['checkout', '-q', 'main'])
+    try {
+      expect(await getCommitIndex(repo, sideHash)).toBe(-1)
+    } finally {
+      git(['branch', '-q', '-D', 'side-index'])
+    }
   })
 })
 
@@ -401,5 +430,132 @@ describe('merge preview & conflict sides', () => {
     } finally {
       git(['config', '--unset', 'merge.tool'], mergeRepo)
     }
+  })
+})
+
+describe('getFileHistory', () => {
+  it('lists commits that touched a file, newest first', async () => {
+    const log = await getFileHistory(repo, 'keep.txt')
+    expect(log.map((c) => c.subject)).toEqual(['second commit', 'initial commit'])
+  })
+
+  it('follows renames back through the old path', async () => {
+    // moved.txt was added as added.txt (second commit) then renamed (third).
+    const log = await getFileHistory(repo, 'moved.txt')
+    expect(log.map((c) => c.subject)).toEqual(['rename and unicode', 'second commit'])
+  })
+})
+
+describe('getBlame', () => {
+  let blameRepo: string
+
+  // Two authors, a modify+add, and a rename — enough to exercise the line→commit
+  // mapping, author attribution, `previous`/`filename`, boundary, and the
+  // working-tree "Not Committed Yet" case.
+  function commit(cwd: string, name: string, email: string, message: string): void {
+    execFileSync('git', ['commit', '-q', '-m', message], {
+      cwd,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GIT_AUTHOR_NAME: name,
+        GIT_AUTHOR_EMAIL: email,
+        GIT_COMMITTER_NAME: name,
+        GIT_COMMITTER_EMAIL: email
+      }
+    })
+  }
+
+  let shaA: string
+  let shaB: string
+
+  beforeAll(() => {
+    blameRepo = mkdtempSync(join(tmpdir(), 'gitgrove-blame-'))
+    git(['init', '-q', '-b', 'main'], blameRepo)
+    git(['config', 'commit.gpgsign', 'false'], blameRepo)
+
+    writeFileSync(join(blameRepo, 'file.txt'), 'alpha\nbeta\n')
+    git(['add', '.'], blameRepo)
+    commit(blameRepo, 'Alice', 'alice@example.com', 'A')
+    shaA = git(['rev-parse', 'HEAD'], blameRepo)
+
+    writeFileSync(join(blameRepo, 'file.txt'), 'alpha\nBETA\ngamma\n')
+    git(['add', '.'], blameRepo)
+    commit(blameRepo, 'Bob', 'bob@example.com', 'B')
+    shaB = git(['rev-parse', 'HEAD'], blameRepo)
+
+    git(['mv', 'file.txt', 'renamed.txt'], blameRepo)
+    commit(blameRepo, 'Alice', 'alice@example.com', 'C rename')
+  })
+
+  afterAll(() => {
+    rmSync(blameRepo, { recursive: true, force: true })
+  })
+
+  it('maps each line to the commit and author that last touched it', async () => {
+    const lines = await getBlame(blameRepo, 'renamed.txt')
+    expect(lines.map((l) => l.content)).toEqual(['alpha', 'BETA', 'gamma'])
+    expect(lines.map((l) => l.lineNumber)).toEqual([1, 2, 3])
+    expect(lines[0].hash).toBe(shaA)
+    expect(lines[0].authorName).toBe('Alice')
+    expect(lines[1].hash).toBe(shaB)
+    expect(lines[1].authorName).toBe('Bob')
+    expect(lines[2].hash).toBe(shaB)
+  })
+
+  it('marks the root commit as a boundary with no prior version', async () => {
+    const lines = await getBlame(blameRepo, 'renamed.txt')
+    // alpha was introduced in the root commit A — nothing earlier to blame.
+    expect(lines[0].isBoundary).toBe(true)
+    expect(lines[0].previous).toBeUndefined()
+    // BETA's prior version lives in A under the pre-rename path.
+    expect(lines[1].previous?.hash).toBe(shaA)
+    expect(lines[1].previous?.filename).toBe('file.txt')
+    expect(lines[1].filename).toBe('file.txt')
+  })
+
+  it('flags uncommitted working-tree lines', async () => {
+    writeFileSync(join(blameRepo, 'renamed.txt'), 'alpha\nBETA\ngamma\ndelta\n')
+    try {
+      const lines = await getBlame(blameRepo, 'renamed.txt')
+      const delta = lines.find((l) => l.content === 'delta')
+      expect(delta?.notCommitted).toBe(true)
+    } finally {
+      // Restore so other assertions on this repo stay deterministic.
+      git(['checkout', '--', 'renamed.txt'], blameRepo)
+    }
+  })
+
+  it('blames a historical revision', async () => {
+    // At commit A the file had two lines, both authored by Alice.
+    const lines = await getBlame(blameRepo, 'file.txt', shaA)
+    expect(lines.map((l) => l.content)).toEqual(['alpha', 'beta'])
+    expect(lines.every((l) => l.authorName === 'Alice')).toBe(true)
+  })
+})
+
+describe('parseBlamePorcelain', () => {
+  it('reuses cached commit metadata across repeated lines', () => {
+    const sha = 'a'.repeat(40)
+    // Porcelain emits the full header once, then an abbreviated header for the
+    // commit's later lines (no repeated metadata).
+    const out = [
+      `${sha} 1 1 2`,
+      'author Dana',
+      'author-mail <dana@example.com>',
+      'author-time 1700000000',
+      'author-tz +0000',
+      'summary first',
+      'filename file.txt',
+      '\tline one',
+      `${sha} 2 2`,
+      '\tline two',
+      ''
+    ].join('\n')
+    const lines = parseBlamePorcelain(out)
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toMatchObject({ lineNumber: 1, content: 'line one', authorName: 'Dana' })
+    expect(lines[1]).toMatchObject({ lineNumber: 2, content: 'line two', authorName: 'Dana' })
+    expect(lines[1].shortHash).toBe('aaaaaaa')
   })
 })

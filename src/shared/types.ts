@@ -268,6 +268,36 @@ export interface Commit {
   parents: string[]
 }
 
+/**
+ * One source line annotated with the commit that last touched it (git blame).
+ * `filename`/`previous` are the file's path at the blamed commit and its prior
+ * version — they let the renderer reblame across renames precisely. A line is
+ * reblameable when `previous` is set and it's committed: boundary (root / walk
+ * edge) and not-yet-committed working-tree lines have nothing earlier to blame.
+ */
+export interface BlameLine {
+  hash: string
+  shortHash: string
+  authorName: string
+  authorEmail: string
+  /** ISO date string (author time). */
+  date: string
+  /** Commit subject (first line of the message). */
+  summary: string
+  /** 1-based line number in the blamed file. */
+  lineNumber: number
+  /** The line's text content. */
+  content: string
+  /** Path of the file at the blamed commit (for reblame across renames). */
+  filename: string
+  /** Parent commit + the file's path there, when git reports a prior version. */
+  previous?: { hash: string; filename: string }
+  /** Boundary commit (root commit, or the edge of a shallow/limited walk). */
+  isBoundary?: boolean
+  /** Uncommitted working-tree line — git's "Not Committed Yet". */
+  notCommitted?: boolean
+}
+
 export interface BranchInfo {
   current: string
   detached: boolean
