@@ -62,6 +62,10 @@ export function FileHistoryOverlay({
   const [commits, setCommits] = useState<Commit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // The commit identity git would use in this repo. Drives the avatar on the
+  // blame gutter's uncommitted ("Not Committed Yet") lines — those are the
+  // local user's own edits, so they wear the current user's face.
+  const [currentUser, setCurrentUser] = useState<{ name: string; email: string } | null>(null)
   const [mode, setMode] = useState<FileHistoryMode>(initialMode)
   // Blame navigation. `stack[0]` is the anchored revision (a commit selected in
   // the list, or null = working tree); each reblame pushes the clicked line's
@@ -143,6 +147,21 @@ export function FileHistoryOverlay({
       cancelled = true
     }
   }, [repoPath, path])
+
+  // Resolve the local commit identity once per repo (a cheap config read).
+  useEffect(() => {
+    let cancelled = false
+    window.gitgrove
+      .getIdentity(repoPath)
+      .then((id) => {
+        if (!cancelled)
+          setCurrentUser(id.name || id.email ? { name: id.name, email: id.email } : null)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [repoPath])
 
   // Load what the right pane needs for the selection. `null` is the working
   // tree (the current on-disk state): no commit summary, and Diff mode shows
@@ -300,7 +319,12 @@ export function FileHistoryOverlay({
                 <Icon.Changes size={14} />
               </span>
               <div className="fh-commit__main">
-                <div className="fh-commit__subject">Working tree</div>
+                <div className="fh-commit__subject">
+                  <span className="fh-commit__subject-text">Working tree</span>
+                  {/* The on-disk revision — what's actually checked out — so the
+                      "current" badge lives here, not on the newest commit. */}
+                  <span className="tag tag--current">current</span>
+                </div>
                 <div className="fh-commit__meta">
                   <span className="fh-commit__author">Uncommitted changes</span>
                 </div>
@@ -341,8 +365,10 @@ export function FileHistoryOverlay({
                 {commits.slice(vs.start, vs.end).map((commit, i) => {
                   const idx = vs.start + i
                   const active = blamedHash === commit.hash
-                  // The newest commit is the version currently checked out.
-                  const current = idx === 0
+                  // The newest commit is the version currently checked out —
+                  // unless the file has uncommitted edits, in which case the
+                  // pinned working-tree row above is what's current instead.
+                  const current = idx === 0 && !showWorkingTree
                   return (
                     <button
                       key={commit.hash}
@@ -417,6 +443,7 @@ export function FileHistoryOverlay({
               theme={theme}
               reblamed={stack.length > 1}
               frameLabel={blamedHash ? blamedHash.slice(0, 7) : 'working tree'}
+              currentUser={currentUser}
               onReblame={reblame}
               onBack={back}
               onBlamedAt={onBlamedAt}

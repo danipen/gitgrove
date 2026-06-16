@@ -31,6 +31,9 @@ interface Props {
   reblamed: boolean
   /** Compact label of the current revision (short sha / "working tree"). */
   frameLabel: string
+  /** The local commit identity, for the avatar on uncommitted ("Not Committed
+   *  Yet") lines — the user's own working-tree edits. Null when unconfigured. */
+  currentUser: { name: string; email: string } | null
   /** Walk back to the parent of the clicked line's commit. */
   onReblame: (line: BlameLine) => void
   /** Pop one reblame step. */
@@ -77,6 +80,7 @@ export function BlamePane({
   theme,
   reblamed,
   frameLabel,
+  currentUser,
   onReblame,
   onBack,
   onBlamedAt,
@@ -344,7 +348,12 @@ export function BlamePane({
                 <div key={index} className="blame-cell" style={{ top: index * BLAME_LINE_HEIGHT }}>
                   <span className="blame-cell__age" style={{ background: stripe }} />
                   {runStart && (
-                    <BlameCell line={line} onReblame={onReblame} onOpenCommit={onOpenCommit} />
+                    <BlameCell
+                      line={line}
+                      currentUser={currentUser}
+                      onReblame={onReblame}
+                      onOpenCommit={onOpenCommit}
+                    />
                   )}
                 </div>
               )
@@ -366,7 +375,12 @@ export function BlamePane({
                   )
                 }}
               />
-              <BlameCell line={sticky.run.line} onReblame={onReblame} onOpenCommit={onOpenCommit} />
+              <BlameCell
+                line={sticky.run.line}
+                currentUser={currentUser}
+                onReblame={onReblame}
+                onOpenCommit={onOpenCommit}
+              />
             </div>
           )}
         </div>
@@ -414,15 +428,24 @@ export function BlamePane({
  */
 function BlameCell({
   line,
+  currentUser,
   onReblame,
   onOpenCommit
 }: {
   line: BlameLine
+  currentUser: { name: string; email: string } | null
   onReblame: (line: BlameLine) => void
   onOpenCommit: (hash: string) => void
 }) {
   if (line.notCommitted) {
-    return <span className="blame-cell__msg blame-cell__msg--wt">Uncommitted changes</span>
+    // git reports these as "Not Committed Yet"; they're the local user's own
+    // edits, so wear the current identity's avatar to match the committed rows.
+    return (
+      <>
+        <Avatar name={currentUser?.name ?? ''} email={currentUser?.email ?? ''} size={16} />
+        <span className="blame-cell__msg blame-cell__msg--wt">Uncommitted changes</span>
+      </>
+    )
   }
   return (
     <>
