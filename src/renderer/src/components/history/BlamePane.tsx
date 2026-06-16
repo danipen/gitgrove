@@ -7,7 +7,6 @@ import {
   ageFraction,
   ageRange,
   ageScale,
-  BLAME_GUTTER_OFFSET,
   BLAME_LINE_HEIGHT,
   type BlameFrame,
   blameWindow,
@@ -130,7 +129,11 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
       disableFileHeader: true,
       // Pin the geometry so line tops are exactly `index * lineHeight` and the
       // gutter aligns — see BLAME_LINE_HEIGHT / `--diffs-line-height`.
-      itemMetrics: { lineHeight: BLAME_LINE_HEIGHT, paddingTop: 0, paddingBottom: 0 }
+      itemMetrics: { lineHeight: BLAME_LINE_HEIGHT, paddingTop: 0, paddingBottom: 0 },
+      // Drop Pierre's default top inset (DEFAULT_CODE_VIEW_LAYOUT adds
+      // paddingTop + an above-first-item gap) so the source starts flush at the
+      // top — no empty band above line 1. Keep a little bottom breathing room.
+      layout: { paddingTop: 0, paddingBottom: 8, gap: 0 }
     }),
     [theme]
   )
@@ -188,7 +191,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
         <div className="blame-gutter" aria-hidden="true">
           <div
             className="blame-gutter__content"
-            style={{ transform: `translateY(${-scrollTop + BLAME_GUTTER_OFFSET}px)` }}
+            style={{ transform: `translateY(${-scrollTop}px)` }}
           >
             {visible.map((line, i) => {
               const index = win.start + i
@@ -251,7 +254,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
         <div className="blame-rules" aria-hidden="true">
           <div
             className="blame-rules__content"
-            style={{ transform: `translateY(${-scrollTop + BLAME_GUTTER_OFFSET}px)` }}
+            style={{ transform: `translateY(${-scrollTop}px)` }}
           >
             {visible.map((_, i) => {
               const index = win.start + i

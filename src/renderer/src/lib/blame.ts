@@ -12,26 +12,6 @@ import type { BlameLine } from '@shared/types'
  */
 export const BLAME_LINE_HEIGHT = 20
 
-/**
- * Vertical offset (px) applied to the whole metadata gutter and the section
- * rules so they line up with Pierre's source rows.
- *
- * Pierre insets its first source line below the top of its scroll container:
- * `DEFAULT_CODE_VIEW_LAYOUT` adds `paddingTop: 8` (a `margin-top` on the code
- * container) plus the sticky container's `gap: 8` above the first item — 16px
- * total. Our gutter is a separate column that starts flush at the body top, so
- * without compensation every row sits one line + 4px high. (The mismatch reads
- * as "only the first row is off" because an interior label landing a line high
- * hides inside its commit's band, while the first label floats alone in the
- * empty space above line 1 — but measuring shows the whole gutter is shifted.)
- *
- * Folding this into the two scroll-synced content layers — rather than nudging
- * each cell, age stripe, and rule — keeps the label, the heat stripe, and the
- * boundary hairlines all locked to the code from one place. Verified row-for-row
- * against Pierre's rendered line rects (label centers land dead-on the code).
- */
-export const BLAME_GUTTER_OFFSET = 16
-
 /** Half-open row window `[start, end)` to render in the gutter. */
 export interface BlameWindow {
   start: number

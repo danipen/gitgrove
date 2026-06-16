@@ -1774,6 +1774,15 @@ button {
      scrollTop onto the gutter via onScroll). */
   overflow: auto;
   user-select: text;
+  /* Pierre pads the code block by --diffs-gap-block (8px fallback) at the top
+     and bottom, but only zeroes the top when a file header is present — which
+     we disable. The custom property pierces the shadow root, so pin it to 0 to
+     drop that inset: line 1 then starts flush at the top (no empty band) and
+     sits exactly on our gutter's first row. Paired with `layout.paddingTop: 0`
+     in BlamePane, which removes Pierre's other top inset (the container
+     margin). Together they put the source origin at y=0, so the gutter needs
+     no offset to align. */
+  --diffs-gap-block: 0px;
 }
 .blame-code pierre-diff,
 .blame-code .pierre-diffs {
