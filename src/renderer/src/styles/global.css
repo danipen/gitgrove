@@ -1702,7 +1702,10 @@ button {
 .blame-code {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
+  /* CodeView owns scrolling: it virtualizes and listens to the `scroll` event
+     on this root, so it must be a native scroll container (we mirror its
+     scrollTop onto the gutter via onScroll). */
+  overflow: auto;
   user-select: text;
 }
 .blame-code pierre-diff,
