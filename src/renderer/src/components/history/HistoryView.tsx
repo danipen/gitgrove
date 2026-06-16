@@ -39,6 +39,10 @@ interface Props {
   loadingMore?: boolean
   /** Called when the list scrolls near the bottom; the parent appends a page. */
   onLoadMore?: () => void
+  /** Short/full hash being paged in from the blame gutter when it sits past the
+   *  loaded window; shows a blocking overlay until the deep load lands. Null
+   *  otherwise. Ordinary infinite-scroll paging uses the bottom spinner. */
+  revealing?: string | null
 }
 
 /** How many ref chips to show inline in the list before collapsing to "+N". */
@@ -71,7 +75,8 @@ export function HistoryView({
   onOpenFileHistory,
   hasMore,
   loadingMore,
-  onLoadMore
+  onLoadMore,
+  revealing
 }: Props) {
   const [filesHeight, setFilesHeight] = usePersistentState('gg.historyFilesHeight', 360)
   // Commit files usually load in a few ms — render a quiet blank panel during
@@ -301,6 +306,15 @@ export function HistoryView({
 
       {menu && (
         <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />
+      )}
+
+      {revealing && (
+        <div className="history__reveal" role="status" aria-live="polite">
+          <div className="spinner" />
+          <p>
+            Locating commit <code>{revealing.slice(0, 7)}</code> in history…
+          </p>
+        </div>
       )}
     </div>
   )
