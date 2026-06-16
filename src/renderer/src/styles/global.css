@@ -1590,6 +1590,19 @@ button {
   flex: 0 0 auto;
   white-space: nowrap;
 }
+/* Short SHA pinned to the row's trailing edge; margin-left:auto absorbs the
+   free space so it right-aligns regardless of how short author/date are.
+   Same chip style as .commit__hash elsewhere in the app. */
+.fh-commit__sha {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  background: var(--bg-active);
+  padding: 0 5px;
+  border-radius: 4px;
+}
 /* Pinned "Working tree" row: the current, on-disk revision. */
 .fh-commit--wt {
   flex: 0 0 auto;

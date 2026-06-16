@@ -346,6 +346,7 @@ export function FileHistoryOverlay({
                         <div className="fh-commit__meta">
                           <span className="fh-commit__author">{commit.authorName}</span>
                           <span className="fh-commit__when">· {commit.relativeDate}</span>
+                          <span className="fh-commit__sha">{commit.shortHash}</span>
                         </div>
                       </div>
                     </button>
