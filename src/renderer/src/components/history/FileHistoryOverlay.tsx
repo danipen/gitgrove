@@ -216,7 +216,13 @@ export function FileHistoryOverlay({
       <div className="fh-head">
         <Icon.History size={15} />
         <span className="fh-head__title" data-tip={path} data-tip-overflow="">
-          History of <code>{path}</code>
+          <span className="fh-head__history">History of</span>
+          <span className="diff-head__path">
+            <span className="diff-head__file">
+              {splitPath(path).dir && <span className="diff-head__dir">{splitPath(path).dir}</span>}
+              <span className="diff-head__name">{splitPath(path).name}</span>
+            </span>
+          </span>
         </span>
         <span className="fh-head__spacer" />
         {mode === 'blame' && !selectedCommit && <span className="fh-head__hint">working tree</span>}
@@ -388,6 +394,7 @@ export function FileHistoryOverlay({
               theme={theme}
               onModeChange={setDiffMode}
               onWrapChange={setWrap}
+              hidePath
             />
           )}
         </div>
