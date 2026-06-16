@@ -426,12 +426,7 @@ function BlameCell({
   }
   return (
     <>
-      <Avatar
-        name={line.authorName}
-        email={line.authorEmail}
-        size={16}
-        tooltip={`${line.authorName} <${line.authorEmail}>`}
-      />
+      <Avatar name={line.authorName} email={line.authorEmail} size={16} />
       {/* The commit that last touched this line: short sha + full message,
           always shown (not only when the message is clipped) so the sha — the
           one identifier dropped from the row itself — is always a hover away.
