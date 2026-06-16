@@ -94,17 +94,7 @@
   background: var(--accent);
   color: var(--on-accent);
 }
-/* The full-height hairline divider between the two halves. */
-.conflict-resolve__caret::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--on-accent);
-  opacity: 0.25;
-}
+/* Hairline divider between the two halves — shared rule in primitives.css. */
 .conflict-resolve__caret:hover:not(:disabled) {
   filter: brightness(1.07);
 }

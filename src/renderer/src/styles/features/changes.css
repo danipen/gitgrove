@@ -150,17 +150,7 @@
   background: var(--accent);
   color: var(--on-accent);
 }
-/* The full-height hairline divider between the two halves. */
-.composer__mode-btn::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--on-accent);
-  opacity: 0.25;
-}
+/* Hairline divider between the two halves — shared rule in primitives.css. */
 .composer__mode-btn:hover:not(:disabled) {
   filter: brightness(1.07);
 }

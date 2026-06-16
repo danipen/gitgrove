@@ -117,14 +117,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.commit__hash {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
-  color: var(--fg-muted);
-  background: var(--bg-active);
-  padding: 0 5px;
-  border-radius: 4px;
-}
+/* .commit__hash (the short-SHA chip) is shared — see primitives.css. */
 
 /* ── Co-author avatar fan (AvatarStack.tsx) ─────────────────────────────────
    Collapsed: the author in front, co-author discs peeking out behind like a

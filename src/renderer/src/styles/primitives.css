@@ -160,7 +160,9 @@
   text-transform: uppercase;
   color: var(--fg-faint);
 }
-.popover__sep {
+/* Menu separator — shared by popover and context-menu lists. */
+.popover__sep,
+.ctx-menu__sep {
   height: 1px;
   margin: 5px 4px;
   background: var(--border);
@@ -327,11 +329,6 @@
   flex: 1;
   white-space: nowrap;
 }
-.ctx-menu__sep {
-  height: 1px;
-  margin: 5px 4px;
-  background: var(--border);
-}
 .tag {
   font-size: 10px;
   font-weight: 600;
@@ -343,6 +340,17 @@
 .tag--current {
   background: var(--accent-soft);
   color: var(--accent);
+}
+/* Short-SHA chip: the mono hash pill in commit lists & summaries. .fh-commit__sha
+   layers its own right-alignment on top (see features/blame.css). */
+.commit__hash,
+.fh-commit__sha {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--fg-muted);
+  background: var(--bg-active);
+  padding: 0 5px;
+  border-radius: 4px;
 }
 /* Round author avatar: a colored initials disc with the Gravatar image (when
    one exists) layered on top — see Avatar.tsx. */
@@ -687,6 +695,21 @@
 .btn-ghost--sm {
   padding: 6px 11px;
   font-size: 12px;
+}
+/* Split-button caret divider: the hairline between the accent action half and
+   its caret half. Shared by the commit composer, conflict-resolve and stash
+   reminder split buttons (each sets its own size/border in its feature file). */
+.composer__mode-btn::before,
+.conflict-resolve__caret::before,
+.stash-reminder__caret::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--on-accent);
+  opacity: 0.25;
 }
 /* ── Modal (About) ───────────────────────────────────────────────────────── */
 .modal-backdrop {
