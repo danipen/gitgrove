@@ -27,6 +27,7 @@ import type {
   ResetMode
 } from '@shared/types'
 import { type BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'electron'
+import { lookupAvatarUrl } from './accounts/avatar'
 import { accountsStore } from './accounts/cipher'
 import { connectViaOAuth, connectWithToken, oauthClientIdFor } from './accounts/connect'
 import { answerFromAccounts } from './accounts/store'
@@ -288,6 +289,9 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(
     IPC.accountsHasOAuthClient,
     (_e, host: string) => oauthClientIdFor(accountsStore(), host) !== null
+  )
+  ipcMain.handle(IPC.accountsLookupAvatar, (_e, email: string) =>
+    lookupAvatarUrl(accountsStore(), email)
   )
 
   // One sign-in at a time: a newly started flow supersedes (aborts) the old.

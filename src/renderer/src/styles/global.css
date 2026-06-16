@@ -500,6 +500,11 @@ button {
   pointer-events: none;
   animation: pop-in 0.1s ease-out;
 }
+/* Dimmed second line (`data-tip-sub`), e.g. the email under an author name. */
+.tooltip__sub {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
 /* Caret: a small rotated square that points at the cursor. Only the two edges
    facing away from the bubble carry a border so it reads as a seamless arrow. */
 .tooltip__arrow {
@@ -1044,6 +1049,61 @@ button {
   /* Fade in over the initials the first time. Revisited (cached) images mount
      already-visible, so scrolling back over them in the list doesn't re-fade. */
   transition: opacity 0.15s ease;
+}
+
+/* ── Co-author avatar fan (AvatarStack.tsx) ─────────────────────────────────
+   Collapsed: the author in front, co-author discs peeking out behind like a
+   short stack of coins. Hovering fans it open macOS-dock style: each disc
+   springs to its own slot slightly after the one before it (overshoot +
+   stagger), and the disc under the cursor magnifies while its neighbours lean
+   in. Everything is transform-only and the container keeps its collapsed
+   width — the open fan floats over the row on a shadow, so the text beside it
+   never reflows and scrolling stays jank-free. */
+.avatar-fan {
+  position: relative;
+  flex: 0 0 auto;
+}
+.avatar-fan__item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: var(--z);
+  border-radius: 50%;
+  transform: translateX(var(--x));
+  /* A soft left-edge shadow separates the overlapped discs on any background
+     (rows change color on hover/active, so a solid “ring” can't match). */
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.2);
+  /* Spring-ish overshoot. Closing runs outermost-first (--rev) so the fan
+     visibly folds back into the stack instead of vanishing as one block. */
+  transition:
+    transform 0.3s cubic-bezier(0.32, 1.45, 0.36, 1),
+    box-shadow 0.2s ease;
+  transition-delay: calc(var(--rev) * 15ms);
+}
+.avatar-fan:hover .avatar-fan__item {
+  transform: translateX(var(--fan-x));
+  transition-delay: calc(var(--i) * 24ms);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+}
+/* Dock magnification: the hovered disc pops above everything; its immediate
+   neighbours lean in a notch. Magnification reacts faster than the fan slide
+   (and with no stagger) so it tracks the cursor like the real Dock. */
+.avatar-fan:hover .avatar-fan__item:hover {
+  transform: translateX(var(--fan-x)) translateY(-2px) scale(1.18);
+  transition-delay: 0s;
+  transition-duration: 0.16s;
+  z-index: 99;
+}
+.avatar-fan:hover .avatar-fan__item:hover + .avatar-fan__item,
+.avatar-fan:hover .avatar-fan__item:has(+ .avatar-fan__item:hover) {
+  transform: translateX(var(--fan-x)) translateY(-1px) scale(1.08);
+  transition-delay: 0s;
+  transition-duration: 0.16s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-fan__item {
+    transition: none;
+  }
 }
 
 /* Refs in the list stay on a single line (capped to +N) so rows keep an even

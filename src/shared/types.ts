@@ -498,6 +498,18 @@ export interface ConnectedAccount {
 }
 
 /**
+ * Outcome of resolving a commit email to a host avatar via the connected
+ * account's API. `ok: false` means a transient failure (network, rate limit,
+ * bad token) — the renderer must retry later, never cache it. `ok: true`
+ * with a null url is a definite "this host has no user for that email" and
+ * is safe to cache for the session.
+ */
+export interface AvatarLookupResult {
+  ok: boolean
+  url: string | null
+}
+
+/**
  * The user-facing half of a device-flow sign-in: the code to type and where.
  * Pushed to the renderer while the main process polls for the authorization.
  */

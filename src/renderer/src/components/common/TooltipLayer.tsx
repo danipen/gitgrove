@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 
 interface Tip {
   text: string
+  /** Optional dimmed second line (`data-tip-sub`), e.g. an author's email. */
+  sub?: string
   /** Pointer position at show time — the tip is anchored to the cursor. */
   pointerX: number
   pointerY: number
@@ -67,8 +69,9 @@ export function TooltipLayer() {
         return hide()
       }
       clear()
+      const sub = el.getAttribute('data-tip-sub') ?? undefined
       timer.current = setTimeout(
-        () => setTip({ text, pointerX: pointer.current.x, pointerY: pointer.current.y }),
+        () => setTip({ text, sub, pointerX: pointer.current.x, pointerY: pointer.current.y }),
         SHOW_DELAY
       )
     }
@@ -134,6 +137,7 @@ export function TooltipLayer() {
       style={coords ? { top: coords.top, left: coords.left } : { top: -9999, left: -9999 }}
     >
       {tip.text}
+      {tip.sub && <div className="tooltip__sub">{tip.sub}</div>}
       {coords && <span className="tooltip__arrow" style={{ left: coords.arrowX - 5 }} />}
     </div>,
     document.body

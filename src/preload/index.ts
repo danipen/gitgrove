@@ -58,6 +58,7 @@ const api: GitGroveApi = {
   addAccountWithToken: (host, token) => ipcRenderer.invoke(IPC.accountsAddToken, host, token),
   removeAccount: (id) => ipcRenderer.invoke(IPC.accountsRemove, id),
   hasOAuthClient: (host) => ipcRenderer.invoke(IPC.accountsHasOAuthClient, host),
+  lookupAvatarUrl: (email) => ipcRenderer.invoke(IPC.accountsLookupAvatar, email),
   createBranch: (repoPath, name, opts) =>
     ipcRenderer.invoke(IPC.createBranch, repoPath, name, opts),
   deleteBranch: (repoPath, name, opts) =>

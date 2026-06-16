@@ -1,8 +1,9 @@
 import type { ChangedFile, Commit } from '@shared/types'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { coAuthorsOf, stripCoAuthorTrailers } from '@/lib/coauthors'
 import { type CommitRef, parseRefs, pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
-import { Avatar } from './Avatar'
+import { AvatarStack } from './AvatarStack'
 
 /** Refs shown before a "+N" expander appears (the pane is wide, so allow a few). */
 const MAX_SUMMARY_REFS = 6
@@ -66,6 +67,10 @@ interface Props {
 // layout without effect-ordering races.
 export function CommitSummary({ commit, files, filesLoading }: Props) {
   const refs = parseRefs(commit.refs)
+  // Co-authors render as the avatar stack + byline; their trailer lines would
+  // only repeat that, so the displayed body drops them.
+  const coAuthors = coAuthorsOf(commit)
+  const body = stripCoAuthorTrailers(commit.body)
   const [bodyExpanded, setBodyExpanded] = useState(false)
   const [refsExpanded, setRefsExpanded] = useState(false)
   const [bodyOverflows, setBodyOverflows] = useState(false)
@@ -82,13 +87,22 @@ export function CommitSummary({ commit, files, filesLoading }: Props) {
   return (
     <div className="commit-summary">
       <div className="commit-summary__row">
-        <Avatar name={commit.authorName} email={commit.authorEmail} size={34} />
+        <AvatarStack
+          author={{ name: commit.authorName, email: commit.authorEmail }}
+          coAuthors={coAuthors}
+          size={34}
+        />
         <div className="commit-summary__head">
           <div className="commit-summary__subject" data-tip={commit.subject} data-tip-overflow="">
             {commit.subject}
           </div>
           <div className="commit-summary__byline">
             <span className="commit-summary__author">{commit.authorName}</span>
+            {coAuthors.length > 0 && (
+              <span>
+                and {coAuthors.length === 1 ? coAuthors[0].name : `${coAuthors.length} others`}
+              </span>
+            )}
             <span data-tip={new Date(commit.date).toLocaleString()}>
               committed {commit.relativeDate}
             </span>
@@ -108,13 +122,13 @@ export function CommitSummary({ commit, files, filesLoading }: Props) {
         </div>
       </div>
 
-      {commit.body && (
+      {body && (
         <div className="commit-summary__body-wrap">
           <div
             ref={bodyRef}
             className={`commit-summary__body${bodyExpanded ? ' is-expanded' : ''}`}
           >
-            {commit.body}
+            {body}
           </div>
           {(bodyOverflows || bodyExpanded) && (
             <button className="link-toggle" onClick={() => setBodyExpanded((v) => !v)}>
