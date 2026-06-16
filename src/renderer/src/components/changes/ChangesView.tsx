@@ -11,6 +11,7 @@ import type { ContextMenuItem } from '@/components/common/ContextMenu'
 import { copyPathItems } from '@/components/common/copyPathItems'
 import { ConfirmDialog } from '@/components/common/Dialog'
 import { DEFAULT_FILTER_TYPES, useFileFilter } from '@/components/common/FileFilter'
+import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
 import { Popover } from '@/components/common/Popover'
 import { Resizer } from '@/components/common/Resizer'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
@@ -58,6 +59,8 @@ interface Props {
   onCommit: (message: string, amend: boolean) => Promise<boolean>
   /** Stash the checked files (optional message). True on success. */
   onStash: (message: string) => Promise<boolean>
+  /** Open the File History overlay for a working-tree file (baseRef = null). */
+  onOpenFileHistory: (path: string, mode: FileHistoryMode, baseRef: string | null) => void
 }
 
 const OP_LABEL: Record<NonNullable<RepoState['op']>, string> = {
@@ -144,7 +147,8 @@ export function ChangesView({
   runOp,
   onError,
   onCommit,
-  onStash
+  onStash,
+  onOpenFileHistory
 }: Props) {
   const gg = window.gitgrove
 
@@ -447,6 +451,10 @@ export function ChangesView({
             {}
           ]),
       ...(file.status === 'untracked' ? [...ignoreItemsFor(file), {}] : []),
+      // Untracked files have no committed history to inspect.
+      ...(file.status === 'untracked'
+        ? []
+        : [...fileHistoryItems(file, null, onOpenFileHistory), {}]),
       {
         label: 'Open in Editor',
         icon: <Icon.External size={15} />,

@@ -57,6 +57,13 @@ interface Props {
    * selection (normal diff).
    */
   selectedCount?: number
+  /**
+   * Hide the file path and status badge from the diff header, keeping only the
+   * view controls. Used by the File History overlay, where the path already
+   * lives in the overlay's own title — repeating it (and an "M" badge) here is
+   * noise.
+   */
+  hidePath?: boolean
 }
 
 /** Annotation metadata: which change block a selection bar belongs to. */
@@ -118,7 +125,8 @@ function DiffViewerImpl({
   onModeChange,
   onWrapChange,
   selectionActions,
-  selectedCount = 1
+  selectedCount = 1,
+  hidePath = false
 }: Props) {
   const stats = useMemo(() => (diff?.patch ? countChanges(diff.patch) : null), [diff?.patch])
   const [confirmDiscard, setConfirmDiscard] = useState<string | null>(null)
@@ -310,7 +318,7 @@ function DiffViewerImpl({
   return (
     <div className="diff-pane">
       <div className="diff-head">
-        {diff && (
+        {diff && !hidePath && (
           <>
             <div className="diff-head__path">
               <span

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
 import { copyPathItems } from '@/components/common/copyPathItems'
 import { useFileFilter } from '@/components/common/FileFilter'
+import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
 import { Resizer } from '@/components/common/Resizer'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
@@ -29,6 +30,8 @@ interface Props {
   onFileSelectionChange?: (count: number) => void
   /** Right-click menu builder for a commit row (checkout, cherry-pick, reset, …). */
   commitMenuFor?: (commit: Commit) => ContextMenuItem[]
+  /** Open the File History overlay for a file at a commit (baseRef = that commit). */
+  onOpenFileHistory: (path: string, mode: FileHistoryMode, baseRef: string | null) => void
   /** Whether older commits exist past the loaded window (shows the sentinel). */
   hasMore?: boolean
   /** True while the next page is being fetched (bottom spinner). */
@@ -64,6 +67,7 @@ export function HistoryView({
   onSelectFile,
   onFileSelectionChange,
   commitMenuFor,
+  onOpenFileHistory,
   hasMore,
   loadingMore,
   onLoadMore
@@ -274,7 +278,15 @@ export function HistoryView({
                   onSelect={(path) => path !== null && onSelectFile(path)}
                   highlight={filterQuery}
                   onSelectionChange={onFileSelectionChange}
-                  contextMenuFor={(selected) => copyPathItems(selected, repoPath)}
+                  contextMenuFor={(selected) =>
+                    selected.length === 1 && selectedCommit
+                      ? [
+                          ...fileHistoryItems(selected[0], selectedCommit.hash, onOpenFileHistory),
+                          {},
+                          ...copyPathItems(selected, repoPath)
+                        ]
+                      : copyPathItems(selected, repoPath)
+                  }
                 />
               )}
             </div>
