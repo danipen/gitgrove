@@ -52,7 +52,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun run typecheck
-      - run: bun test
+      - run: bun run test
       - run: bun run build
 
   # Launches the built app with Playwright's Electron driver and asserts the

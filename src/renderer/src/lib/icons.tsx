@@ -379,5 +379,44 @@ export const Icon = {
       <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
       <path d="m2 2 20 20" />
     </Svg>
+  ),
+  /** Filled with a rounded outline: thin strokes alias into mush at pill
+   *  sizes, solid bodies anti-alias cleanly. Nudged right of geometric
+   *  center — optical centering inside a circle. */
+  Play: (p: IconProps) => (
+    <Svg {...p}>
+      <path d="M9 5.5v13l10-6.5z" fill="currentColor" strokeLinejoin="round" />
+    </Svg>
+  ),
+  /** Filled bars for the same anti-aliasing reason as Play. */
+  Pause: (p: IconProps) => (
+    <Svg {...p}>
+      <rect x="7.6" y="5.5" width="3.4" height="13" rx="1.2" fill="currentColor" stroke="none" />
+      <rect x="13.4" y="5.5" width="3.4" height="13" rx="1.2" fill="currentColor" stroke="none" />
+    </Svg>
+  ),
+  Prev: (p: IconProps) => (
+    <Svg {...p}>
+      <path d="m14.5 6-6 6 6 6" />
+    </Svg>
+  ),
+  Next: (p: IconProps) => (
+    <Svg {...p}>
+      <path d="m9.5 6 6 6-6 6" />
+    </Svg>
+  ),
+  /** A crosshair — align differently-sized revisions by their centers. */
+  AnchorCenter: (p: IconProps) => (
+    <Svg {...p}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4" />
+    </Svg>
+  ),
+  /** A corner with a nested box — align revisions by their top-left corners. */
+  AnchorCorner: (p: IconProps) => (
+    <Svg {...p}>
+      <path d="M20.5 3.5h-17v17" />
+      <rect x="7" y="7" width="8.5" height="8.5" rx="1" />
+    </Svg>
   )
 }

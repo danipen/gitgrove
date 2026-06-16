@@ -204,7 +204,10 @@ export function BranchSwitcher({
         <span className="pill__icon">
           <Icon.Branch size={16} />
         </span>
-        <span className="pill__label">{label}</span>
+        <span className="pill__stack">
+          <span className="pill__caption">Branch</span>
+          <span className="pill__label">{label}</span>
+        </span>
         <span className={`pill__chev${loading || switching ? ' is-spinning' : ''}`}>
           {loading || switching ? <Icon.Refresh size={14} /> : <Icon.Chevron size={14} />}
         </span>

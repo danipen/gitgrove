@@ -1,23 +1,28 @@
 // The image pane: a single preview for added/deleted images, and a four-mode
-// visual diff (onion skin / side by side / differences / swipe) for modified
-// ones. The mode control lives in the diff header (DiffViewer renders it in
-// the same spot text diffs show Split/Unified — one place for "how do I view
-// this diff" across the app). One shared pan/zoom drives every mode, so
-// switching modes keeps the framing; zoom controls float over the stage; an
-// HUD strip narrates the change (dimensions, sizes, % of pixels that differ).
+// visual diff (onion skin — with its blink autoplay — / side by side /
+// differences / swipe) for modified ones. The mode control lives in the diff
+// header (DiffViewer renders it in the same spot text diffs show
+// Split/Unified — one place for "how do I view this diff" across the app).
+// One shared pan/zoom drives every mode, so switching modes keeps the
+// framing; zoom controls float over the stage (joined by the anchor toggle
+// when the revisions differ in size); an HUD strip narrates the change
+// (dimensions, sizes, % of pixels that differ) and a pixel inspector reports
+// exact texels from 8× zoom.
 
 import type { ImageDiffSides } from '@shared/types'
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { formatBytes } from '@/lib/format'
 import { Icon } from '@/lib/icons'
-import { composedSize, zoomLabel } from '@/lib/image-diff'
+import { type AnchorMode, composedSize, MAX_TOLERANCE, zoomLabel } from '@/lib/image-diff'
+import { usePersistentState } from '@/lib/persist'
 import { type DecodedImage, useDecodedImage } from '@/lib/useDecodedImage'
 import { usePanZoom } from '@/lib/usePanZoom'
 import { type DiffComposition, DifferencesMode, type DiffStats } from './DifferencesMode'
 import { OnionSkinMode } from './OnionSkinMode'
+import { PixelInspector } from './PixelInspector'
 import { SideBySideMode } from './SideBySideMode'
 import { SwipeMode } from './SwipeMode'
-import { CenteredImage, Viewport, World } from './stage'
+import { ImageLayer, Viewport, World } from './stage'
 
 export type ImageDiffMode = 'onion' | 'side-by-side' | 'differences' | 'swipe'
 
@@ -31,7 +36,8 @@ interface ImageModeDef {
 
 /** The header's mode options, in the order they read naturally. Labels are
  *  deliberately one short word each — four segments share the header with
- *  the file path. Tooltips carry the full names. */
+ *  the file path. Tooltips carry the full names. (Blink lives inside Onion
+ *  as its play button — it's the blend automated, not a fifth way to look.) */
 export const IMAGE_DIFF_MODES: ImageModeDef[] = [
   { id: 'onion', label: 'Onion', title: 'Onion skin', icon: (s) => <Icon.Onion size={s} /> },
   { id: 'side-by-side', label: 'Split', icon: (s) => <Icon.Split size={s} /> },
@@ -63,12 +69,26 @@ export function ImageDiffViewer({ image, mode }: Props) {
   const [blend, setBlend] = useState(0.5)
   const [stats, setStats] = useState<DiffStats | null>(null)
   const diffCache = useRef<DiffComposition | null>(null)
+  const stageRef = useRef<HTMLDivElement>(null)
+  // Anchor and tolerance are workflow preferences (a QA pass sets them once),
+  // so they persist — validated, since a stale/garbage key must not wedge the
+  // stage into an impossible state.
+  const [anchorPref, setAnchorPref] = usePersistentState<AnchorMode>('gg.imageDiffAnchor', 'center')
+  const anchor: AnchorMode = anchorPref === 'top-left' ? 'top-left' : 'center'
+  const [tolerancePref, setTolerancePref] = usePersistentState<number>('gg.imageDiffTolerance', 0)
+  const threshold = Number.isFinite(tolerancePref)
+    ? Math.min(MAX_TOLERANCE, Math.max(0, Math.round(tolerancePref)))
+    : 0
 
   const oldImage = oldState.status === 'ready' ? oldState.image : null
   const newImage = newState.status === 'ready' ? newState.image : null
   const isDiff = image.old !== null && image.new !== null
+  const sizesDiffer =
+    !!oldImage &&
+    !!newImage &&
+    (oldImage.width !== newImage.width || oldImage.height !== newImage.height)
 
-  // The composed frame both revisions are centered in (max of both sizes).
+  // The composed frame both revisions are laid out in (max of both sizes).
   const frame = useMemo(() => {
     if (oldImage && newImage) return composedSize(oldImage, newImage)
     const single = newImage ?? oldImage
@@ -123,12 +143,12 @@ export function ImageDiffViewer({ image, mode }: Props) {
 
   return (
     <div className="img-pane" tabIndex={0} onKeyDown={onKeyDown}>
-      <div className="img-stage-area">
+      <div className="img-stage-area" ref={stageRef}>
         {!isDiff && (oldImage || newImage) && (
           <Viewport panZoom={panZoom}>
             <World panZoom={panZoom} frame={frame}>
-              {oldImage && <CenteredImage image={oldImage} frame={frame} side="old" />}
-              {newImage && <CenteredImage image={newImage} frame={frame} side="new" />}
+              {oldImage && <ImageLayer image={oldImage} frame={frame} side="old" />}
+              {newImage && <ImageLayer image={newImage} frame={frame} side="new" />}
             </World>
           </Viewport>
         )}
@@ -140,6 +160,7 @@ export function ImageDiffViewer({ image, mode }: Props) {
                 newImage={newImage}
                 frame={frame}
                 panZoom={panZoom}
+                anchor={anchor}
                 blend={blend}
                 onBlendChange={setBlend}
               />
@@ -150,6 +171,7 @@ export function ImageDiffViewer({ image, mode }: Props) {
                 newImage={newImage}
                 frame={frame}
                 panZoom={panZoom}
+                anchor={anchor}
               />
             )}
             {mode === 'differences' && (
@@ -158,12 +180,21 @@ export function ImageDiffViewer({ image, mode }: Props) {
                 newImage={newImage}
                 frame={frame}
                 panZoom={panZoom}
+                anchor={anchor}
+                threshold={threshold}
+                onThresholdChange={setTolerancePref}
                 cache={diffCache}
                 onStats={onStats}
               />
             )}
             {mode === 'swipe' && (
-              <SwipeMode oldImage={oldImage} newImage={newImage} frame={frame} panZoom={panZoom} />
+              <SwipeMode
+                oldImage={oldImage}
+                newImage={newImage}
+                frame={frame}
+                panZoom={panZoom}
+                anchor={anchor}
+              />
             )}
           </>
         )}
@@ -196,7 +227,38 @@ export function ImageDiffViewer({ image, mode }: Props) {
           >
             <Icon.ActualSize size={15} />
           </button>
+          {/* Resized image: how should the two sizes align? Centered (the
+              UVCS convention) or by their top-left corners (how canvases
+              usually grow). Hidden when sizes match — it would do nothing. */}
+          {isDiff && sizesDiffer && (
+            <>
+              <div className="img-zoom__sep" />
+              <button
+                className={`icon-btn${anchor === 'center' ? ' is-active' : ''}`}
+                data-tip="Align centers"
+                onClick={() => setAnchorPref('center')}
+              >
+                <Icon.AnchorCenter size={15} />
+              </button>
+              <button
+                className={`icon-btn${anchor === 'top-left' ? ' is-active' : ''}`}
+                data-tip="Align top-left corners"
+                onClick={() => setAnchorPref('top-left')}
+              >
+                <Icon.AnchorCorner size={15} />
+              </button>
+            </>
+          )}
         </div>
+
+        <PixelInspector
+          oldImage={oldImage}
+          newImage={newImage}
+          frame={frame}
+          anchor={anchor}
+          panZoom={panZoom}
+          stageRef={stageRef}
+        />
 
         <div className="img-hud">
           {oldImage && image.old && (
@@ -211,14 +273,17 @@ export function ImageDiffViewer({ image, mode }: Props) {
             </span>
           )}
           {mode === 'differences' && isDiff && changedPercent !== null && (
-            <span className="img-hud__stat">
-              {changedPercent === 0
-                ? 'pixel-identical'
-                : `${changedPercent < 0.1 ? '< 0.1' : changedPercent.toFixed(1)}% of pixels differ`}
-            </span>
+            <span className="img-hud__stat">{changedLabel(changedPercent, threshold)}</span>
           )}
         </div>
       </div>
     </div>
   )
+}
+
+/** The % readout must stay honest: with a tolerance applied, zero changes
+ *  means "nothing above the tolerance", not "pixel-identical". */
+function changedLabel(changedPercent: number, threshold: number): string {
+  if (changedPercent === 0) return threshold > 0 ? 'no changes above tolerance' : 'pixel-identical'
+  return `${changedPercent < 0.1 ? '< 0.1' : changedPercent.toFixed(1)}% of pixels differ`
 }

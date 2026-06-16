@@ -11,6 +11,23 @@ import { useCallback, useEffect, useState } from 'react'
 export type ThemePref = 'system' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
+/** A selectable theme: its label, one-line description and trigger glyph.
+ *  Centralized so the toolbar switcher and Settings → Appearance show identical
+ *  copy. `icon` is typed against the icons module without importing it, keeping
+ *  this module (used on the pre-mount path) free of the UI dependency. */
+export interface ThemeOption {
+  value: ThemePref
+  label: string
+  sub: string
+  icon: keyof typeof import('@/lib/icons')['Icon']
+}
+
+export const THEME_OPTIONS: ThemeOption[] = [
+  { value: 'system', label: 'System', sub: 'Match the OS appearance', icon: 'Monitor' },
+  { value: 'light', label: 'Light', sub: 'Bright surfaces', icon: 'Sun' },
+  { value: 'dark', label: 'Dark', sub: 'Deep, calm dark UI', icon: 'Moon' }
+]
+
 const STORAGE_KEY = 'gg.theme'
 
 export function readThemePref(): ThemePref {

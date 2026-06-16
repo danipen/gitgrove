@@ -1,19 +1,13 @@
 import { useRef, useState } from 'react'
 import { Popover } from '@/components/common/Popover'
 import { Icon } from '@/lib/icons'
-import type { ResolvedTheme, ThemePref } from '@/lib/theme'
+import { type ResolvedTheme, THEME_OPTIONS, type ThemePref } from '@/lib/theme'
 
 interface Props {
   pref: ThemePref
   resolved: ResolvedTheme
   onChange: (pref: ThemePref) => void
 }
-
-const OPTIONS: { value: ThemePref; label: string; sub: string; icon: keyof typeof Icon }[] = [
-  { value: 'system', label: 'System', sub: 'Match the OS appearance', icon: 'Monitor' },
-  { value: 'light', label: 'Light', sub: 'Bright surfaces', icon: 'Sun' },
-  { value: 'dark', label: 'Dark', sub: 'Deep, calm dark UI', icon: 'Moon' }
-]
 
 export function ThemeSwitcher({ pref, resolved, onChange }: Props) {
   const [open, setOpen] = useState(false)
@@ -22,13 +16,14 @@ export function ThemeSwitcher({ pref, resolved, onChange }: Props) {
   // The trigger glyph reflects what's actually showing, not the preference, so
   // 'System' surfaces a sun or moon depending on the resolved scheme.
   const TriggerIcon = resolved === 'light' ? Icon.Sun : Icon.Moon
+  const currentLabel = THEME_OPTIONS.find((o) => o.value === pref)?.label ?? 'System'
 
   return (
     <>
       <button
         ref={anchor}
         className="toolbar__refresh"
-        title="Theme"
+        data-tip={`Theme: ${currentLabel} — click to change`}
         onClick={() => setOpen((v) => !v)}
       >
         <TriggerIcon size={16} />
@@ -43,7 +38,7 @@ export function ThemeSwitcher({ pref, resolved, onChange }: Props) {
       >
         <div className="popover__list">
           <div className="popover__group-label">Appearance</div>
-          {OPTIONS.map((opt) => {
+          {THEME_OPTIONS.map((opt) => {
             const OptIcon = Icon[opt.icon]
             return (
               <button

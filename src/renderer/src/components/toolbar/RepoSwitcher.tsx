@@ -246,13 +246,17 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo }: Props) {
       <button
         ref={anchor}
         className="pill"
+        data-tip={repo?.path}
         onClick={() => (open ? close() : setOpen(true))}
         onContextMenu={repo ? (e) => openMenu(e, repo, false) : undefined}
       >
         <span className="pill__icon">
           <Icon.Repo size={16} />
         </span>
-        <span className="pill__label">{repo ? repo.name : 'Open repository'}</span>
+        <span className="pill__stack">
+          <span className="pill__caption">Repository</span>
+          <span className="pill__label">{repo ? repo.name : 'Open repository'}</span>
+        </span>
         <span className="pill__chev">
           <Icon.Chevron size={14} />
         </span>

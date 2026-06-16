@@ -383,7 +383,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 34px;
+  height: 40px;
   max-width: 320px;
   padding: 0 10px;
   border-radius: var(--radius-sm);
@@ -420,15 +420,42 @@ button {
   flex: 0 0 auto;
   display: flex;
 }
+/* The two-line pills get a comfortable minimum so a short value ("main") can't
+   shrink the pill down to just its caption + chevron. The narrow sync-chevron
+   button has no stack, so :has keeps it out. */
+.pill:has(.pill__stack) {
+  min-width: 150px;
+}
+/* Two-line label: a small muted caption on top ("Repository", "Branch", or the
+   sync action) with the live value/state below — the GitHub-Desktop toolbar
+   read. The stack truncates as one unit so the icon and chevron stay put. */
+.pill__stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  flex: 1;
+  min-width: 0;
+  line-height: 1.25;
+}
+/* The caption ("Repository"/"Branch") and the sync sub ("Up to date") are the
+   same quiet voice — keep them identical so the toolbar's secondary lines match. */
+.pill__caption,
+.pill__sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--fg-faint);
+}
 .pill__label {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
-}
-.pill__sub {
-  color: var(--fg-faint);
-  font-weight: 400;
 }
 .pill__chev {
   color: var(--fg-faint);
@@ -3534,10 +3561,10 @@ button {
 }
 
 /* ── Image diff viewer ─────────────────────────────────────────────────────
-   Single previews and the four-mode visual diff (onion skin / side by side /
-   differences / swipe). The stage fills the pane; every control floats over
-   it so the pixels keep all the room. One shared transform moves every mode
-   (see lib/usePanZoom.ts). */
+   Single previews and the four-mode visual diff (onion skin — with its blink
+   autoplay — / side by side / differences / swipe). The stage fills the pane;
+   every control floats over it so the pixels keep all the room. One shared
+   transform moves every mode (see lib/usePanZoom.ts). */
 
 /* The diff body becomes a fixed (non-scrolling) flex cell: the stage owns
    panning, the page must never scroll under it. */
@@ -3574,24 +3601,44 @@ button {
 }
 
 /* The composed frame both revisions share, moved by one GPU transform.
-   The checkerboard scales with the image — its squares are image pixels,
-   which doubles as a size reference while zooming. */
+   Deliberately NOT `will-change: transform`: that pins the element to a
+   permanent composited layer which Chromium rasterizes at its *transformed*
+   size — at 64× a 1125×750 image becomes a 72000×48000px texture, and two of
+   them (swipe's old+new worlds) blow past the tile-memory budget, so Chromium
+   drops tiles and the picture tears/blinks mid-zoom. Without will-change the
+   transform still composites (the glide transition promotes it for its
+   duration), but rasterization stays viewport-tiled — only visible tiles are
+   painted, bounded at any zoom. */
 .img-world {
   position: absolute;
   top: 0;
   left: 0;
   transform-origin: 0 0;
-  will-change: transform;
-  /* Tile size is set inline, counter-scaled by the zoom so the squares stay
-     a constant ~16 screen pixels (see stage.tsx World). */
-  background: repeating-conic-gradient(var(--img-checker) 0% 25%, transparent 0% 50%) 0 0;
 }
 .img-world--gliding {
-  /* background-size glides with the transform so the checkerboard doesn't
-     pop while an animated zoom is mid-flight. */
-  transition:
-    transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    background-size 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* The transparency backdrop: a viewport-filling, untransformed twin painting
+   constant 16px screen tiles, clipped to the world's screen rect (geometry
+   set inline by stage.tsx World). Never on the transformed element — Chromium
+   rasterizes the gradient at layout resolution, so counter-scaled tiles alias
+   and fade at deep zooms; and never sized to the full scaled world rect — at
+   deep zoom that element exhausts tile memory. Viewport-bounded + clipped is
+   safe at any zoom. */
+.img-checkerboard {
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(var(--img-checker) 0% 25%, transparent 0% 50%) 0 0;
+  background-size: 16px 16px;
+  pointer-events: none;
+}
+.img-checkerboard--gliding {
+  /* Mirrors the world's glide: the clip rect interpolates on the same curve as
+     its translate/scale (both linear in scale), so backdrop and artwork move
+     as one. The pattern phase (background-position) snaps — identical tiles
+     make the jump invisible. */
+  transition: clip-path 280ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .img-world[data-pixelated] .img-layer,
 .img-world[data-pixelated] .img-diff-canvas {
@@ -3622,7 +3669,8 @@ button {
    (The diff-mode switcher lives in the diff header, not over the stage —
    the same spot text diffs show Split/Unified.) */
 
-/* Zoom cluster, bottom right (the UVCS spot). */
+/* Zoom cluster, bottom right (the UVCS spot). The anchor toggle joins it
+   below a separator when the revisions differ in size. */
 .img-zoom {
   position: absolute;
   right: 12px;
@@ -3632,6 +3680,11 @@ button {
   gap: 4px;
   align-items: stretch;
   z-index: 3;
+}
+.img-zoom__sep {
+  height: 1px;
+  margin: 2px 3px;
+  background: var(--border);
 }
 .img-zoom .icon-btn {
   background: var(--bg-elevated);
@@ -3726,8 +3779,11 @@ button {
   border-left: 1px solid var(--border);
 }
 
-/* ── Onion skin ── */
-.img-onion-slider {
+/* ── Floating pills (top center) ──
+   The per-mode control strip: the onion blend, the differences tolerance +
+   region navigation, the blink transport. One shape so the modes read as one
+   viewer. */
+.img-pill {
   position: absolute;
   top: 10px;
   left: 50%;
@@ -3741,14 +3797,46 @@ button {
   box-shadow: var(--popover-shadow);
   z-index: 3;
 }
-.img-onion-slider input[type='range'] {
-  width: 220px;
+.img-pill input[type='range'] {
   accent-color: var(--accent);
 }
-.img-onion-slider__label {
+/* Buttons inside pills are quiet, small and round — the stock 30px bordered
+   icon button would dominate the strip. */
+.img-pill .icon-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+}
+.img-pill .icon-btn:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+.img-pill__label {
   font-size: 11px;
   font-weight: 600;
   color: var(--fg-muted);
+}
+.img-pill__value {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-muted);
+}
+
+/* ── Onion skin ── */
+.img-onion-slider input[type='range'] {
+  width: 220px;
+}
+/* The play/pause keeps a bordered circle: a bare triangle next to the slider
+   reads as a chevron, not a button. A couple px larger than the bare pill
+   arrows — it's the pill's one real action. */
+.img-onion-slider .icon-btn {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border);
+  background: var(--bg);
 }
 
 /* ── Swipe ── */
@@ -3818,6 +3906,90 @@ button {
 }
 
 /* ── Differences ── */
+.img-diff-toolbar input[type='range'] {
+  width: 130px;
+}
+/* The value slot reserves three digits, so the centered pill keeps one exact
+   width as the slider sweeps 0 → 9 → 99 — it must never shift under the
+   cursor mid-drag. */
+.img-diff-toolbar__readout {
+  width: 3ch;
+  text-align: right;
+}
+/* Region navigation: its own pill stacked under the tolerance pill, so it
+   can appear and disappear (regions come and go with the tolerance) without
+   moving the slider. Deliberately quieter and shorter than the tolerance
+   pill — secondary wayfinding, not a control bar. */
+.img-region-nav {
+  top: 46px;
+  padding: 4px 10px;
+  gap: 5px;
+}
+/* When the tolerance pill is hidden (no delta the slider could affect — see
+   DifferencesMode toleranceMatters), the nav pill takes its top spot. */
+.img-region-nav--solo {
+  top: 10px;
+}
+/* Keep "2 of 12" from nudging the arrows while stepping through regions. */
+.img-region-nav__count {
+  min-width: 52px;
+  text-align: center;
+}
+/* Focus ring around the active changed region. Border width is set inline,
+   counter-scaled against the world transform (~2 screen px at any zoom). */
+.img-region-focus {
+  position: absolute;
+  border-style: solid;
+  border-color: var(--accent);
+  pointer-events: none;
+}
+
+/* ── Pixel inspector ──
+   Bottom left, stacked above the HUD: coordinates plus old → new texels.
+   pointer-events off — it reports the cursor, it must never catch it. */
+.img-inspector {
+  position: absolute;
+  left: 12px;
+  bottom: 46px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  box-shadow: var(--popover-shadow);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  z-index: 3;
+  pointer-events: none;
+}
+.img-inspector__pos {
+  color: var(--fg);
+  font-weight: 600;
+}
+.img-inspector__arrow,
+.img-inspector__none {
+  color: var(--fg-faint);
+}
+.img-inspector__color {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.img-inspector__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  /* The sample color paints as a gradient layer (set inline) over this
+     checkerboard, so translucent texels read like they do on the stage. */
+  background-size:
+    auto,
+    6px 6px;
+}
+
 .img-computing {
   position: absolute;
   left: 50%;

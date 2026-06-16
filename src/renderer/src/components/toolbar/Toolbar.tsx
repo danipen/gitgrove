@@ -132,7 +132,7 @@ export function Toolbar({
       {repo && (
         <button
           className={`toolbar__refresh${refreshing ? ' is-spinning' : ''}`}
-          title="Refresh"
+          data-tip="Refresh — re-read the working tree, status and history"
           disabled={refreshing}
           onClick={onRefresh}
         >
