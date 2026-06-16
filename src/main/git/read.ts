@@ -9,6 +9,7 @@ import { readFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
 import type {
+  BlameLine,
   BranchInfo,
   ChangedFile,
   Commit,
@@ -338,16 +339,8 @@ export async function getRemoteWebUrl(repoPath: string): Promise<string | null> 
 const LOG_FIELDS = ['%H', '%h', '%s', '%b', '%an', '%ae', '%aI', '%ar', '%D', '%P']
 const LOG_FORMAT = LOG_FIELDS.join('%x00')
 
-export async function getLog(repoPath: string, options: LogOptions = {}): Promise<Commit[]> {
-  const { ref, limit = 200, skip = 0, search } = options
-  const args = ['log', '-z', `--format=${LOG_FORMAT}`, `--max-count=${limit}`]
-  if (skip > 0) args.push(`--skip=${skip}`)
-  if (search?.trim()) {
-    args.push(`--grep=${search.trim()}`, '-i', '--all-match')
-  }
-  args.push(ref?.trim() ? ref : 'HEAD')
-
-  const out = await runGit(repoPath, args)
+/** Parse NUL-delimited `git log --format=LOG_FORMAT` output into commits. */
+function parseLog(out: string): Commit[] {
   const fields = out.split('\0')
   const commits: Commit[] = []
   for (let i = 0; i + LOG_FIELDS.length <= fields.length; i += LOG_FIELDS.length) {
@@ -368,6 +361,184 @@ export async function getLog(repoPath: string, options: LogOptions = {}): Promis
     } satisfies Commit)
   }
   return commits
+}
+
+export async function getLog(repoPath: string, options: LogOptions = {}): Promise<Commit[]> {
+  const { ref, limit = 200, skip = 0, search } = options
+  const args = ['log', '-z', `--format=${LOG_FORMAT}`, `--max-count=${limit}`]
+  if (skip > 0) args.push(`--skip=${skip}`)
+  if (search?.trim()) {
+    args.push(`--grep=${search.trim()}`, '-i', '--all-match')
+  }
+  args.push(ref?.trim() ? ref : 'HEAD')
+
+  return parseLog(await runGit(repoPath, args))
+}
+
+/**
+ * History of the commits that touched a single file, newest first. `--follow`
+ * tracks the file across renames (it requires exactly one pathspec); `-M`
+ * enables the rename detection it relies on. `ref` bounds the walk (a commit
+ * for a History-tab file, HEAD for a working-tree file).
+ */
+export async function getFileHistory(
+  repoPath: string,
+  path: string,
+  ref?: string,
+  limit = 200
+): Promise<Commit[]> {
+  const args = [
+    'log',
+    '-z',
+    '--follow',
+    '-M',
+    `--format=${LOG_FORMAT}`,
+    `--max-count=${limit}`,
+    ref?.trim() ? ref : 'HEAD',
+    '--',
+    path
+  ]
+  return parseLog(await runGit(repoPath, args))
+}
+
+/** Git's all-zero sha: blame's marker for an uncommitted working-tree line. */
+const BLAME_ZERO_SHA = '0'.repeat(40)
+
+/** Per-commit metadata shared by every line a commit introduced. */
+interface BlameCommitInfo {
+  authorName: string
+  authorEmail: string
+  date: string
+  summary: string
+  filename: string
+  previous?: { hash: string; filename: string }
+  isBoundary: boolean
+}
+
+/** Drop the surrounding angle brackets git wraps around the email field. */
+const stripAngles = (s: string): string => s.replace(/^</, '').replace(/>$/, '')
+
+/**
+ * Unquote a git path. With `core.quotePath=false` git emits paths raw (UTF-8),
+ * only wrapping in double quotes — with C-style escapes — when they contain a
+ * quote, backslash, or control character; this reverses that rare case.
+ */
+function unquoteGitPath(p: string): string {
+  if (p.length < 2 || !p.startsWith('"') || !p.endsWith('"')) return p
+  return p.slice(1, -1).replace(/\\(\\|"|t|n|r|[0-7]{1,3})/g, (_, esc: string) => {
+    switch (esc) {
+      case '\\':
+        return '\\'
+      case '"':
+        return '"'
+      case 't':
+        return '\t'
+      case 'n':
+        return '\n'
+      case 'r':
+        return '\r'
+      default:
+        return String.fromCharCode(Number.parseInt(esc, 8))
+    }
+  })
+}
+
+/**
+ * Parse `git blame --porcelain` output into one record per line. Porcelain
+ * is line-based (newline-delimited — `-z` does not NUL-delimit it), and emits
+ * the full commit header only the *first* time a commit appears, then just an
+ * abbreviated `<sha> <orig> <final>` header for later lines of that commit;
+ * we cache each commit's metadata by sha so repeat lines reuse it (keeps large
+ * files cheap). Every line ends with a tab-prefixed content line. Exported for
+ * tests.
+ */
+export function parseBlamePorcelain(out: string): BlameLine[] {
+  const lines = out.split('\n')
+  const commits = new Map<string, BlameCommitInfo>()
+  const result: BlameLine[] = []
+  let i = 0
+  while (i < lines.length) {
+    // Header: "<40-hex sha> <orig-line> <final-line> [<lines-in-group>]".
+    const m = lines[i].match(/^([0-9a-f]{40}) \d+ (\d+)(?: \d+)?$/)
+    if (!m) {
+      i++
+      continue
+    }
+    const hash = m[1]
+    const lineNumber = Number(m[2])
+    i++
+
+    // Extended header block — present only the first time this sha is seen.
+    let info = commits.get(hash)
+    if (!info) {
+      const draft: Partial<BlameCommitInfo> = {}
+      let isBoundary = false
+      while (i < lines.length && !lines[i].startsWith('\t')) {
+        const field = lines[i]
+        if (field.startsWith('author ')) draft.authorName = field.slice(7)
+        else if (field.startsWith('author-mail ')) draft.authorEmail = stripAngles(field.slice(12))
+        else if (field.startsWith('author-time '))
+          draft.date = new Date(Number(field.slice(12)) * 1000).toISOString()
+        else if (field.startsWith('summary ')) draft.summary = field.slice(8)
+        else if (field.startsWith('filename ')) draft.filename = unquoteGitPath(field.slice(9))
+        else if (field.startsWith('previous ')) {
+          const rest = field.slice(9)
+          const sp = rest.indexOf(' ')
+          draft.previous = { hash: rest.slice(0, sp), filename: unquoteGitPath(rest.slice(sp + 1)) }
+        } else if (field === 'boundary') isBoundary = true
+        i++
+      }
+      info = {
+        authorName: draft.authorName ?? '',
+        authorEmail: draft.authorEmail ?? '',
+        date: draft.date ?? '',
+        summary: draft.summary ?? '',
+        filename: draft.filename ?? '',
+        previous: draft.previous,
+        isBoundary
+      }
+      commits.set(hash, info)
+    }
+
+    // The tab-prefixed content line closes the record.
+    const content = lines[i]?.startsWith('\t') ? lines[i].slice(1) : ''
+    i++
+
+    result.push({
+      hash,
+      shortHash: hash.slice(0, 7),
+      authorName: info.authorName,
+      authorEmail: info.authorEmail,
+      date: info.date,
+      summary: info.summary,
+      lineNumber,
+      content,
+      filename: info.filename,
+      previous: info.previous,
+      isBoundary: info.isBoundary || undefined,
+      notCommitted: hash === BLAME_ZERO_SHA || undefined
+    })
+  }
+  // git already emits final-file order; sort defensively so the gutter aligns.
+  return result.sort((a, b) => a.lineNumber - b.lineNumber)
+}
+
+/**
+ * Blame a file: each line annotated with the commit that last touched it.
+ * No `ref` blames the working tree (uncommitted lines come back as git's
+ * all-zero "Not Committed Yet" sha); a `ref` blames that revision. We force
+ * `core.quotePath=false` so non-ASCII paths in the `filename`/`previous`
+ * fields arrive raw rather than octal-escaped.
+ */
+export async function getBlame(
+  repoPath: string,
+  path: string,
+  ref?: string
+): Promise<BlameLine[]> {
+  const args = ['-c', 'core.quotePath=false', 'blame', '--porcelain']
+  if (ref?.trim()) args.push(ref)
+  args.push('--', path)
+  return parseBlamePorcelain(await runGit(repoPath, args))
 }
 
 function parseStatusLetter(letter: string): FileStatus {
