@@ -21,7 +21,7 @@ const FAN_GAP = 4
  * avatar can be hovered for its own name + email tooltip. The container keeps
  * its collapsed footprint and the open fan floats above the row on a shadow,
  * so opening never reflows the text beside it (see `.avatar-fan` in
- * global.css for the animation details).
+ * styles/features/history.css for the animation details).
  */
 export function AvatarStack({ author, coAuthors, size = 28 }: Props) {
   if (coAuthors.length === 0) {

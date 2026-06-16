@@ -50,7 +50,7 @@ const MAX_LIST_REFS = 2
 
 // Commit rows come in exactly two heights — refs stay on a single line (capped
 // to "+N") so a commit carrying branches/tags is just one row taller. These
-// mirror `.commit` in global.css; keep them in sync if the row padding changes.
+// mirror `.commit` in styles/features/history.css; keep them in sync if the row padding changes.
 const COMMIT_ROW_H = 51
 const COMMIT_ROW_REFS_H = 69
 /** Space reserved below the last row for the "load older commits" spinner. */

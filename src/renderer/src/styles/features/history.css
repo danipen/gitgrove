@@ -1,0 +1,365 @@
+/* ── History list ────────────────────────────────────────────────────────── */
+.history {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  /* Anchors the deep-reveal overlay (.history__reveal) to the whole pane. */
+  position: relative;
+}
+/* Blocking overlay while the log pages deep enough to reach a commit opened
+   from the blame gutter — a super-old commit can take seconds to load, and the
+   stale list otherwise sits there with no feedback. Ordinary infinite-scroll
+   paging uses the bottom spinner (.commit-list__more), not this. */
+.history__reveal {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px;
+  text-align: center;
+  color: var(--fg-faint);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(2px);
+  animation: pop-in 0.12s ease-out;
+}
+.history__reveal p {
+  margin: 0;
+  font-size: 12.5px;
+}
+.history__reveal code {
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-active);
+  color: var(--fg);
+}
+/* Windowed list viewport: owns its scroll on the main thread (see
+   VirtualScroll.tsx) — overflow hidden + a translated content layer, never
+   native scrolling, so a deep history never flashes blank or fills the DOM. */
+.commit-list {
+  overflow: hidden;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+/* The list is a focusable listbox (keyboard navigation); the active row's
+   accent already marks where you are, so no focus ring on the container. */
+.commit-list:focus {
+  outline: none;
+}
+/* Infinite-scroll sentinel row: observed by HistoryView to page in older
+   commits; shows a compact spinner while the next page is fetched. */
+.commit-list__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 10px 0;
+}
+.commit {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--commit-divider);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-left: 2px solid transparent;
+  border-right: none;
+  border-top: none;
+  color: var(--fg);
+  cursor: default;
+}
+.commit:hover {
+  background: var(--bg-hover);
+}
+.commit.is-active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.commit__main {
+  flex: 1;
+  min-width: 0;
+}
+.commit__subject {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.commit__meta {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-faint);
+  min-width: 0;
+  /* Keep the row a single line at any sidebar width — otherwise the relative
+     date wraps and overflows the fixed virtualized row height. The author
+     ellipsizes first; the date clips. */
+  white-space: nowrap;
+  overflow: hidden;
+}
+.commit__author {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* .commit__hash (the short-SHA chip) is shared — see primitives.css. */
+
+/* ── Co-author avatar fan (AvatarStack.tsx) ─────────────────────────────────
+   Collapsed: the author in front, co-author discs peeking out behind like a
+   short stack of coins. Hovering fans it open macOS-dock style: each disc
+   springs to its own slot slightly after the one before it (overshoot +
+   stagger), and the disc under the cursor magnifies while its neighbours lean
+   in. Everything is transform-only and the container keeps its collapsed
+   width — the open fan floats over the row on a shadow, so the text beside it
+   never reflows and scrolling stays jank-free. */
+.avatar-fan {
+  position: relative;
+  flex: 0 0 auto;
+}
+.avatar-fan__item {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: var(--z);
+  border-radius: 50%;
+  transform: translateX(var(--x));
+  /* A soft left-edge shadow separates the overlapped discs on any background
+     (rows change color on hover/active, so a solid “ring” can't match). */
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.2);
+  /* Spring-ish overshoot. Closing runs outermost-first (--rev) so the fan
+     visibly folds back into the stack instead of vanishing as one block. */
+  transition:
+    transform 0.3s cubic-bezier(0.32, 1.45, 0.36, 1),
+    box-shadow 0.2s ease;
+  transition-delay: calc(var(--rev) * 15ms);
+}
+.avatar-fan:hover .avatar-fan__item {
+  transform: translateX(var(--fan-x));
+  transition-delay: calc(var(--i) * 24ms);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
+}
+/* Dock magnification: the hovered disc pops above everything; its immediate
+   neighbours lean in a notch. Magnification reacts faster than the fan slide
+   (and with no stagger) so it tracks the cursor like the real Dock. */
+.avatar-fan:hover .avatar-fan__item:hover {
+  transform: translateX(var(--fan-x)) translateY(-2px) scale(1.18);
+  transition-delay: 0s;
+  transition-duration: 0.16s;
+  z-index: 99;
+}
+.avatar-fan:hover .avatar-fan__item:hover + .avatar-fan__item,
+.avatar-fan:hover .avatar-fan__item:has(+ .avatar-fan__item:hover) {
+  transform: translateX(var(--fan-x)) translateY(-1px) scale(1.08);
+  transition-delay: 0s;
+  transition-duration: 0.16s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .avatar-fan__item {
+    transition: none;
+  }
+}
+
+/* Refs in the list stay on a single line (capped to +N) so rows keep an even
+   height even when a commit carries many branches/tags/remotes. */
+.commit__refs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.ref-chip {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  white-space: nowrap;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ref-chip--tag {
+  background: var(--st-modified-soft);
+  color: var(--st-modified);
+}
+.ref-chip--more {
+  background: var(--bg-active);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+
+/* Sidebar panel (under the commit list) holding the selected commit's files. */
+.commit-files {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  /* This tree sits on --bg, not --bg-panel; keep the truncation marker's mask
+     color matched to the surface behind it. */
+  --trees-bg-override: var(--bg);
+}
+.commit-files__head {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+  color: var(--fg-muted);
+}
+
+/* ── Commit summary (banner at the top of the diff pane in History) ───────── */
+.commit-summary {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.commit-summary__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.commit-summary__head {
+  flex: 1;
+  min-width: 0;
+}
+/* Commit metadata is informational text — let the user select & copy it
+   (the app body sets user-select:none for a native feel). */
+.commit-summary__subject,
+.commit-summary__byline,
+.commit-summary__body-wrap,
+.commit-summary__sha .commit__hash {
+  user-select: text;
+  cursor: text;
+}
+.commit-summary__subject {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.commit-summary__byline {
+  margin-top: 2px;
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+.commit-summary__author {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.commit-summary__meta {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.commit-summary__sha {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.commit-summary__stats {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.commit-summary__count {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.commit-summary__body-wrap {
+  /* Indent under the subject (avatar 34 + row gap 10). */
+  margin: 8px 0 0 44px;
+}
+.commit-summary__body {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* Collapsed: clamp to three lines so a long message stays compact. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}
+.commit-summary__body.is-expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.commit-summary__refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 10px 0 0 44px;
+}
+
+/* Subtle inline text toggle (e.g. "Show more"). */
+.link-toggle {
+  margin-top: 5px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.link-toggle:hover {
+  text-decoration: underline;
+}
+.ref-chip--toggle {
+  border: none;
+  cursor: pointer;
+  font-size: 10px;
+  line-height: inherit;
+}
+.ref-chip--toggle:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* Subtle ghost button used for the copy-SHA action. */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-faint);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.copy-btn:hover {
+  background: var(--bg-active);
+  color: var(--fg);
+}
+.copy-btn.is-copied {
+  color: var(--st-added);
+}

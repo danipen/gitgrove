@@ -3,7 +3,7 @@
 // 'system' tracks the OS color scheme live via matchMedia.
 //
 // The resolved theme is reflected onto <html data-theme="…">, which flips the CSS
-// custom properties in global.css. It's also passed to the diff viewer so it can
+// custom properties in styles/base.css. It's also passed to the diff viewer so it can
 // pick the matching Shiki/pierre theme.
 
 import { useCallback, useEffect, useState } from 'react'

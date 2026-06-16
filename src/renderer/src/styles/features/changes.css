@@ -1,0 +1,461 @@
+/* ── Stash row + popover list ────────────────────────────────────────────── */
+/* The composer's optional header row — just the stash chip, shown only when
+   stashes exist. The 5px resizer strip sits above the composer block; the
+   top border of whichever element comes first is the visible split line. */
+.composer-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 2px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.stash-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.stash-chip:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.stash-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.stash-list {
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0 6px;
+}
+.stash-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+.stash-item:hover {
+  background: var(--bg-hover);
+}
+.stash-item__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.stash-item__msg {
+  font-size: 12px;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stash-item__date {
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+.stash-item__actions {
+  display: flex;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+/* ── Commit composer ─────────────────────────────────────────────────────── */
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+/* When the stash-chip header is present it carries the top border instead. */
+.composer-head + .composer {
+  border-top: none;
+  padding-top: 4px;
+}
+.composer__summary,
+.composer__description {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+.composer__summary:focus,
+.composer__description:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+.composer__description {
+  /* Height is set inline and driven by the panel splitter — no grab corner. */
+  resize: none;
+  min-height: 30px;
+  line-height: 1.45;
+}
+.changes__stash-spacer {
+  flex: 1;
+}
+/* One split button: the wide action half + a caret half that opens the
+   Commit / Amend / Stash popover. They read as a single accent control — the
+   action half rounds its left, the caret half its right, joined by a hairline.
+   No gap. */
+.composer__actions {
+  display: flex;
+  gap: 0;
+}
+.composer__commit {
+  flex: 1;
+  min-width: 0;
+  justify-content: center;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  box-shadow: none;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+/* Disabled via aria-disabled (not the native attr) so the button still emits
+   hover events and its tooltip can explain why it's unavailable. Only this half
+   dims — the caret half stays live so you can switch to a mode that IS ready. */
+.composer__commit[aria-disabled='true'] {
+  opacity: 0.7;
+  cursor: default;
+  filter: none;
+}
+.composer__commit[aria-disabled='true']:hover {
+  filter: none;
+}
+/* The caret half: same accent fill, joined to the action half by an inset
+   hairline, rounding only its right side. */
+.composer__mode-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  padding: 0 11px;
+  border: 1px solid var(--accent-border);
+  border-left: none;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+/* Hairline divider between the two halves — shared rule in primitives.css. */
+.composer__mode-btn:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.composer__mode-btn:disabled {
+  opacity: 0.55;
+}
+.composer__mode-btn svg {
+  opacity: 0.85;
+}
+/* ── Discard confirmation file list ──────────────────────────────────────── */
+/* Shows exactly what a (bulk) discard will touch, GH-Desktop style: a capped,
+   scrollable list with the same status letters as the changes list. */
+.discard-list {
+  margin: 10px 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 0;
+}
+.discard-list__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 10px;
+  font-size: 12px;
+  min-width: 0;
+}
+.discard-list__path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.discard-list__more {
+  padding: 4px 10px 2px;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+}
+/* ── Changes layout: one list above the stash row and composer ───────────── */
+.changes {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.changes__list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.section-head__label {
+  font-weight: 600;
+}
+.section-head__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.section-head__action:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.section-head__action:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.section-head__action.is-danger:hover:not(:disabled) {
+  color: var(--st-deleted);
+}
+.list-empty {
+  padding: 10px 14px;
+  font-size: 12px;
+  color: var(--fg-faint);
+}
+/* ── Working file list (tri-state staging checkboxes) ────────────────────── */
+.wfl {
+  /* Main-thread scrolled viewport (see VirtualScroll.tsx): the hook owns the
+     scroll, so no native overflow — the old padding lives in padTop/padBottom. */
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.wfl:focus {
+  outline: none;
+}
+.wfl__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 10px;
+  min-height: 28px;
+  cursor: default;
+  user-select: none;
+}
+.wfl__row:hover {
+  background: var(--bg-hover);
+}
+.wfl__row.is-selected {
+  background: var(--accent-soft);
+}
+.wfl__check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.wfl__conflict {
+  display: flex;
+  flex: 0 0 auto;
+  width: 14px;
+  justify-content: center;
+  color: var(--st-conflicted);
+}
+.wfl__status {
+  flex: 0 0 auto;
+  width: 14px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+}
+.wfl__status.st-added,
+.wfl__status.st-untracked {
+  color: var(--st-added);
+}
+.wfl__status.st-modified {
+  color: var(--st-modified);
+}
+.wfl__status.st-deleted {
+  color: var(--st-deleted);
+}
+.wfl__status.st-renamed {
+  color: var(--st-renamed);
+}
+.wfl__status.st-conflicted {
+  color: var(--st-conflicted);
+}
+.wfl__path {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+/* Trailing submodule marker on a changes-list row. */
+.wfl__module {
+  flex: none;
+  display: flex;
+  align-items: center;
+  margin-right: 8px;
+  color: var(--fg-faint);
+}
+.wfl__dir {
+  color: var(--fg-path-dir);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+}
+.wfl__name {
+  color: var(--fg);
+  flex: 0 0 auto;
+}
+/* ── Hunk staging bar (annotation row inside the working diff) ───────────── */
+.stage-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 10px;
+  margin: 1px 0;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  color: var(--fg-muted);
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.stage-bar[data-state='staged'] {
+  /* This bar is a pierre line annotation, slotted into the diff's shadow tree, so
+     pierre's --diffs-bg-addition (the exact background it paints behind added lines)
+     is in scope here via the flattened tree. Reuse it verbatim so the staged green is
+     identical to the additions this bar toggles, and tracks both themes on its own (the
+     value is a light-dark() resolved against our color-scheme). The fallback mirrors
+     pierre's recipe with our own green, in case the variable is ever out of reach. */
+  background: var(--diffs-bg-addition, color-mix(in lab, var(--bg-panel) 80%, var(--st-added)));
+}
+.stage-bar__check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+.stage-bar__check input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.stage-bar[data-state='staged'] .stage-bar__check {
+  color: var(--st-added);
+}
+.stage-bar__spacer {
+  flex: 1;
+}
+.stage-bar__discard {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+.stage-bar__discard:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--st-deleted);
+}
+.stage-bar__discard:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* ── Changes filter row (name + status type) ─────────────────────────────── */
+.wfl-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.wfl-filter__input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+}
+.wfl-filter__input:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+.wfl-filter__chip {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  opacity: 0.45;
+  cursor: pointer;
+}
+.wfl-filter__chip:hover {
+  opacity: 0.8;
+}
+.wfl-filter__chip.is-active {
+  opacity: 1;
+  border-color: currentColor;
+  background: var(--bg-hover);
+}
+.wfl-filter__chip.st-added,
+.wfl-filter__chip.st-untracked {
+  color: var(--st-added);
+}
+.wfl-filter__chip.st-modified {
+  color: var(--st-modified);
+}
+.wfl-filter__chip.st-deleted {
+  color: var(--st-deleted);
+}
+.wfl-filter__chip.st-renamed {
+  color: var(--st-renamed);
+}
+.wfl-filter__chip.st-conflicted {
+  color: var(--st-conflicted);
+}
+/* ── Composer: commit button label ───────────────────────────────────────── */
+.composer__commit-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

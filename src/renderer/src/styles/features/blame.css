@@ -1,0 +1,442 @@
+/* ── File History / Blame overlay ─────────────────────────────────────────── */
+/* A full-window panel below the toolbar — it owns the whole work area rather
+   than floating like the stash popover. Layered above the app body and update
+   banner, below modals (70) and tooltips (90). `--diffs-line-height` pins the
+   Pierre source line height so the separate blame gutter aligns row-for-row
+   (kept in sync with lib/blame.ts BLAME_LINE_HEIGHT). */
+.file-history {
+  position: fixed;
+  top: var(--toolbar-h);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  --diffs-line-height: 20px;
+}
+.fh-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--fg-muted);
+}
+/* Mirrors the diff header: a muted "History of" label, then the path with the
+   directory dimmed and the filename emphasized (reusing .diff-head__* below). */
+.fh-head__title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.fh-head__history {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+.fh-head__title .diff-head__path {
+  min-width: 0;
+  user-select: text;
+}
+.fh-head__spacer {
+  flex: 1;
+}
+.fh-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.fh-commits {
+  flex: 0 0 var(--fh-commits-w, 320px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.fh-commit-list {
+  overflow: hidden;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.fh-commit-list:focus {
+  outline: none;
+}
+.fh-commit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  height: 58px; /* matches FH_ROW_H in FileHistoryOverlay.tsx */
+  border-bottom: 1px solid var(--commit-divider);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-left: 2px solid transparent;
+  border-right: none;
+  border-top: none;
+  color: var(--fg);
+  cursor: default;
+}
+.fh-commit:hover {
+  background: var(--bg-hover);
+}
+.fh-commit.is-active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.fh-commit__main {
+  flex: 1;
+  min-width: 0;
+}
+.fh-commit__subject {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.fh-commit__subject-text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fh-commit__meta {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-faint);
+  min-width: 0;
+}
+/* Author ellipsizes when tight; the relative date stays on one line beside it
+   (without flex/nowrap, "1 year, 10 months ago" wraps into a tall column). */
+.fh-commit__author {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fh-commit__when {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+/* Short SHA pinned to the row's trailing edge; margin-left:auto absorbs the
+   free space so it right-aligns regardless of how short author/date are.
+   Chip styling shared with .commit__hash — see primitives.css. */
+.fh-commit__sha {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+/* Pinned "Working tree" row: the current, on-disk revision. */
+.fh-commit--wt {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--border);
+}
+.fh-commit__wt-disc {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-active);
+  color: var(--fg-muted);
+}
+.fh-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* "working tree" indicator beside the view switch when blaming uncommitted
+   content (no commit summary to anchor to). */
+.fh-head__hint {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+}
+
+/* ── Blame pane ────────────────────────────────────────────────────────────
+   The metadata gutter is a separate column we virtualize and scroll-sync to
+   the editor; both share `--diffs-line-height` so rows line up. */
+.blame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+/* Header mirrors the diff viewer's header (.diff-head) for a consistent feel. */
+.blame-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 14px;
+  font-size: 12px;
+  color: var(--fg-faint);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.blame-head__spacer {
+  flex: 1;
+}
+.blame-head__label code {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+.blame-head__label strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.blame-head__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+.blame-head__back:hover {
+  text-decoration: underline;
+}
+/* Age legend: "Older [swatches] Newer", right-aligned (matches the gutter heat). */
+.blame-legend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+.blame-legend__scale {
+  display: flex;
+  height: 10px;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.blame-legend__scale > span {
+  width: 12px;
+}
+.blame-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+  /* Hoist the code's scroll timeline (defined on .blame-code) to this common
+     ancestor so the gutter/rules — its *siblings*, not descendants — can attach
+     their follow animation to it. `--blame-range` (the scroll distance) is set
+     here imperatively by BlamePane. */
+  timeline-scope: --blame-scroll;
+}
+.blame-gutter {
+  flex: 0 0 var(--blame-gutter-w, 264px);
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 11px;
+  user-select: none;
+}
+/* Gutter and rules follow the code's native scroll on the compositor via a
+   scroll-driven animation (no main-thread scroll handler — see BlamePane). The
+   keyframe runs from 0 to -(scrollable distance), so animation progress maps
+   1:1 onto -scrollTop and the layers stay pixel-locked to the source at every
+   position — provided `--blame-range` is the timeline's *exact* scroll distance
+   (BlamePane feeds it the fractional viewport height; any rounding there drifts
+   the follow off the code and blurs the 1px hairlines). */
+@keyframes blame-follow {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-1 * var(--blame-range, 0px)));
+  }
+}
+.blame-gutter__content,
+.blame-rules__content {
+  animation: blame-follow linear both;
+  animation-timeline: --blame-scroll;
+}
+/* Once scrolling stops, BlamePane freezes the follow on a device-pixel-rounded
+   offset (`--blame-rest-y`) by toggling `.is-resting`, so the 1px section
+   hairlines land on whole physical pixels and snap crisp. Mid-scroll the follow
+   stays on Pierre's exact (sub-pixel) position above; this only takes over at
+   rest, where the ≤½px correction off the code is imperceptible. */
+.blame-body.is-resting .blame-gutter__content,
+.blame-body.is-resting .blame-rules__content {
+  animation: none;
+  transform: translateY(var(--blame-rest-y, 0px));
+}
+.blame-gutter__content {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+.blame-cell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 20px; /* must equal --diffs-line-height */
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 13px;
+  box-sizing: border-box;
+  /* Normal line-height (not 1): flex centers the row in its 20px height anyway,
+     and `.blame-cell__msg` clips with overflow:hidden for its ellipsis — a 1.0
+     line box is exactly the font size, so glyph descenders (g, p, y) get cropped
+     at the baseline. The extra leading gives them room. */
+  line-height: 1.4;
+}
+/* Sticky block header: once a block's first line scrolls above the gutter top,
+   its label pins here over the still-scrolling content (the next block's header
+   rides up and pushes it out — see stickyRun in lib/blame). It sits in the
+   gutter directly (not the compositor-followed content layer), so the panel fill
+   is load-bearing: it masks the rows sliding beneath it (same color as the
+   gutter, so invisible — it only catches the sub-pixel bleed when the pin trails
+   the compositor by a frame mid-fling). */
+.blame-cell--sticky {
+  z-index: 2;
+  background: var(--bg-panel);
+}
+/* The drop shadow — the only cue that it's floating — belongs to the resting
+   pinned state alone. While the next block is pushing it up and out (top < 0)
+   it's leaving, not floating, so the shadow would just smear over the incoming
+   header; drop it then and let it slide out flat. */
+.blame-cell--pinned {
+  box-shadow: 0 4px 8px -4px rgba(0, 0, 0, 0.25);
+}
+/* Per-line age heat stripe at the very left edge (older → newer). */
+.blame-cell__age {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+}
+.blame-cell .avatar {
+  flex: 0 0 auto;
+}
+/* Commit summary — the load-bearing label (the short sha was just noise).
+   Takes the row's slack and ellipsizes; its full text is in the hover tip. */
+.blame-cell__msg {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The summary doubles as a link to the commit in the History tab. Styled as
+   plain text (it's a button under the hood) until hovered, so the gutter stays
+   calm; reset the button chrome to sit flush in the flex row. */
+.blame-cell__msg--link {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.blame-cell__msg--link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.blame-cell__msg--wt {
+  color: var(--fg-faint);
+  font-style: italic;
+}
+.blame-cell__when {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+/* "Blame prior to this change" — always shown so it's discoverable; it lights
+   up on hover. Lines with nothing earlier to blame (root / boundary) render an
+   empty slot of the same size so the relative date stays column-aligned. */
+.blame-cell__reblame {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+}
+.blame-cell__reblame:hover {
+  color: var(--accent);
+  background: var(--bg-active);
+}
+.blame-cell__reblame--empty {
+  pointer-events: none;
+}
+.blame-code {
+  flex: 1;
+  min-width: 0;
+  /* CodeView owns scrolling: it virtualizes and listens to the `scroll` event
+     on this root, so it must be a native scroll container. The gutter and rules
+     follow it via a scroll-driven animation tied to this named timeline (hoisted
+     to .blame-body by timeline-scope), so they ride the same compositor scroll. */
+  overflow: auto;
+  scroll-timeline: --blame-scroll block;
+  user-select: text;
+  /* Pierre pads the code block by --diffs-gap-block (8px fallback) at the top
+     and bottom, but only zeroes the top when a file header is present — which
+     we disable. The custom property pierces the shadow root, so pin it to 0 to
+     drop that inset: line 1 then starts flush at the top (no empty band) and
+     sits exactly on our gutter's first row. Paired with `layout.paddingTop: 0`
+     in BlamePane, which removes Pierre's other top inset (the container
+     margin). Together they put the source origin at y=0, so the gutter needs
+     no offset to align. */
+  --diffs-gap-block: 0px;
+}
+.blame-code pierre-diff,
+.blame-code .pierre-diffs {
+  display: block;
+}
+/* Section delimiters: hairlines spanning both columns at each commit boundary,
+   so it's clear which source lines belong to which blame band. Non-interactive
+   so text selection in the code passes straight through. */
+.blame-rules {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.blame-rules__content {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+.blame-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1px solid var(--border);
+}

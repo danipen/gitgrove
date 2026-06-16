@@ -1,0 +1,218 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   GitGrove — base: design tokens, themes, reset, shared keyframes.
+   Two themes share one layout. Palette tokens live under [data-theme]; metrics
+   and type are theme-agnostic. <html data-theme="…"> is set from the user's
+   preference (see lib/theme.ts) and flips every var below in one place.
+
+   Z-INDEX LAYERING CONTRACT — the one global stacking order. Keep new overlays
+   on this ladder; cross-references in the feature files cite these numbers:
+     55  update banner        60  file-history overlay / toast
+     64  popover backdrop     65  popover
+     70  modal backdrop       79  context-menu backdrop   80  context menu
+     90  tooltip (always on top)
+   ───────────────────────────────────────────────────────────────────────── */
+:root {
+  /* Metrics & type — theme-agnostic */
+  --toolbar-h: 52px;
+  --tab-h: 40px;
+  --radius: 8px;
+  --radius-sm: 6px;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'SF Mono', ui-monospace, 'JetBrains Mono', 'Fira Code', Menlo, monospace;
+  /* Branch icon as a mask source for cheap, cached per-row painting. */
+  --branch-glyph: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='6' cy='6' r='2.4'/%3E%3Ccircle cx='6' cy='18' r='2.4'/%3E%3Ccircle cx='18' cy='8' r='2.4'/%3E%3Cpath d='M6 8.4v7.2'/%3E%3Cpath d='M18 10.4c0 4-4 3.6-6 5.2'/%3E%3C/svg%3E");
+}
+
+/* ── Dark theme (default) ─────────────────────────────────────────────────── */
+:root,
+:root[data-theme='dark'] {
+  /* Surfaces */
+  --bg: #0c0d10;
+  --bg-panel: #121319;
+  --bg-elevated: #181a22;
+  --bg-hover: #1e2129;
+  --bg-active: #262a35;
+  --border: #23262f;
+  --border-strong: #2f333e;
+  /* Checkerboard square behind transparent image regions (image diff viewer). */
+  --img-checker: rgba(255, 255, 255, 0.07);
+
+  /* Text */
+  --fg: #e7e9ee;
+  --fg-muted: #9aa0ad;
+  --fg-faint: #6b707c;
+  /* Directory prefix on a file path: softer than the filename, but legible.
+     Tuned per theme — dark needs more lift to stay readable on the dark panel;
+     light needs to stay faint enough to read clearly softer than the name. */
+  --fg-path-dir: #9aa0ad;
+
+  /* Accents */
+  --accent: #5b8cff;
+  --accent-soft: rgba(91, 140, 255, 0.16);
+  --accent-border: rgba(91, 140, 255, 0.5);
+  --on-accent: #0b0d12;
+  --accent-glow: rgba(91, 140, 255, 0.25);
+
+  /* Git status colors */
+  --st-added: #3fb950;
+  --st-modified: #d6a027;
+  --st-deleted: #f0616d;
+  --st-renamed: #a371f7;
+  --st-untracked: #6cc6c0;
+  --st-conflicted: #f0616d;
+  --st-modified-soft: rgba(214, 160, 39, 0.16);
+  --st-added-soft: rgba(63, 185, 80, 0.14);
+
+  /* Themed chrome details */
+  --scrollbar-thumb: #2c2f39;
+  --scrollbar-thumb-hover: #3a3e4a;
+  --toolbar-grad-top: #14161d;
+  --toolbar-grad-bottom: #101218;
+  --welcome-grad-top: #16181f;
+  --welcome-grad-bottom: #0c0d10;
+  --commit-divider: rgba(35, 38, 47, 0.6);
+  --popover-shadow: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2);
+
+  /* @pierre/trees overrides (custom properties pierce the shadow root).
+     The library defaults use light-dark(), which the shadow root resolves to
+     the light value — so we pin the *-override vars to bypass it entirely.
+
+     --trees-bg must be a *solid* surface color: the middle-truncation marker
+     ("…") paints this color to mask the clipped filename and fade it out. A
+     transparent value leaves the clipped text bleeding straight into the
+     extension with no visible ellipsis. It's re-pinned per-surface
+     (.sidebar / .commit-files) so it always matches what sits behind the tree. */
+  --trees-bg-override: var(--bg-panel);
+  --trees-fg-override: #d6dae2;
+  --trees-fg-muted-override: #8b909c;
+  --trees-bg-muted-override: var(--bg-hover);
+  --trees-accent-override: var(--accent);
+  --trees-border-color-override: var(--border);
+  --trees-border-radius-override: 6px;
+  /* Search / text input inside the tree */
+  --trees-input-bg-override: var(--bg);
+  --trees-search-bg-override: var(--bg);
+  --trees-search-fg-override: var(--fg);
+
+  color-scheme: dark;
+}
+
+/* ── Light theme ──────────────────────────────────────────────────────────── */
+:root[data-theme='light'] {
+  /* Surfaces */
+  --bg: #ffffff;
+  --bg-panel: #f5f6f8;
+  --bg-elevated: #ffffff;
+  --bg-hover: #eceef2;
+  --bg-active: #dfe3e9;
+  --border: #e3e6eb;
+  --border-strong: #d2d7de;
+  /* Checkerboard square behind transparent image regions (image diff viewer). */
+  --img-checker: rgba(0, 0, 0, 0.08);
+
+  /* Text */
+  --fg: #1b1e25;
+  --fg-muted: #586070;
+  --fg-faint: #8a909c;
+  --fg-path-dir: #8a909c;
+
+  /* Accents */
+  --accent: #2f6df6;
+  --accent-soft: rgba(47, 109, 246, 0.12);
+  --accent-border: rgba(47, 109, 246, 0.45);
+  --on-accent: #ffffff;
+  --accent-glow: rgba(47, 109, 246, 0.22);
+
+  /* Git status colors — tuned darker for contrast on light surfaces */
+  --st-added: #1a7f37;
+  --st-modified: #9a6700;
+  --st-deleted: #cf222e;
+  --st-renamed: #8250df;
+  --st-untracked: #1b7c83;
+  --st-conflicted: #cf222e;
+  --st-modified-soft: rgba(154, 103, 0, 0.14);
+  --st-added-soft: rgba(26, 127, 55, 0.12);
+
+  /* Themed chrome details */
+  --scrollbar-thumb: #c9ced7;
+  --scrollbar-thumb-hover: #aeb4bf;
+  --toolbar-grad-top: #fbfcfd;
+  --toolbar-grad-bottom: #eef0f4;
+  --welcome-grad-top: #ffffff;
+  --welcome-grad-bottom: #eef1f5;
+  --commit-divider: rgba(210, 215, 222, 0.7);
+  --popover-shadow: 0 14px 36px rgba(24, 36, 64, 0.16), 0 0 0 1px rgba(24, 36, 64, 0.06);
+
+  /* @pierre/trees overrides (light) */
+  --trees-bg-override: var(--bg-panel);
+  --trees-fg-override: #2b303a;
+  --trees-fg-muted-override: #6b717d;
+  --trees-bg-muted-override: var(--bg-hover);
+  --trees-accent-override: var(--accent);
+  --trees-border-color-override: var(--border);
+  --trees-border-radius-override: 6px;
+  --trees-input-bg-override: #ffffff;
+  --trees-search-bg-override: #ffffff;
+  --trees-search-fg-override: var(--fg);
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+  user-select: none;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 11px;
+  height: 11px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* ── Shared keyframes (used across many components) ──────────────────────── */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}

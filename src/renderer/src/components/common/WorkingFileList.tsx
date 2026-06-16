@@ -51,7 +51,7 @@ interface Props {
   contextMenuFor: (files: ChangedFile[]) => ContextMenuItem[]
 }
 
-/** Fixed row height (px) — must match .wfl__row in global.css. */
+/** Fixed row height (px) — must match .wfl__row in styles/features/changes.css. */
 const ROW_H = 28
 /** Breathing room above the first row / below the last one (px). */
 const PAD_TOP = 4

@@ -35,7 +35,7 @@ interface Props extends FileHistoryTarget {
   onRevealCommit: (hash: string) => void
 }
 
-/** Fixed commit-row height — mirrors `.fh-commit` in global.css. */
+/** Fixed commit-row height — mirrors `.fh-commit` in styles/features/blame.css. */
 const FH_ROW_H = 58
 
 /** A reblame stack frame for a revision/path (working tree when `ref` is null). */
