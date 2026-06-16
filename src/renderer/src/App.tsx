@@ -41,10 +41,7 @@ import { Toast } from './components/common/Toast'
 import { TooltipLayer } from './components/common/TooltipLayer'
 import { CommitSummary } from './components/history/CommitSummary'
 import { commitMenuItems } from './components/history/commitMenuItems'
-import {
-  type FileHistoryTarget,
-  FileHistoryOverlay
-} from './components/history/FileHistoryOverlay'
+import { FileHistoryOverlay, type FileHistoryTarget } from './components/history/FileHistoryOverlay'
 import { HistoryView } from './components/history/HistoryView'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import type { BranchAction } from './components/toolbar/BranchSwitcher'

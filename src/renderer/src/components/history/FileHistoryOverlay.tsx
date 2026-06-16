@@ -41,7 +41,14 @@ const FH_ROW_H = 58
  * and per-line authorship (Blame). Invoked from either file list's right-click
  * menu. Closes on the ✕ or Escape.
  */
-export function FileHistoryOverlay({ repoPath, path, mode: initialMode, baseRef, theme, onClose }: Props) {
+export function FileHistoryOverlay({
+  repoPath,
+  path,
+  mode: initialMode,
+  baseRef,
+  theme,
+  onClose
+}: Props) {
   const [commits, setCommits] = useState<Commit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -207,7 +214,12 @@ export function FileHistoryOverlay({ repoPath, path, mode: initialMode, baseRef,
                       className={`fh-commit${active ? ' is-active' : ''}`}
                       role="option"
                       aria-selected={active}
-                      style={{ position: 'absolute', top: vs.rowTop(vs.start + i), left: 0, right: 0 }}
+                      style={{
+                        position: 'absolute',
+                        top: vs.rowTop(vs.start + i),
+                        left: 0,
+                        right: 0
+                      }}
                       onClick={() => {
                         vs.viewportEl?.focus()
                         setSelectedHash(commit.hash)

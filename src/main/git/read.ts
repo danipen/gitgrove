@@ -530,11 +530,7 @@ export function parseBlamePorcelain(out: string): BlameLine[] {
  * `core.quotePath=false` so non-ASCII paths in the `filename`/`previous`
  * fields arrive raw rather than octal-escaped.
  */
-export async function getBlame(
-  repoPath: string,
-  path: string,
-  ref?: string
-): Promise<BlameLine[]> {
+export async function getBlame(repoPath: string, path: string, ref?: string): Promise<BlameLine[]> {
   const args = ['-c', 'core.quotePath=false', 'blame', '--porcelain']
   if (ref?.trim()) args.push(ref)
   args.push('--', path)

@@ -2,19 +2,19 @@ import type { CodeViewFileItem, CodeViewOptions } from '@pierre/diffs'
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import type { BlameLine } from '@shared/types'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { splitPath } from '@/lib/format'
-import { Icon } from '@/lib/icons'
-import type { ResolvedTheme } from '@/lib/theme'
-import { useSpinDelay } from '@/lib/useSpinDelay'
 import {
-  type BlameFrame,
   BLAME_LINE_HEIGHT,
+  type BlameFrame,
   blameWindow,
   canReblame,
   isRunStart,
   popReblame,
   pushReblame
 } from '@/lib/blame'
+import { splitPath } from '@/lib/format'
+import { Icon } from '@/lib/icons'
+import type { ResolvedTheme } from '@/lib/theme'
+import { useSpinDelay } from '@/lib/useSpinDelay'
 import { Avatar } from './Avatar'
 
 interface Props {
