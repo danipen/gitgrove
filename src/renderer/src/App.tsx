@@ -571,6 +571,7 @@ export function App() {
       setSync(null)
       setStashes([])
       setModal(null)
+      setFileHistory(null)
       // A repo switch abandons any commit waiting on the identity dialog; its
       // composer is still awaiting the promise, so settle it.
       pendingIdentityCommit.current?.resolve(false)
