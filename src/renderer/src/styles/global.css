@@ -1446,6 +1446,270 @@ button {
   display: block;
 }
 
+/* ── File History / Blame overlay ─────────────────────────────────────────── */
+/* A full-window panel below the toolbar — it owns the whole work area rather
+   than floating like the stash popover. Layered above the app body and update
+   banner, below modals (70) and tooltips (90). `--diffs-line-height` pins the
+   Pierre source line height so the separate blame gutter aligns row-for-row
+   (kept in sync with lib/blame.ts BLAME_LINE_HEIGHT). */
+.file-history {
+  position: fixed;
+  top: var(--toolbar-h);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  --diffs-line-height: 20px;
+}
+.fh-head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+  color: var(--fg-muted);
+}
+.fh-head__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12.5px;
+}
+.fh-head__title code {
+  font-family: var(--font-mono);
+  color: var(--fg);
+  user-select: text;
+}
+.fh-head__spacer {
+  flex: 1;
+}
+.fh-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.fh-commits {
+  flex: 0 0 var(--fh-commits-w, 320px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.fh-commit-list {
+  overflow: hidden;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.fh-commit-list:focus {
+  outline: none;
+}
+.fh-commit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  height: 58px; /* matches FH_ROW_H in FileHistoryOverlay.tsx */
+  border-bottom: 1px solid var(--commit-divider);
+  width: 100%;
+  text-align: left;
+  background: none;
+  border-left: 2px solid transparent;
+  border-right: none;
+  border-top: none;
+  color: var(--fg);
+  cursor: default;
+}
+.fh-commit:hover {
+  background: var(--bg-hover);
+}
+.fh-commit.is-active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+}
+.fh-commit__main {
+  flex: 1;
+  min-width: 0;
+}
+.fh-commit__subject {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fh-commit__meta {
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-faint);
+  min-width: 0;
+}
+.fh-commit__author {
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fh-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fh-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 46px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.fh-toolbar__hint {
+  font-size: 11.5px;
+  color: var(--fg-faint);
+  font-family: var(--font-mono);
+}
+
+/* ── Blame pane ────────────────────────────────────────────────────────────
+   The metadata gutter is a separate column we virtualize and scroll-sync to
+   the editor; both share `--diffs-line-height` so rows line up. */
+.blame {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+}
+.blame-crumb {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  font-size: 12px;
+  color: var(--fg-faint);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+.blame-crumb code {
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+.blame-crumb strong {
+  color: var(--fg);
+  font-weight: 600;
+}
+.blame-crumb__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+.blame-crumb__back:hover {
+  text-decoration: underline;
+}
+.blame-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+.blame-gutter {
+  flex: 0 0 var(--blame-gutter-w, 264px);
+  position: relative;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--bg-panel);
+  font-size: 11px;
+  user-select: none;
+}
+.blame-gutter__content {
+  position: absolute;
+  inset: 0;
+  will-change: transform;
+}
+.blame-cell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 20px; /* must equal --diffs-line-height */
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  box-sizing: border-box;
+}
+.blame-cell.is-run-start {
+  box-shadow: inset 0 1px 0 var(--border);
+}
+.blame-cell__btn,
+.blame-cell__static {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+  padding: 0;
+  text-align: left;
+  font: inherit;
+  line-height: 1;
+}
+.blame-cell__btn {
+  cursor: pointer;
+}
+.blame-cell__btn:hover {
+  color: var(--fg);
+}
+.blame-cell__btn:hover .blame-cell__sha {
+  color: var(--accent);
+}
+.blame-cell__sha {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  color: var(--fg-muted);
+}
+.blame-cell__author {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.blame-cell__date {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+.blame-code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  user-select: text;
+}
+.blame-code pierre-diff,
+.blame-code .pierre-diffs {
+  display: block;
+}
+
 /* ── States: empty / loading / error ─────────────────────────────────────── */
 .center-state {
   flex: 1;
