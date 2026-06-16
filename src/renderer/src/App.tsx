@@ -287,11 +287,16 @@ export function App() {
   }, [loadBranches])
 
   const loadLog = useCallback(
-    async (repoPath: string, ref?: string, opts?: { keepCount?: boolean }) => {
+    async (repoPath: string, ref?: string, opts?: { keepCount?: boolean; minCount?: number }) => {
       // `keepCount` (watcher/post-op refresh): re-fetch everything the user has
       // already paged in, so the list never shrinks back to the first page and
-      // yanks their scroll position. Fresh loads reset to one page.
-      const limit = opts?.keepCount ? Math.max(LOG_LIMIT, commitsRef.current.length) : LOG_LIMIT
+      // yanks their scroll position. `minCount` (reveal-a-commit): page deep
+      // enough to include a specific commit. Fresh loads reset to one page.
+      const limit = Math.max(
+        LOG_LIMIT,
+        opts?.keepCount ? commitsRef.current.length : 0,
+        opts?.minCount ?? 0
+      )
       const id = ++logReq.current
       setCommitsLoading(true)
       try {
@@ -442,6 +447,32 @@ export function App() {
       }
     },
     [fail, selectCommitFile, clearDiff]
+  )
+
+  /**
+   * Reveal a commit in the History tab from elsewhere (the blame gutter's commit
+   * link): close any overlay, switch to History, and select the commit. If it
+   * hasn't been paged in yet — an old commit past the loaded window — ask git
+   * for its index and page the log deep enough to include it first. HistoryView
+   * then scrolls the selected commit into view. A no-op for commits that aren't
+   * on HEAD's history (nothing to select).
+   */
+  const revealCommit = useCallback(
+    async (hash: string) => {
+      const repoPath = repoRef.current?.path
+      if (!repoPath) return
+      setFileHistory(null)
+      setTab('history')
+      let list = logLoadedRef.current ? commitsRef.current : await loadLog(repoPath).catch(() => [])
+      if (!list.some((c) => c.hash === hash)) {
+        const index = await window.gitgrove.commitIndex(repoPath, hash).catch(() => -1)
+        if (index < 0) return
+        list = await loadLog(repoPath, undefined, { minCount: index + 1 }).catch(() => list)
+      }
+      const target = list.find((c) => c.hash === hash)
+      if (target) selectCommit(target)
+    },
+    [loadLog, selectCommit]
   )
 
   // ── Tab switching keeps the right pane in sync with the active selection ───
@@ -1708,6 +1739,7 @@ export function App() {
           baseRef={fileHistory.baseRef}
           theme={theme}
           onClose={() => setFileHistory(null)}
+          onRevealCommit={revealCommit}
         />
       )}
       {error && <Toast kind="error" message={error} onClose={() => setError(null)} />}

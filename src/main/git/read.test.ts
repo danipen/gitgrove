@@ -9,6 +9,7 @@ import {
   getBlame,
   getBranches,
   getCommitFiles,
+  getCommitIndex,
   getConflictSides,
   getFileHistory,
   getLog,
@@ -104,6 +105,31 @@ describe('resolveRepoRoot', () => {
 
   it('returns null outside a repo', async () => {
     expect(await resolveRepoRoot(tmpdir())).toBeNull()
+  })
+})
+
+describe('getCommitIndex', () => {
+  it("returns a commit's 0-based position in git log HEAD", async () => {
+    // History (newest first): renameHash, secondHash, firstHash.
+    expect(await getCommitIndex(repo, renameHash)).toBe(0)
+    expect(await getCommitIndex(repo, secondHash)).toBe(1)
+    expect(await getCommitIndex(repo, firstHash)).toBe(2)
+  })
+
+  it('returns -1 for a commit that is not an ancestor of HEAD', async () => {
+    // A commit on a side branch never merged into main would never appear in
+    // `git log HEAD`, so there's no position to page to.
+    git(['checkout', '-q', '-b', 'side-index'])
+    writeFileSync(join(repo, 'side.txt'), 'side\n')
+    git(['add', '.'])
+    git(['commit', '-q', '-m', 'side commit'])
+    const sideHash = git(['rev-parse', 'HEAD'])
+    git(['checkout', '-q', 'main'])
+    try {
+      expect(await getCommitIndex(repo, sideHash)).toBe(-1)
+    } finally {
+      git(['branch', '-q', '-D', 'side-index'])
+    }
   })
 })
 

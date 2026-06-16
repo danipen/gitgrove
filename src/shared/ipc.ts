@@ -55,6 +55,7 @@ export const IPC = {
   branches: 'repo:branches',
   checkout: 'repo:checkout',
   log: 'repo:log',
+  commitIndex: 'repo:commit:index',
   fileHistory: 'repo:file-history',
   blame: 'repo:blame',
   commitFiles: 'repo:commit:files',
@@ -222,6 +223,10 @@ export interface GitGroveApi {
     opts?: { changes?: BranchChangesAction }
   ): Promise<CheckoutResult>
   log(repoPath: string, options?: LogOptions): Promise<Commit[]>
+  /** How many commits sit between HEAD and `hash` (i.e. `hash`'s 0-based index
+   *  in `git log HEAD`), so the History list can page far enough to reveal it.
+   *  `-1` when `hash` isn't an ancestor of HEAD. */
+  commitIndex(repoPath: string, hash: string): Promise<number>
   /** Commits that touched a single file, newest first (follows renames). */
   fileHistory(repoPath: string, path: string, ref?: string): Promise<Commit[]>
   /** Per-line authorship for a file; no `ref` blames the working tree. */

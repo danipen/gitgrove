@@ -376,6 +376,28 @@ export async function getLog(repoPath: string, options: LogOptions = {}): Promis
 }
 
 /**
+ * `hash`'s 0-based position in `git log HEAD` — the count of commits reachable
+ * from HEAD but not from `hash`, i.e. those strictly newer than it. Lets the
+ * History list page far enough to reveal a commit the user jumped to from
+ * elsewhere. Returns `-1` when `hash` isn't an ancestor of HEAD (it would never
+ * appear in the list) or can't be resolved.
+ */
+export async function getCommitIndex(repoPath: string, hash: string): Promise<number> {
+  // `hash..HEAD` excludes `hash` and its ancestors, so the count is exactly the
+  // number of newer commits = `hash`'s index. An unrelated `hash` (not an
+  // ancestor) makes git exit non-zero or yield a misleading count, so verify
+  // ancestry first.
+  const ancestor = await runGit(repoPath, ['merge-base', '--is-ancestor', hash, 'HEAD']).then(
+    () => true,
+    () => false
+  )
+  if (!ancestor) return -1
+  const out = await runGit(repoPath, ['rev-list', '--count', `${hash}..HEAD`])
+  const count = Number.parseInt(out.trim(), 10)
+  return Number.isFinite(count) ? count : -1
+}
+
+/**
  * History of the commits that touched a single file, newest first. `--follow`
  * tracks the file across renames (it requires exactly one pathspec); `-M`
  * enables the rename detection it relies on. `ref` bounds the walk (a commit

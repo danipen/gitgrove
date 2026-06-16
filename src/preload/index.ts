@@ -26,6 +26,7 @@ const api: GitGroveApi = {
   branches: (repoPath) => ipcRenderer.invoke(IPC.branches, repoPath),
   checkout: (repoPath, branch, opts) => ipcRenderer.invoke(IPC.checkout, repoPath, branch, opts),
   log: (repoPath, options?: LogOptions) => ipcRenderer.invoke(IPC.log, repoPath, options),
+  commitIndex: (repoPath, hash) => ipcRenderer.invoke(IPC.commitIndex, repoPath, hash),
   fileHistory: (repoPath, path, ref) => ipcRenderer.invoke(IPC.fileHistory, repoPath, path, ref),
   blame: (repoPath, path, ref) => ipcRenderer.invoke(IPC.blame, repoPath, path, ref),
   commitFiles: (repoPath, hash) => ipcRenderer.invoke(IPC.commitFiles, repoPath, hash),

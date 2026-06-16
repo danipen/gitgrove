@@ -39,6 +39,8 @@ interface Props {
    *  newest line, by contrast, always is — it's the most recent change at or
    *  before that revision. `null` for the working tree. */
   onBlamedAt: (hash: string | null) => void
+  /** Open a line's commit in the main History tab (the commit-message link). */
+  onOpenCommit: (hash: string) => void
 }
 
 /** Snap a CSS-pixel value onto the device-pixel grid (dpr read fresh). */
@@ -75,7 +77,8 @@ export function BlamePane({
   frameLabel,
   onReblame,
   onBack,
-  onBlamedAt
+  onBlamedAt,
+  onOpenCommit
 }: Props) {
   const [lines, setLines] = useState<BlameLine[] | null>(null)
   const [loading, setLoading] = useState(true)
@@ -330,7 +333,9 @@ export function BlamePane({
               return (
                 <div key={index} className="blame-cell" style={{ top: index * BLAME_LINE_HEIGHT }}>
                   <span className="blame-cell__age" style={{ background: stripe }} />
-                  {runStart && <BlameCell line={line} onReblame={onReblame} />}
+                  {runStart && (
+                    <BlameCell line={line} onReblame={onReblame} onOpenCommit={onOpenCommit} />
+                  )}
                 </div>
               )
             })}
@@ -378,7 +383,15 @@ export function BlamePane({
  * button slot is always present — an empty placeholder when there's nothing
  * earlier to blame — so the relative date stays column-aligned down the gutter.
  */
-function BlameCell({ line, onReblame }: { line: BlameLine; onReblame: (line: BlameLine) => void }) {
+function BlameCell({
+  line,
+  onReblame,
+  onOpenCommit
+}: {
+  line: BlameLine
+  onReblame: (line: BlameLine) => void
+  onOpenCommit: (hash: string) => void
+}) {
   if (line.notCommitted) {
     return <span className="blame-cell__msg blame-cell__msg--wt">Uncommitted changes</span>
   }
@@ -392,10 +405,16 @@ function BlameCell({ line, onReblame }: { line: BlameLine; onReblame: (line: Bla
       />
       {/* The commit that last touched this line: short sha + full message,
           always shown (not only when the message is clipped) so the sha — the
-          one identifier dropped from the row itself — is always a hover away. */}
-      <span className="blame-cell__msg" data-tip={`${line.shortHash} · ${line.summary}`}>
+          one identifier dropped from the row itself — is always a hover away.
+          Clicking it opens that commit in the main History tab. */}
+      <button
+        type="button"
+        className="blame-cell__msg blame-cell__msg--link"
+        data-tip={`${line.shortHash} · ${line.summary}`}
+        onClick={() => onOpenCommit(line.hash)}
+      >
         {line.summary}
-      </span>
+      </button>
       <span className="blame-cell__when" data-tip={new Date(line.date).toLocaleString()}>
         {shortDate(line.date)}
       </span>

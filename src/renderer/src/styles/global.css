@@ -1788,6 +1788,23 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* The summary doubles as a link to the commit in the History tab. Styled as
+   plain text (it's a button under the hood) until hovered, so the gutter stays
+   calm; reset the button chrome to sit flush in the flex row. */
+.blame-cell__msg--link {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.blame-cell__msg--link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
 .blame-cell__msg--wt {
   color: var(--fg-faint);
   font-style: italic;

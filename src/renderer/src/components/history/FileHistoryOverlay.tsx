@@ -31,6 +31,8 @@ interface Props extends FileHistoryTarget {
   repoPath: string
   theme: ResolvedTheme
   onClose: () => void
+  /** Jump to a commit in the main History tab (from the blame gutter's link). */
+  onRevealCommit: (hash: string) => void
 }
 
 /** Fixed commit-row height — mirrors `.fh-commit` in global.css. */
@@ -54,7 +56,8 @@ export function FileHistoryOverlay({
   mode: initialMode,
   baseRef,
   theme,
-  onClose
+  onClose,
+  onRevealCommit
 }: Props) {
   const [commits, setCommits] = useState<Commit[]>([])
   const [loading, setLoading] = useState(true)
@@ -417,6 +420,7 @@ export function FileHistoryOverlay({
               onReblame={reblame}
               onBack={back}
               onBlamedAt={onBlamedAt}
+              onOpenCommit={onRevealCommit}
             />
           ) : (
             <DiffViewer

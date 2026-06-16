@@ -40,6 +40,7 @@ import {
   getBranches,
   getCommitDiff,
   getCommitFiles,
+  getCommitIndex,
   getConflictSides,
   getFileHistory,
   getLog,
@@ -133,6 +134,9 @@ export function registerIpc(ctx: IpcContext): void {
     }
   )
   ipcMain.handle(IPC.log, (_e, repoPath: string, options?: LogOptions) => getLog(repoPath, options))
+  ipcMain.handle(IPC.commitIndex, (_e, repoPath: string, hash: string) =>
+    getCommitIndex(repoPath, hash)
+  )
   ipcMain.handle(IPC.fileHistory, (_e, repoPath: string, path: string, ref?: string) =>
     getFileHistory(repoPath, path, ref)
   )
