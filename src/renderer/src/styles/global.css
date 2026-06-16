@@ -1692,6 +1692,11 @@ button {
   min-height: 0;
   display: flex;
   overflow: hidden;
+  /* Hoist the code's scroll timeline (defined on .blame-code) to this common
+     ancestor so the gutter/rules — its *siblings*, not descendants — can attach
+     their follow animation to it. `--blame-range` (the scroll distance) is set
+     here imperatively by BlamePane. */
+  timeline-scope: --blame-scroll;
 }
 .blame-gutter {
   flex: 0 0 var(--blame-gutter-w, 264px);
@@ -1701,6 +1706,36 @@ button {
   background: var(--bg-panel);
   font-size: 11px;
   user-select: none;
+}
+/* Gutter and rules follow the code's native scroll on the compositor via a
+   scroll-driven animation (no main-thread scroll handler — see BlamePane). The
+   keyframe runs from 0 to -(scrollable distance), so animation progress maps
+   1:1 onto -scrollTop and the layers stay pixel-locked to the source at every
+   position — provided `--blame-range` is the timeline's *exact* scroll distance
+   (BlamePane feeds it the fractional viewport height; any rounding there drifts
+   the follow off the code and blurs the 1px hairlines). */
+@keyframes blame-follow {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-1 * var(--blame-range, 0px)));
+  }
+}
+.blame-gutter__content,
+.blame-rules__content {
+  animation: blame-follow linear both;
+  animation-timeline: --blame-scroll;
+}
+/* Once scrolling stops, BlamePane freezes the follow on a device-pixel-rounded
+   offset (`--blame-rest-y`) by toggling `.is-resting`, so the 1px section
+   hairlines land on whole physical pixels and snap crisp. Mid-scroll the follow
+   stays on Pierre's exact (sub-pixel) position above; this only takes over at
+   rest, where the ≤½px correction off the code is imperceptible. */
+.blame-body.is-resting .blame-gutter__content,
+.blame-body.is-resting .blame-rules__content {
+  animation: none;
+  transform: translateY(var(--blame-rest-y, 0px));
 }
 .blame-gutter__content {
   position: absolute;
@@ -1770,9 +1805,11 @@ button {
   flex: 1;
   min-width: 0;
   /* CodeView owns scrolling: it virtualizes and listens to the `scroll` event
-     on this root, so it must be a native scroll container (we mirror its
-     scrollTop onto the gutter via onScroll). */
+     on this root, so it must be a native scroll container. The gutter and rules
+     follow it via a scroll-driven animation tied to this named timeline (hoisted
+     to .blame-body by timeline-scope), so they ride the same compositor scroll. */
   overflow: auto;
+  scroll-timeline: --blame-scroll block;
   user-select: text;
   /* Pierre pads the code block by --diffs-gap-block (8px fallback) at the top
      and bottom, but only zeroes the top when a file header is present — which

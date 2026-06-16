@@ -1,7 +1,7 @@
 import type { CodeViewFileItem, CodeViewOptions } from '@pierre/diffs'
 import { CodeView, type CodeViewHandle } from '@pierre/diffs/react'
 import type { BlameLine } from '@shared/types'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   ageColor,
   ageFraction,
@@ -28,6 +28,12 @@ interface Props {
   /** Initial revision to blame, or null for the working tree. */
   baseRef: string | null
   theme: ResolvedTheme
+}
+
+/** Snap a CSS-pixel value onto the device-pixel grid (dpr read fresh). */
+function roundToDevicePixel(value: number): number {
+  const dpr = window.devicePixelRatio || 1
+  return Math.round(value * dpr) / dpr
 }
 
 /** Short local date for the gutter (e.g. "Apr 21, 2026"). */
@@ -85,28 +91,104 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
   }, [repoPath, frame.ref, frame.path])
 
   // ── Synced scroll ────────────────────────────────────────────────────────
-  // The editor owns the scroll; the gutter follows. `scrollTop` is the editor's
-  // logical offset; `viewportH` (the shared body height) bounds the window.
+  // Pierre scrolls its code on a *native* (compositor-driven) scroll. Following
+  // it from the main thread — an `onScroll` listener or an rAF that reads the
+  // scroll position — always trails the compositor by a frame, which reads as
+  // the gutter lagging the code mid-scroll. So instead the gutter and the
+  // section rules track the code with a CSS scroll-driven animation bound to
+  // that same native scroll (see `.blame-code` / `blame-follow` in global.css):
+  // it runs on the compositor in true lockstep, no JS in the scroll path. React
+  // only feeds it `--blame-range` (the keyframe's end translate) and `scrollTop`
+  // (windowing); neither is needed per frame.
   const cvRef = useRef<CodeViewHandle<undefined>>(null)
   // Body node via a state-backed callback ref: it mounts only once blame has
   // loaded (the loading/error branches don't render it), so a plain ref + `[]`
   // effect would measure null and leave the gutter window at zero rows.
   const [bodyEl, setBodyEl] = useState<HTMLDivElement | null>(null)
   const [scrollTop, setScrollTop] = useState(0)
-  const [viewportH, setViewportH] = useState(0)
 
-  useLayoutEffect(() => {
-    if (!bodyEl) return
-    const measure = () => setViewportH(bodyEl.clientHeight)
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(bodyEl)
-    return () => ro.disconnect()
+  // Pin `--blame-range` to the editor's scrollable distance so the follow
+  // animation maps the scroll-timeline's 0→1 progress onto exactly 0→-maxScroll
+  // — i.e. the gutter/rules translate equals the *same* native scrollTop the code
+  // rides, lockstep and pixel-identical at every position. The distance must be
+  // the timeline's *exact* value (`scrollHeight - clientHeight` in fractional
+  // layout px); using the integer `clientHeight` leaves a sub-pixel error that
+  // accumulates across the scroll and shears the gutter off the code (the lines
+  // blur where the drift nears ½px). `--blame-range` is fed from the fractional
+  // viewport height below; `viewportH` (rounded) only drives the row window.
+  const [viewportH, setViewportH] = useState(0)
+  const viewportHRef = useRef(0)
+  const applyRange = useCallback(() => {
+    const code = bodyEl?.querySelector<HTMLElement>('.blame-code')
+    if (!code || !bodyEl) return
+    bodyEl.style.setProperty(
+      '--blame-range',
+      `${Math.max(0, code.scrollHeight - viewportHRef.current)}px`
+    )
   }, [bodyEl])
 
+  useLayoutEffect(() => {
+    const code = bodyEl?.querySelector<HTMLElement>('.blame-code')
+    if (!code) return
+    // A new file/revision remounts the body and reloads the editor at the top;
+    // reset the window so it doesn't briefly render the old scroll's rows.
+    setScrollTop(0)
+    // Observe the code viewport's *content box* — `contentBoxSize` is fractional
+    // and excludes any scrollbar, so it matches the timeline's client height to
+    // sub-pixel precision (a horizontal scrollbar on long lines would otherwise
+    // skew it). Resync synchronously on every resize step (no rAF, no state
+    // round-trip): the native scroll distance changes the instant the viewport
+    // does, so a deferred update shears the gutter against the code mid-drag.
+    const ro = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentBoxSize?.[0]
+      viewportHRef.current = box ? box.blockSize : code.clientHeight
+      setViewportH(Math.round(viewportHRef.current))
+      applyRange()
+    })
+    ro.observe(code, { box: 'content-box' })
+    return () => ro.disconnect()
+  }, [bodyEl, applyRange])
+
+  // After content (`lines`) changes Pierre re-renders, and its scrollHeight is
+  // only correct on the next frame — defer one rAF before reading it (the
+  // viewport is unchanged, so the ResizeObserver wouldn't fire on its own).
+  useLayoutEffect(() => {
+    if (!bodyEl || !lines) return
+    const raf = requestAnimationFrame(applyRange)
+    return () => cancelAnimationFrame(raf)
+  }, [bodyEl, lines, applyRange])
+
+  // ── Crisp hairlines at rest ────────────────────────────────────────────────
+  // While scrolling, the follow rides Pierre's exact (sub-pixel) scroll position
+  // — perfectly synced, but the 1px section rules are as soft as Pierre's own
+  // sub-pixel-positioned code. Pierre never snaps the native scroll to whole
+  // pixels (CodeView only `applyScrollFix`es on programmatic/page scrolls), so
+  // crispness and exact-sync can't both hold mid-scroll. The moment scrolling
+  // stops, though, we freeze the gutter/rules on a device-pixel-rounded offset
+  // (`--blame-rest-y`, via `.is-resting`) so the lines snap onto whole physical
+  // pixels — a ≤½px nudge off the resting code, imperceptible but crisp. The
+  // class is toggled imperatively so the per-event scroll path stays render-free,
+  // and the debounce is long enough that slow scrolling stays in smooth-follow
+  // mode rather than flickering crisp/soft between micro-movements.
+  const restTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const settleAtRest = useCallback(
+    (st: number) => {
+      if (!bodyEl) return
+      bodyEl.classList.remove('is-resting')
+      clearTimeout(restTimer.current)
+      restTimer.current = setTimeout(() => {
+        bodyEl.style.setProperty('--blame-rest-y', `${-roundToDevicePixel(st)}px`)
+        bodyEl.classList.add('is-resting')
+      }, 180)
+    },
+    [bodyEl]
+  )
+  useEffect(() => () => clearTimeout(restTimer.current), [])
+
   // Wheeling over the gutter must scroll the editor too (separate columns don't
-  // share native scroll). Forward the delta to the CodeView; its `onScroll`
-  // then moves both. Non-passive so the page never scrolls underneath.
+  // share native scroll). Forward the delta to the CodeView; its native scroll
+  // then drives the timeline that moves both. Non-passive so the page never
+  // scrolls underneath.
   useEffect(() => {
     const el = bodyEl?.querySelector<HTMLElement>('.blame-gutter')
     if (!el) return
@@ -189,10 +271,7 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
       <BlameHead stack={stack} onBack={back} showLegend />
       <div className="blame-body" ref={setBodyEl}>
         <div className="blame-gutter" aria-hidden="true">
-          <div
-            className="blame-gutter__content"
-            style={{ transform: `translateY(${-scrollTop}px)` }}
-          >
+          <div className="blame-gutter__content">
             {visible.map((line, i) => {
               const index = win.start + i
               const runStart = isRunStart(lines, index)
@@ -246,16 +325,16 @@ export function BlamePane({ repoPath, path, baseRef, theme }: Props) {
           items={items}
           options={codeOptions}
           disableWorkerPool
-          onScroll={(st) => setScrollTop(st)}
+          onScroll={(st) => {
+            setScrollTop(st)
+            settleAtRest(st)
+          }}
           className="blame-code"
         />
         {/* Hairlines across both columns at each commit boundary so it's clear
             which source lines belong to which blame band. */}
         <div className="blame-rules" aria-hidden="true">
-          <div
-            className="blame-rules__content"
-            style={{ transform: `translateY(${-scrollTop}px)` }}
-          >
+          <div className="blame-rules__content">
             {visible.map((_, i) => {
               const index = win.start + i
               if (index === 0 || !isRunStart(lines, index)) return null
