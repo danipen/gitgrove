@@ -119,6 +119,11 @@ describe('blame runs', () => {
       // Block C's first line (index 7) exactly at the top — its real cell shows.
       expect(stickyRun(runs, 7 * h)).toBeNull()
     })
+
+    it('never floats a single-line block (it would only flicker past)', () => {
+      // Block C is one line; scrolling through it must not pin anything.
+      expect(stickyRun(runs, 7.5 * h)).toBeNull()
+    })
   })
 })
 

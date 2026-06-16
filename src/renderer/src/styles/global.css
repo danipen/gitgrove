@@ -1772,14 +1772,21 @@ button {
   line-height: 1.4;
 }
 /* Sticky block header: once a block's first line scrolls above the gutter top,
-   its label floats here over the still-scrolling content (the next block's
-   header rides up and pushes it out — see stickyRun in lib/blame). It sits in
-   the gutter directly (not the compositor-followed content layer), so it needs
-   its own panel fill to mask the rows sliding underneath, plus a soft drop
-   shadow to read as floating. */
+   its label pins here over the still-scrolling content (the next block's header
+   rides up and pushes it out — see stickyRun in lib/blame). It sits in the
+   gutter directly (not the compositor-followed content layer), so the panel fill
+   is load-bearing: it masks the rows sliding beneath it (same color as the
+   gutter, so invisible — it only catches the sub-pixel bleed when the pin trails
+   the compositor by a frame mid-fling). */
 .blame-cell--sticky {
   z-index: 2;
   background: var(--bg-panel);
+}
+/* The drop shadow — the only cue that it's floating — belongs to the resting
+   pinned state alone. While the next block is pushing it up and out (top < 0)
+   it's leaving, not floating, so the shadow would just smear over the incoming
+   header; drop it then and let it slide out flat. */
+.blame-cell--pinned {
   box-shadow: 0 4px 8px -4px rgba(0, 0, 0, 0.25);
 }
 /* Per-line age heat stripe at the very left edge (older → newer). */

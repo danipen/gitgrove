@@ -351,7 +351,13 @@ export function BlamePane({
             })}
           </div>
           {sticky && (
-            <div className="blame-cell blame-cell--sticky" style={{ top: Math.round(sticky.top) }}>
+            <div
+              // `--pinned` (top === 0) is the resting, floating-over-content state
+              // that earns the shadow; once the next block pushes it up (top < 0)
+              // it's just leaving, so the shadow drops and it slides out flat.
+              className={`blame-cell blame-cell--sticky${sticky.top === 0 ? ' blame-cell--pinned' : ''}`}
+              style={{ top: Math.round(sticky.top) }}
+            >
               <span
                 className="blame-cell__age"
                 style={{

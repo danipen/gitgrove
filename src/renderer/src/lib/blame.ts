@@ -102,6 +102,10 @@ export interface BlameSticky {
  * The header pins at `top: 0` until the *next* block's first line reaches the
  * top, then rides up with it — clamped to one line above that line — so the two
  * never overlap and the handoff reads as one header pushing out the last.
+ *
+ * Single-line blocks are skipped: their header would be in the pushed-up state
+ * the instant it appeared (the next block's line is right below it), so it would
+ * only flicker on the way past — nothing is ever hidden worth pinning.
  */
 export function stickyRun(
   runs: BlameRun[],
@@ -110,7 +114,7 @@ export function stickyRun(
 ): BlameSticky | null {
   if (runs.length === 0 || scrollTop <= 0) return null
   const run = runAt(runs, Math.floor(scrollTop / lineHeight))
-  if (!run || scrollTop <= run.start * lineHeight) return null
+  if (!run || run.end - run.start <= 1 || scrollTop <= run.start * lineHeight) return null
   const pushedUp = (run.end - 1) * lineHeight - scrollTop
   return { run, top: Math.min(0, pushedUp) }
 }
