@@ -68,7 +68,7 @@ function shortDate(iso: string): string {
  * Blame view: a per-line authorship gutter beside the file source. The source
  * is rendered by Pierre's virtualized `CodeView`; the gutter is a separate
  * column we virtualize ourselves and drive off the editor's `onScroll`, with a
- * line height pinned (`--diffs-line-height`, see global.css) so the two stay
+ * line height pinned (`--diffs-line-height`, see styles/features/blame.css) so the two stay
  * aligned row-for-row at any scroll position. The reblame stack lives in the
  * overlay (it also drives the commit list's selection); clicking a line's
  * "blame prior" button reblames the file at that commit's parent.
@@ -138,7 +138,7 @@ export function BlamePane({
   // scroll position — always trails the compositor by a frame, which reads as
   // the gutter lagging the code mid-scroll. So instead the gutter and the
   // section rules track the code with a CSS scroll-driven animation bound to
-  // that same native scroll (see `.blame-code` / `blame-follow` in global.css):
+  // that same native scroll (see `.blame-code` / `blame-follow` in styles/features/blame.css):
   // it runs on the compositor in true lockstep, no JS in the scroll path. React
   // only feeds it `--blame-range` (the keyframe's end translate) and `scrollTop`
   // (windowing); neither is needed per frame.

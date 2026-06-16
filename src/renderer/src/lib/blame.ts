@@ -8,7 +8,7 @@ import type { BlameLine } from '@shared/types'
  * Code line height (px). Pinned via `--diffs-line-height` on the overlay so
  * Pierre's source lines and our separate metadata gutter share one row height
  * and stay aligned at any scroll position. Keep in sync with `.file-history`
- * in global.css.
+ * in styles/features/blame.css.
  */
 export const BLAME_LINE_HEIGHT = 20
 
