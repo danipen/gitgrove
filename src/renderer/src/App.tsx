@@ -41,6 +41,10 @@ import { Toast } from './components/common/Toast'
 import { TooltipLayer } from './components/common/TooltipLayer'
 import { CommitSummary } from './components/history/CommitSummary'
 import { commitMenuItems } from './components/history/commitMenuItems'
+import {
+  type FileHistoryTarget,
+  FileHistoryOverlay
+} from './components/history/FileHistoryOverlay'
 import { HistoryView } from './components/history/HistoryView'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import type { BranchAction } from './components/toolbar/BranchSwitcher'
@@ -89,6 +93,13 @@ export function App() {
 
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
+  // The File History / Blame overlay target, or null when closed.
+  const [fileHistory, setFileHistory] = useState<FileHistoryTarget | null>(null)
+  const openFileHistory = useCallback(
+    (path: string, mode: 'diff' | 'blame', baseRef: string | null) =>
+      setFileHistory({ path, mode, baseRef }),
+    []
+  )
 
   const [tab, setTab] = useState<Tab>('changes')
 
@@ -1608,6 +1619,7 @@ export function App() {
                 onError={fail}
                 onCommit={doCommit}
                 onStash={doStash}
+                onOpenFileHistory={openFileHistory}
               />
             </div>
             <div className={`sidebar__pane${tab === 'history' ? '' : ' sidebar__pane--hidden'}`}>
@@ -1626,6 +1638,7 @@ export function App() {
                 onSelectFile={(p) => selectedCommit && selectCommitFile(p, selectedCommit.hash)}
                 onFileSelectionChange={setCommitSelCount}
                 commitMenuFor={commitMenuFor}
+                onOpenFileHistory={openFileHistory}
               />
             </div>
           </div>
@@ -1688,6 +1701,17 @@ export function App() {
         </div>
       </div>
 
+      {fileHistory && (
+        <FileHistoryOverlay
+          key={`${fileHistory.path}:${fileHistory.baseRef ?? 'wt'}`}
+          repoPath={repo.path}
+          path={fileHistory.path}
+          mode={fileHistory.mode}
+          baseRef={fileHistory.baseRef}
+          theme={theme}
+          onClose={() => setFileHistory(null)}
+        />
+      )}
       {error && <Toast kind="error" message={error} onClose={() => setError(null)} />}
       {notice && !error && (
         <Toast kind="success" message={notice} onClose={() => setNotice(null)} />
