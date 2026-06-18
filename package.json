@@ -13,11 +13,8 @@
   "type": "module",
   "private": true,
   "main": "./out/main/index.js",
-  "trustedDependencies": [
-    "electron",
-    "electron-builder"
-  ],
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "dev": "electron-vite dev",
     "dev:debug": "GITGROVE_DEBUG_PORT=9222 electron-vite dev",
     "build": "electron-vite build",
