@@ -13,6 +13,10 @@
   "type": "module",
   "private": true,
   "main": "./out/main/index.js",
+  "trustedDependencies": [
+    "electron",
+    "electron-builder"
+  ],
   "scripts": {
     "dev": "electron-vite dev",
     "dev:debug": "GITGROVE_DEBUG_PORT=9222 electron-vite dev",
