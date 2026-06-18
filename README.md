@@ -11,6 +11,45 @@ are a pleasure to look at, split or unified, light or dark.
 GitGrove keeps a viewer's calm: one window, two tabs, no ceremony. The full power
 of git is there when you reach for it, and invisible when you don't.
 
+## Demo
+
+![GitGrove — a 75-second tour: hunk staging, image diffs, conflict resolution](docs/demo.gif)
+
+A 75‑second tour: hunk‑level staging, syntax‑highlighted diffs, image diffs,
+history & blame, conflict resolution, and interactive rebase — end to end.
+
+<!--
+  ▶ FULL‑RESOLUTION VIDEO (with sound) — to embed a real inline player on GitHub:
+    1. Open this README on github.com and click the ✎ (edit) button.
+    2. Drag the GitGrove.mp4 file into the editor. GitHub uploads it and inserts a
+       https://github.com/user-attachments/assets/<id> URL.
+    3. Paste that URL on its own line right below this comment (bare, not as a
+       markdown link) — GitHub renders it as a video player.
+  Alternatively, attach GitGrove.mp4 to a GitHub Release and link it here.
+-->
+
+## Features
+
+- **No staging area.** Tick a checkbox to include a file — or expand it and tick a
+  single hunk. Checkboxes are pure UI; staging happens at commit time, so you commit
+  exactly what you mean, down to the line.
+- **Commit, amend & stash without ceremony.** One composer with a mode switch: write a
+  commit, amend the last one, or stash your work — each a single click.
+- **Diffs that read themselves.** Syntax‑highlighted, split or unified, light or dark,
+  rendered by [`@pierre/diffs`](https://diffs.com).
+- **Image diffs.** Compare before/after *visually* — swipe, onion‑skin, or a
+  pixel‑difference heatmap, with zoom and pan. PNG, JPEG, TGA, and more.
+- **History & blame, actually usable.** A clean commit graph with author avatars; blame
+  any file line‑by‑line to see who changed what, and when.
+- **Conflicts, resolved calmly.** GitGrove flags conflicts *before* you merge, then walks
+  you through each file — keep ours, take theirs, or compare side by side.
+- **Interactive rebase, no terminal.** Reorder, squash, fixup, reword or drop commits from
+  a dialog — the whole rebase is scripted behind the scenes, so no editor ever opens.
+- **Cross‑platform & self‑updating.** macOS, Windows and Linux; checks for updates quietly
+  and restarts in one click.
+
+Two themes, one calm layout:
+
 ![GitGrove history view in light and dark themes](docs/screenshot.png)
 
 ## Install
