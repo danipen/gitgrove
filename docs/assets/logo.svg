@@ -1,0 +1,48 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- "Grove" green folding into git/tech blue -->
+    <linearGradient id="bg" x1="160" y1="120" x2="900" y2="940" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#34d399"/>
+      <stop offset="0.52" stop-color="#2f8ef6"/>
+      <stop offset="1" stop-color="#4f5bff"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.32" cy="0.24" r="0.9">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.28"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#0b1a3a" flood-opacity="0.30"/>
+    </filter>
+  </defs>
+
+  <!-- App tile (macOS-style padding ~10%, rounded square) -->
+  <rect x="112" y="112" width="800" height="800" rx="184" fill="url(#bg)"/>
+  <rect x="112" y="112" width="800" height="800" rx="184" fill="url(#sheen)"/>
+  <rect x="112.5" y="112.5" width="799" height="799" rx="183.5" fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="2"/>
+
+  <!-- Git-graph "grove": commits on a branching stem that sprouts leaves -->
+  <g filter="url(#soft)">
+    <!-- stem: trunk + one branch curving up-right -->
+    <g stroke="#ffffff" stroke-width="44" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M396 758 V322"/>
+      <path d="M396 556 C396 474, 456 452, 540 452 C606 452, 636 420, 652 372"/>
+    </g>
+
+    <!-- root commit (filled) + fork commit (ring) -->
+    <circle cx="396" cy="758" r="58" fill="#ffffff"/>
+    <circle cx="396" cy="556" r="38" fill="url(#bg)" stroke="#ffffff" stroke-width="38"/>
+
+    <!-- leaves sprouting at the stem tips -->
+    <g fill="#ffffff">
+      <g transform="translate(396 322) rotate(-13)">
+      <path fill="#ffffff" d="M0 0 C-28 -12 -48 -42 -48 -78 C-48 -112 -16 -150 0 -156 C16 -150 48 -112 48 -78 C48 -42 28 -12 0 0 Z"/>
+        <path d="M0 -28 V-128" stroke="url(#bg)" stroke-width="11" stroke-linecap="round"/>
+      </g>
+      <g transform="translate(652 372) rotate(34)">
+        <path fill="#ffffff" d="M0 0 C-28 -12 -48 -42 -48 -78 C-48 -112 -16 -150 0 -156 C16 -150 48 -112 48 -78 C48 -42 28 -12 0 0 Z"/>
+        <path d="M0 -32 V-126" stroke="url(#bg)" stroke-width="10" stroke-linecap="round"/>
+      </g>
+    </g>
+  </g>
+</svg>

@@ -4,6 +4,8 @@
 [![Release](https://img.shields.io/github/v/release/danipen/gitgrove)](https://github.com/danipen/gitgrove/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**Website:** [danipen.github.io/gitgrove](https://danipen.github.io/gitgrove/) · the landing page lives in [`docs/`](docs/).
+
 A fast, beautiful desktop git client. Open any repo to stage hunk by hunk, commit,
 branch, sync, stash, rebase interactively — and read syntax‑highlighted diffs that
 are a pleasure to look at, split or unified, light or dark.
