@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GitGrove — The full power of git. The simplest UI.</title>
+  <meta name="description" content="GitGrove is a fast, beautiful desktop git client. Hunk-level staging, image diffs, calm conflict resolution and interactive rebase — no terminal, no ceremony. macOS, Windows, Linux. Open source, MIT." />
+  <meta name="theme-color" content="#0c0d10" />
+
+  <!-- Favicons -->
+  <link rel="icon" href="assets/logo.svg" type="image/svg+xml" />
+  <link rel="icon" href="assets/favicon-32.png" sizes="32x32" type="image/png" />
+  <link rel="alternate icon" href="assets/favicon.ico" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+
+  <!-- Open Graph / Twitter -->
+  <meta property="og:type" content="website" />
+  <meta property="og:title" content="GitGrove — The full power of git. The simplest UI." />
+  <meta property="og:description" content="A fast, beautiful desktop git client. Hunk-level staging, image diffs, calm conflict resolution, interactive rebase — no terminal, no ceremony." />
+  <meta property="og:url" content="https://danipen.github.io/gitgrove/" />
+  <meta property="og:image" content="assets/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="GitGrove — The full power of git. The simplest UI." />
+  <meta name="twitter:description" content="A fast, beautiful desktop git client. macOS, Windows, Linux. Open source, MIT." />
+  <meta name="twitter:image" content="assets/og-image.png" />
+
+  <!-- Preload the only above-the-fold media the page blocks on -->
+  <link rel="preload" as="image" href="assets/hero-poster.webp" type="image/webp" />
+  <link rel="preconnect" href="https://github.com" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ====================== NAV ====================== -->
+  <header class="nav" id="nav">
+    <div class="wrap">
+      <a class="brand" href="#top" aria-label="GitGrove home">
+        <img src="assets/logo.svg" alt="" width="30" height="30" />
+        <span>GitGrove</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#features">Features</a>
+        <a href="#themes">Themes</a>
+        <a href="#download">Download</a>
+        <a href="https://github.com/danipen/gitgrove">GitHub</a>
+      </nav>
+      <div class="nav-right">
+        <button class="theme-toggle" id="themeToggle" aria-label="Toggle color theme">
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <a class="btn btn-primary btn-sm" href="#download">Download</a>
+        <button class="nav-toggle" id="navToggle" aria-label="Open menu" aria-expanded="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+
+    <!-- ====================== HERO ====================== -->
+    <section class="hero">
+      <div class="hero-glow"></div>
+      <!-- the "grove": a git-graph that draws itself in -->
+      <div class="hero-grove" aria-hidden="true">
+        <svg viewBox="0 0 1440 760" preserveAspectRatio="xMidYMid slice">
+          <defs>
+            <linearGradient id="groveGrad" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="#34d399"/>
+              <stop offset="0.52" stop-color="#2f8ef6"/>
+              <stop offset="1" stop-color="#4f5bff"/>
+            </linearGradient>
+          </defs>
+          <g stroke-width="2.5" stroke-linecap="round">
+            <path class="grove-draw" d="M120 700 V300 C120 220 180 190 270 190 H520"/>
+            <path class="grove-draw" d="M120 480 C120 400 200 380 320 380 H470"/>
+            <path class="grove-draw" d="M1320 60 V420 C1320 500 1260 530 1170 530 H980"/>
+            <path class="grove-draw" d="M1320 250 C1320 330 1240 350 1120 350 H1010"/>
+          </g>
+          <g stroke-width="2.5">
+            <circle class="grove-node" cx="120" cy="700" r="7"/>
+            <circle class="grove-node" cx="120" cy="480" r="6"/>
+            <circle class="grove-node" cx="520" cy="190" r="6"/>
+            <circle class="grove-node" cx="470" cy="380" r="6"/>
+            <circle class="grove-node" cx="1320" cy="60" r="7"/>
+            <circle class="grove-node" cx="1320" cy="250" r="6"/>
+            <circle class="grove-node" cx="980" cy="530" r="6"/>
+            <circle class="grove-node" cx="1010" cy="350" r="6"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="wrap">
+        <span class="hero-badge reveal in"><span class="dot"></span> <b><span id="heroVersion">v1</span> is here</b> · open source &amp; MIT</span>
+        <h1 class="reveal in">The full power of git.<br><span class="grad-text">The simplest UI.</span></h1>
+        <p class="tagline reveal in d1">Fast · Simple · Beautiful</p>
+        <p class="sub reveal in d1">A desktop git client that hides the ceremony and keeps the power. Hunk-level staging, image diffs, calm conflicts and interactive rebase — without ever dropping you into a terminal.</p>
+        <div class="hero-cta reveal in d2">
+          <a class="btn btn-primary" id="heroDownload" href="https://github.com/danipen/gitgrove/releases/latest">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+            <span id="heroDownloadLabel">Download</span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/danipen/gitgrove">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5A11.5 11.5 0 0 0 23.5 12C23.5 5.7 18.3.5 12 .5z"/></svg>
+            View on GitHub
+          </a>
+          <span class="req">Requires <code>git</code> installed</span>
+        </div>
+
+        <!-- live, muted hero loop in an app window -->
+        <figure class="hero-stage reveal in d2">
+          <div class="app-window">
+            <video id="heroVideo" poster="assets/hero-poster.webp" autoplay muted loop playsinline preload="auto" aria-label="GitGrove in use: reviewing a syntax-highlighted diff">
+              <source src="assets/hero-loop.mp4" type="video/mp4" />
+              <img src="assets/hero-poster.jpg" alt="GitGrove showing a syntax-highlighted diff" />
+            </video>
+            <button class="watch-demo" id="watchDemo" aria-haspopup="dialog">
+              <span class="play"><svg viewBox="0 0 10 12"><path d="M0 0l10 6-10 6z"/></svg></span>
+              Watch the 75s demo
+            </button>
+          </div>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ====================== TRUST STRIP ====================== -->
+    <section class="trust">
+      <div class="wrap">
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg> Open source · MIT</span>
+        <span class="sep"></span>
+        <span>macOS</span><span>Windows</span><span>Linux</span>
+        <span class="sep"></span>
+        <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg> Self-updating</span>
+        <span class="sep"></span>
+        <span>Electron · React 19 · TypeScript</span>
+      </div>
+    </section>
+
+    <!-- ====================== FEATURES ====================== -->
+    <section class="features" id="features">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Built for real work</span>
+          <h2>Advanced git, without the ceremony.</h2>
+          <p>Every hard thing about git — staging, conflicts, rebase — made effortless. The complexity lives in the engine, never in your face.</p>
+        </div>
+
+        <!-- 1 · No staging area -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">Hunk-level staging</span>
+            <h3>No staging area. Commit exactly what you mean.</h3>
+            <p>Tick a checkbox to include a file — or expand it and tick a single <em>hunk</em>. Checkboxes are pure UI; staging happens at commit time, down to the line. Nothing touches git until you commit.</p>
+            <div class="kicker"><span class="chip">file · hunk · line</span><span class="chip">git apply --cached</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-staging.webp" alt="GitGrove Changes view with file and hunk checkboxes for precise staging" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 2 · Composer -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">One composer</span>
+            <h3>Commit, amend &amp; stash — without ceremony.</h3>
+            <p>A single composer with a mode switch. Write a commit, amend the last one, or stash your work — each a single click. Signing is inherited from your git config; no flags to remember.</p>
+            <div class="kicker"><span class="chip">commit</span><span class="chip">amend</span><span class="chip">stash</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-composer.webp" alt="GitGrove commit composer with a commit / amend / stash mode switch" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 3 · Diffs -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">Diffs by @pierre/diffs</span>
+            <h3>Diffs that read themselves.</h3>
+            <p>Syntax-highlighted, split or unified, light or dark. The diff that ships in Pierre, rendered right inside GitGrove — so reviewing a change is a pleasure, not a chore.</p>
+            <div class="kicker"><span class="chip">split · unified</span><span class="chip">syntax-aware</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-diff.webp" alt="A syntax-highlighted split diff in GitGrove" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 4 · Image diffs -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">Image diffs</span>
+            <h3>See exactly what changed — visually.</h3>
+            <p>Compare before and after with a swipe, an onion-skin overlay, or a pixel-difference heatmap, with zoom and pan. PNG, JPEG, TGA and more — because not every diff is text.</p>
+            <div class="kicker"><span class="chip">swipe</span><span class="chip">onion-skin</span><span class="chip">heatmap</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-imagediff.webp" alt="GitGrove image diff comparing two versions of a texture with a swipe handle" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 5 · History & blame -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">History &amp; blame</span>
+            <h3>History and blame, actually usable.</h3>
+            <p>A clean commit graph with author avatars, and blame for any file line-by-line — to see who changed what, and when, without leaving the window.</p>
+            <div class="kicker"><span class="chip">commit graph</span><span class="chip">line blame</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-blame.webp" alt="GitGrove blame view showing line-by-line authorship" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 6 · Conflicts -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">Conflict resolution</span>
+            <h3>Conflicts, resolved calmly.</h3>
+            <p>GitGrove flags conflicts <em>before</em> you merge, then walks you through each file — keep ours, take theirs, or compare side by side. No cryptic markers, no panic.</p>
+            <div class="kicker"><span class="chip">keep ours</span><span class="chip">take theirs</span><span class="chip">side by side</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-conflict.webp" alt="GitGrove conflict resolution with keep ours / take theirs controls" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 7 · Interactive rebase -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">Interactive rebase</span>
+            <h3>Rewrite history. No terminal editor.</h3>
+            <p>Reorder, squash, fixup, reword or drop commits from a single dialog. The rebase is scripted behind the scenes through editor shims — so no <code>vim</code>, no <code>rebase -i</code> file, ever opens.</p>
+            <div class="kicker"><span class="chip">reorder</span><span class="chip">squash · fixup</span><span class="chip">reword · drop</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-rebase.webp" alt="GitGrove interactive rebase dialog with squash, fixup, reword and drop" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+      </div>
+    </section>
+
+    <!-- ====================== TWO THEMES ====================== -->
+    <section class="themes" id="themes">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Two themes, one calm layout</span>
+          <h2>Light or dark. Always at home.</h2>
+          <p>GitGrove ships two carefully tuned themes that match your system — and never make you squint. Drag to compare.</p>
+        </div>
+        <div class="compare reveal d1" id="compare">
+          <span class="tag tag-light">Light</span>
+          <img class="base" src="assets/theme-light.webp" alt="GitGrove history view in light theme" width="1600" height="900" />
+          <div class="after">
+            <span class="tag tag-dark">Dark</span>
+            <img src="assets/theme-dark.webp" alt="GitGrove history view in dark theme" width="1600" height="900" />
+          </div>
+          <div class="handle" aria-hidden="true"></div>
+          <input type="range" min="0" max="100" value="50" id="compareRange" aria-label="Compare light and dark themes" style="position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:ew-resize;z-index:5" />
+        </div>
+      </div>
+    </section>
+
+    <!-- ====================== DOWNLOAD ====================== -->
+    <section class="download" id="download">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">Get GitGrove</span>
+          <h2>Download for your platform.</h2>
+          <p>Free and open source. It checks quietly for updates on launch and restarts in one click.</p>
+        </div>
+        <div class="dl-grid">
+          <div class="dl-card reveal" data-os="mac">
+            <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16.4 12.9c0-2.3 1.9-3.4 2-3.5-1.1-1.6-2.8-1.8-3.4-1.8-1.4-.1-2.8.9-3.5.9s-1.8-.8-3-.8C7 7.7 5.7 8.5 5 9.8c-1.5 2.6-.4 6.5 1.1 8.6.7 1 1.6 2.2 2.7 2.2 1.1 0 1.5-.7 2.8-.7s1.6.7 2.8.7 1.9-1 2.6-2c.8-1.2 1.2-2.3 1.2-2.4-.1 0-2.3-.9-2.3-3.3zM14.2 5.8c.6-.7 1-1.7.9-2.8-.9 0-1.9.6-2.5 1.3-.6.6-1.1 1.6-1 2.6 1 .1 2-.5 2.6-1.1z"/></svg>
+            <h4>macOS <span class="dl-version"></span></h4>
+            <p class="variants">Apple Silicon &amp; Intel · .dmg</p>
+            <a class="btn btn-primary" id="dl-mac" href="https://github.com/danipen/gitgrove/releases/latest">Download for Apple Silicon</a>
+            <a class="dl-alt" id="dl-mac-alt" href="https://github.com/danipen/gitgrove/releases/latest">Download for Intel (x64)</a>
+          </div>
+          <div class="dl-card reveal d1" data-os="windows">
+            <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.5l7.5-1v7.2H3V5.5zM3 12.3h7.5v7.2L3 18.5v-6.2zM11.3 4.4L21 3v8.7h-9.7V4.4zM11.3 12.3H21V21l-9.7-1.3v-7.4z"/></svg>
+            <h4>Windows <span class="dl-version"></span></h4>
+            <p class="variants">x64 installer · .exe</p>
+            <a class="btn btn-primary" id="dl-win" href="https://github.com/danipen/gitgrove/releases/latest">Download for x64</a>
+            <a class="dl-alt" id="dl-win-alt" href="https://github.com/danipen/gitgrove/releases/latest">Download for Arm64</a>
+          </div>
+          <div class="dl-card reveal d2" data-os="linux">
+            <svg class="os-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c-1.7 0-3 1.6-3 3.4 0 1.1.1 1.8-.4 2.8-.6 1-1.6 1.9-2.2 3.4-.5 1.2-.3 2.4-.6 3.3-.3.8-.9 1.4-.9 2 0 .6.5.9 1.1.9.6 0 1.3-.2 1.9.1.6.3 1 1 1.8 1.2.4.1.8.2 1.2.2h.2c.4 0 .8-.1 1.2-.2.8-.2 1.2-.9 1.8-1.2.6-.3 1.3-.1 1.9-.1.6 0 1.1-.3 1.1-.9 0-.6-.6-1.2-.9-2-.3-.9-.1-2.1-.6-3.3-.6-1.5-1.6-2.4-2.2-3.4-.5-1-.4-1.7-.4-2.8C15 3.6 13.7 2 12 2zm-1.3 4.2c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9zm2.6 0c.4 0 .7.4.7.9s-.3.9-.7.9-.7-.4-.7-.9.3-.9.7-.9z"/></svg>
+            <h4>Linux <span class="dl-version"></span></h4>
+            <p class="variants">x86_64 · .AppImage</p>
+            <a class="btn btn-primary" id="dl-linux" href="https://github.com/danipen/gitgrove/releases/latest">Download .AppImage</a>
+            <a class="dl-alt" href="https://github.com/danipen/gitgrove/releases/latest">All builds &amp; checksums</a>
+          </div>
+        </div>
+        <p class="dl-note">Looking for older versions, checksums or release notes? See <a href="https://github.com/danipen/gitgrove/releases/latest">all builds on GitHub</a>. You'll need <code>git</code> installed — GitGrove walks you through it if it isn't found.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- ====================== FOOTER ====================== -->
+  <footer class="footer">
+    <div class="wrap">
+      <div class="f-left">
+        <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="30" height="30" /><span>GitGrove</span></a>
+        <p>The full power of git, a silly-simple UI. One window, two tabs, no ceremony.</p>
+      </div>
+      <nav class="f-links" aria-label="Footer">
+        <div class="f-col">
+          <h5>Product</h5>
+          <a href="#features">Features</a>
+          <a href="#themes">Themes</a>
+          <a href="#download">Download</a>
+        </div>
+        <div class="f-col">
+          <h5>Project</h5>
+          <a href="https://github.com/danipen/gitgrove">GitHub</a>
+          <a href="https://github.com/danipen/gitgrove/releases/latest">Releases</a>
+          <a href="https://github.com/danipen/gitgrove/issues">Issues</a>
+          <a href="https://github.com/danipen/gitgrove/blob/main/LICENSE">License (MIT)</a>
+        </div>
+      </nav>
+    </div>
+    <div class="wrap">
+      <div class="copyright">
+        <span class="self-update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg> Self-updating · checks quietly, restarts in one click</span>
+        <span>© Daniel Peñalba · Released under the MIT License</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ====================== LIGHTBOX ====================== -->
+  <div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="GitGrove demo video">
+    <button class="lightbox-close" id="lightboxClose" aria-label="Close video">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="lightbox-inner">
+      <video id="demoVideo" controls playsinline preload="none" poster="assets/demo-poster.jpg">
+        <source src="assets/demo.mp4" type="video/mp4" />
+      </video>
+    </div>
+  </div>
+
+  <!-- Screenshot lightbox (click any feature shot to view full size) -->
+  <div class="lightbox" id="imgLightbox" role="dialog" aria-modal="true" aria-label="Screenshot, full size">
+    <button class="lightbox-close" id="imgLightboxClose" aria-label="Close image">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="lightbox-inner lightbox-inner--img">
+      <img id="imgLightboxImg" src="" alt="" />
+    </div>
+  </div>
+
+  <script src="main.js" defer></script>
+</body>
+</html>
