@@ -27,7 +27,8 @@ describe('groupReposByOwner', () => {
   it('floats the signed-in user first, then sorts owners alphabetically', () => {
     const groups = groupReposByOwner(repos, 'danipen', '')
     expect(groups.map((g) => g.owner)).toEqual(['danipen', 'acme', 'zeta'])
-    expect(groups[0].repos.map((r) => r.name)).toEqual(['gitgrove', 'dotfiles'])
+    // Within a group, repos are alphabetical by name.
+    expect(groups[0].repos.map((r) => r.name)).toEqual(['dotfiles', 'gitgrove'])
   })
 
   it('matches the self group case-insensitively', () => {

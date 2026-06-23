@@ -293,25 +293,24 @@ export function parseRepo(value: unknown, host: string): RemoteRepo | null {
 const MAX_REPO_PAGES = 10
 
 /**
- * Every repository the token can clone — owned, collaborator and org repos —
- * most recently pushed first. Walks `/user/repos` page by page via the Link
- * header; auth/network failures surface as AccountAuthError (the IPC layer
- * turns them into a human message the picker shows with a retry).
- *
- * `onPage` is invoked with each page's repos the moment it parses, so callers
- * can show results within a second instead of after the whole walk; the pages
- * arrive most-recently-pushed first, so appending them preserves the order of
- * the final returned (de-duplicated, sorted) list.
+ * The affiliations we list, each fetched as its own paginated stream. Fetching
+ * them separately — rather than `affiliation=owner,collaborator,organization_member`
+ * in a single call — is what keeps the per-affiliation page cap from dropping
+ * the user's own repositories behind a flood of recently-pushed org repos: a
+ * combined, pushed-sorted, capped list silently omits a user's older personal
+ * repos when they belong to busy organizations (the GitHub Desktop approach).
  */
-export async function fetchRepositories(
+const REPO_AFFILIATIONS = ['owner', 'collaborator', 'organization_member']
+
+/** Walk one `/user/repos` query page by page via the Link header. */
+async function walkRepoPages(
   host: string,
   token: string,
-  fetchImpl: FetchLike = fetch,
-  onPage?: (repos: RemoteRepo[]) => void
-): Promise<RemoteRepo[]> {
-  const params = 'per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member'
-  let url: string | null = `${apiBaseUrl(host)}/user/repos?${params}`
-  const repos: RemoteRepo[] = []
+  query: string,
+  fetchImpl: FetchLike,
+  onPageRepos: (repos: RemoteRepo[]) => void
+): Promise<void> {
+  let url: string | null = `${apiBaseUrl(host)}/user/repos?${query}`
   for (let pageCount = 0; url && pageCount < MAX_REPO_PAGES; pageCount++) {
     let response: Response
     try {
@@ -337,9 +336,44 @@ export async function fetchRepositories(
       const repo = parseRepo(raw, host)
       if (repo) pageRepos.push(repo)
     }
-    repos.push(...pageRepos)
-    if (pageRepos.length) onPage?.(pageRepos)
+    if (pageRepos.length) onPageRepos(pageRepos)
     url = nextPageUrl(response.headers.get('link'))
   }
-  return repos.sort((a, b) => b.pushedAt - a.pushedAt)
+}
+
+/**
+ * Every repository the token can clone — owned, collaborator and org repos,
+ * most recently pushed first. Each affiliation is walked concurrently (see
+ * REPO_AFFILIATIONS) and merged, de-duplicated by id; auth/network failures
+ * surface as AccountAuthError (the IPC layer turns them into a human message
+ * the picker shows with a retry).
+ *
+ * `onPage` is invoked with each batch of newly-seen repos the moment it parses,
+ * so callers can show results within a second instead of after the whole walk.
+ */
+export async function fetchRepositories(
+  host: string,
+  token: string,
+  fetchImpl: FetchLike = fetch,
+  onPage?: (repos: RemoteRepo[]) => void
+): Promise<RemoteRepo[]> {
+  const byId = new Map<string, RemoteRepo>()
+  const collect = (repos: RemoteRepo[]) => {
+    // A repo can appear under more than one affiliation — emit each only once.
+    const fresh = repos.filter((r) => !byId.has(r.id))
+    for (const r of fresh) byId.set(r.id, r)
+    if (fresh.length && onPage) onPage(fresh)
+  }
+  await Promise.all(
+    REPO_AFFILIATIONS.map((affiliation) =>
+      walkRepoPages(
+        host,
+        token,
+        `per_page=100&sort=pushed&affiliation=${affiliation}`,
+        fetchImpl,
+        collect
+      )
+    )
+  )
+  return [...byId.values()].sort((a, b) => b.pushedAt - a.pushedAt)
 }

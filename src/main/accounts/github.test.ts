@@ -3,6 +3,7 @@ import {
   AccountAuthError,
   apiBaseUrl,
   type DeviceCodeGrant,
+  type FetchLike,
   fetchProfile,
   fetchRepositories,
   nextPageUrl,
@@ -256,39 +257,89 @@ describe('fetchRepositories', () => {
     pushed_at: pushed
   })
 
-  test('walks every page via the Link header and sorts most-recent first', async () => {
-    const { impl, calls } = scriptedFetch([
-      {
-        json: [repoJson('older', 'me', '2026-01-01T00:00:00Z')],
-        headers: { link: '<https://api.github.com/user/repos?page=2>; rel="next"' }
-      },
-      { json: [repoJson('newer', 'me', '2026-06-01T00:00:00Z')] }
-    ])
+  /**
+   * A fetch fake that routes by the `affiliation` query param (the three
+   * affiliations are walked concurrently, so a shift queue would be racy) and
+   * by `page`, honoring a `next` Link header for multi-page affiliations.
+   */
+  function affiliationFetch(pages: Record<string, Reply[]>): { impl: FetchLike; calls: string[] } {
+    const calls: string[] = []
+    const impl = async (url: string): Promise<Response> => {
+      calls.push(url)
+      const params = new URL(url).searchParams
+      const affiliation = params.get('affiliation') ?? ''
+      const page = Number(params.get('page') ?? '1')
+      const reply = pages[affiliation]?.[page - 1] ?? { json: [] }
+      return new Response(JSON.stringify(reply.json ?? []), {
+        status: reply.status ?? 200,
+        headers: { 'Content-Type': 'application/json', ...reply.headers }
+      })
+    }
+    return { impl, calls }
+  }
+
+  test('fetches each affiliation separately and merges, most-recent first', async () => {
+    const { impl, calls } = affiliationFetch({
+      owner: [{ json: [repoJson('mine', 'me', '2026-03-01T00:00:00Z')] }],
+      collaborator: [{ json: [repoJson('shared', 'pal', '2026-06-01T00:00:00Z')] }],
+      organization_member: [{ json: [repoJson('orgrepo', 'acme', '2026-01-01T00:00:00Z')] }]
+    })
     const repos = await fetchRepositories('github.com', 'tok', impl)
-    expect(repos.map((r) => r.name)).toEqual(['newer', 'older'])
-    expect(calls).toHaveLength(2)
-    expect(calls[0].url).toContain('https://api.github.com/user/repos?per_page=100')
-    expect(calls[0].url).toContain('affiliation=owner,collaborator,organization_member')
+    expect(repos.map((r) => r.name)).toEqual(['shared', 'mine', 'orgrepo'])
+    // One walk per affiliation — the fix for owner repos getting crowded out.
+    const affiliations = calls.map((u) => new URL(u).searchParams.get('affiliation')).sort()
+    expect(affiliations).toEqual(['collaborator', 'organization_member', 'owner'])
   })
 
-  test('a 401 surfaces as bad-token', async () => {
-    const { impl } = scriptedFetch([{ status: 401, json: { message: 'Bad credentials' } }])
+  test('de-duplicates a repo that appears under multiple affiliations', async () => {
+    const { impl } = affiliationFetch({
+      owner: [{ json: [repoJson('dup', 'me')] }],
+      collaborator: [{ json: [repoJson('dup', 'me')] }],
+      organization_member: [{ json: [] }]
+    })
+    const repos = await fetchRepositories('github.com', 'tok', impl)
+    expect(repos.map((r) => r.id)).toEqual(['github.com/me/dup'])
+  })
+
+  test('paginates within an affiliation via the Link header', async () => {
+    const { impl } = affiliationFetch({
+      owner: [
+        {
+          json: [repoJson('p1', 'me')],
+          headers: {
+            link: '<https://api.github.com/user/repos?affiliation=owner&page=2>; rel="next"'
+          }
+        },
+        { json: [repoJson('p2', 'me')] }
+      ],
+      collaborator: [{ json: [] }],
+      organization_member: [{ json: [] }]
+    })
+    const repos = await fetchRepositories('github.com', 'tok', impl)
+    expect(repos.map((r) => r.name).sort()).toEqual(['p1', 'p2'])
+  })
+
+  test('a 401 on any affiliation surfaces as bad-token', async () => {
+    const { impl } = affiliationFetch({
+      owner: [{ json: [repoJson('mine')] }],
+      collaborator: [{ status: 401, json: { message: 'Bad credentials' } }],
+      organization_member: [{ json: [] }]
+    })
     expect(await code(fetchRepositories('github.com', 'nope', impl))).toBe('bad-token')
   })
 
-  test('streams each page to onPage as it arrives', async () => {
-    const { impl } = scriptedFetch([
-      {
-        json: [repoJson('a'), repoJson('b')],
-        headers: { link: '<https://api.github.com/user/repos?page=2>; rel="next"' }
-      },
-      { json: [repoJson('c')] }
-    ])
-    const pages: string[][] = []
-    const all = await fetchRepositories('github.com', 'tok', impl, (repos) =>
-      pages.push(repos.map((r) => r.name))
-    )
-    expect(pages).toEqual([['a', 'b'], ['c']])
-    expect(all).toHaveLength(3)
+  test('streams newly-seen repos to onPage as they arrive', async () => {
+    const { impl } = affiliationFetch({
+      owner: [{ json: [repoJson('a'), repoJson('dup')] }],
+      collaborator: [{ json: [repoJson('dup')] }],
+      organization_member: [{ json: [] }]
+    })
+    const streamed: string[] = []
+    const all = await fetchRepositories('github.com', 'tok', impl, (repos) => {
+      for (const r of repos) streamed.push(r.name)
+    })
+    // 'dup' is emitted once even though two affiliations return it.
+    expect(streamed.sort()).toEqual(['a', 'dup'])
+    expect(all).toHaveLength(2)
   })
 })

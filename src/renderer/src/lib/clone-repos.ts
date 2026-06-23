@@ -22,9 +22,10 @@ function matches(repo: RemoteRepo, terms: string[]): boolean {
 }
 
 /**
- * Filter then group `repos` (assumed already most-recent-first) by owner. The
- * group for `selfLogin` comes first as "Your repositories"; the rest follow
- * alphabetically. Repos keep their incoming order within a group.
+ * Filter then group `repos` by owner. The group for `selfLogin` comes first as
+ * "Your repositories"; the rest follow alphabetically by owner. Within each
+ * group repos are sorted alphabetically by name (case-insensitive) — the
+ * GitHub-Desktop ordering, predictable for browsing a long list.
  */
 export function groupReposByOwner(
   repos: RemoteRepo[],
@@ -41,9 +42,13 @@ export function groupReposByOwner(
     else byOwner.set(key, { owner: repo.owner, repos: [repo] })
   }
   const self = selfLogin.toLowerCase()
-  return [...byOwner.values()].sort((a, b) => {
+  const groups = [...byOwner.values()].sort((a, b) => {
     if (a.owner.toLowerCase() === self) return -1
     if (b.owner.toLowerCase() === self) return 1
     return a.owner.toLowerCase().localeCompare(b.owner.toLowerCase())
   })
+  for (const group of groups) {
+    group.repos.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+  }
+  return groups
 }
