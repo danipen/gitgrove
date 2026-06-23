@@ -31,13 +31,19 @@ runs:
     # @electron/get's default cache dirs; only the current OS's path exists, the
     # others are silently skipped. A warm cache makes the postinstall a local
     # unzip with no network, removing the flake at its source.
+    #
+    # The `v2` salt lets us abandon a *corrupt* cached archive without waiting
+    # for a bun.lock change: a download interrupted mid-save leaves a truncated
+    # zip that @electron/get still treats as a cache hit, so electron's
+    # postinstall silently writes a broken (or no) binary on every run that
+    # restores it. Bump the salt to force every runner to re-download cleanly.
     - uses: actions/cache@v4
       with:
         path: |
           ~/.cache/electron
           ~/Library/Caches/electron
           ~/AppData/Local/electron/Cache
-        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+        key: electron-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
 
     # GitHub's package registry occasionally drops connections mid-install
     # (ConnectionRefused / FailedToOpenSocket). A warm cache helps, but a cold
