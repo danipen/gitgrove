@@ -1,3 +1,4 @@
+import { compareUrl } from '@shared/git-host-urls'
 import type { MenuCommand } from '@shared/ipc'
 import type {
   AppInfo,
@@ -1309,6 +1310,19 @@ export function App() {
     return map
   }, [pullRequests])
 
+  // The compare URL for the "Create Pull Request" banner, or null when it
+  // shouldn't show: only on a GitHub host, for a published branch (has an
+  // upstream) that isn't the default branch and has no open PR yet. Once a PR
+  // exists the branch pill covers it, so the banner steps aside.
+  const createPrUrl = useMemo(() => {
+    if (hostInfo?.provider !== 'github' || !hostInfo.webUrl) return null
+    if (!branch || branch.detached || !branch.defaultBranch) return null
+    const current = branch.current
+    if (!current || current === branch.defaultBranch) return null
+    if (!sync?.upstream || prByBranch.has(current)) return null
+    return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
+  }, [hostInfo, branch, sync, prByBranch])
+
   /** Right-click menu for a history commit. */
   const commitMenuFor = useCallback(
     (commit: Commit): ContextMenuItem[] => {
@@ -1880,6 +1894,7 @@ export function App() {
                 busy={busy}
                 repoState={repoState}
                 stashes={stashes}
+                createPrUrl={createPrUrl}
                 selectedPath={changeSel}
                 onSelectFile={(path) => selectWorkingFile(path)}
                 onFileSelectionChange={setChangeSelCount}
