@@ -24,6 +24,21 @@ runs:
         restore-keys: |
           bun-${{ runner.os }}-${{ runner.arch }}-
 
+    # Cache the downloaded Electron binary archive (electron's postinstall runs
+    # on every `bun install`, fetching a ~100 MB platform zip from GitHub
+    # releases — a flaky download is the single most common CI failure). Keyed
+    # by os+arch+lockfile so a pinned-version bump invalidates it. These are
+    # @electron/get's default cache dirs; only the current OS's path exists, the
+    # others are silently skipped. A warm cache makes the postinstall a local
+    # unzip with no network, removing the flake at its source.
+    - uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/electron
+          ~/Library/Caches/electron
+          ~/AppData/Local/electron/Cache
+        key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock') }}
+
     # GitHub's package registry occasionally drops connections mid-install
     # (ConnectionRefused / FailedToOpenSocket). A warm cache helps, but a cold
     # cache still hits the network, so retry a couple of times before failing.
