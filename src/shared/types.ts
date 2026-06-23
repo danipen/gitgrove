@@ -559,6 +559,53 @@ export interface RemoteRepoPage {
 }
 
 /**
+ * Where a repo's remote lives on the web, and whether GitGrove can offer
+ * GitHub-aware actions for it. `webUrl` is the browsable base (e.g.
+ * `https://github.com/owner/repo`), null when the repo has no remote or its URL
+ * can't be made browsable. `provider` is 'github' when the host is github.com,
+ * a `*.ghe.com` data-residency host, or a host with a connected GitHub account
+ * — else null, and only the plain "open repo in browser" link applies.
+ */
+export interface RepoHostInfo {
+  webUrl: string | null
+  provider: 'github' | null
+}
+
+/**
+ * Rolled-up CI state for a PR's head commit — the one green/red/yellow signal,
+ * already collapsed from however many individual checks ran (any failure wins,
+ * else all-passing is success, else still running).
+ */
+export type PullRequestChecks = 'success' | 'failure' | 'pending'
+
+/**
+ * An open pull request on the repo's GitHub host, matched to a branch by its
+ * head ref. Read-only: GitGrove links out to the browser rather than editing
+ * PRs in-app, so this carries just what the pill/menu show.
+ */
+export interface PullRequestInfo {
+  number: number
+  title: string
+  /** Browsable PR URL, opened in the user's browser. */
+  url: string
+  draft: boolean
+  /** Source branch (head ref) — how a PR is matched to a local branch. */
+  headBranch: string
+  /** Target branch (base ref). */
+  baseBranch: string
+  /**
+   * True when the head lives in a fork rather than this repo, where a bare
+   * head-ref name match would be ambiguous (two repos can share a branch name).
+   */
+  isCrossRepo: boolean
+  /**
+   * Rolled-up CI state for the PR's latest commit, or null when no checks are
+   * configured (then no status dot is shown).
+   */
+  checks: PullRequestChecks | null
+}
+
+/**
  * Outcome of resolving a commit email to a host avatar via the connected
  * account's API. `ok: false` means a transient failure (network, rate limit,
  * bad token) — the renderer must retry later, never cache it. `ok: true`
