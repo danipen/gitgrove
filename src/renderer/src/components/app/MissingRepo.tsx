@@ -3,7 +3,7 @@
 // recent, or having the open repo's folder disappear, lands here instead of a
 // cryptic git error. Three ways forward: Locate the folder's new home, Clone
 // again (only when we remembered a clone URL), or Remove it; plus a quiet
-// "Look again" by the title to re-test the path once it's been restored.
+// "Look again" beneath them to re-test the path once it's been restored.
 //
 // styles: features/screens.css (.missing-repo)
 
@@ -43,15 +43,6 @@ export function MissingRepo({
         <p>
           Its folder is no longer at <code className="missing-repo__path">{prettyPath(path)}</code>.
         </p>
-        <button
-          type="button"
-          className="missing-repo__recheck"
-          onClick={onCheckAgain}
-          disabled={checking}
-        >
-          <Icon.Refresh size={13} />
-          {checking ? 'Looking…' : 'Look again'}
-        </button>
         <div className="missing-repo__actions">
           <button className="btn-primary" onClick={onLocate}>
             <Icon.Folder size={16} /> Locate…
@@ -73,6 +64,15 @@ export function MissingRepo({
             <Icon.Trash size={16} /> Remove
           </button>
         </div>
+        <button
+          type="button"
+          className="missing-repo__recheck"
+          onClick={onCheckAgain}
+          disabled={checking}
+        >
+          <Icon.Refresh size={13} />
+          {checking ? 'Looking…' : 'Restored it? Look again'}
+        </button>
       </div>
     </div>
   )
