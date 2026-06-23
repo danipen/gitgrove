@@ -48,7 +48,7 @@ export default defineConfig({
     plugins: [react()],
     // @pierre/diffs ships a worker that shiki tokenizes in; bundle deps for the browser.
     optimizeDeps: {
-      include: ['@pierre/diffs', '@pierre/diffs/react', '@pierre/trees', '@pierre/trees/react']
+      include: ['@pierre/diffs', '@pierre/diffs/react']
     },
     build: {
       rollupOptions: {

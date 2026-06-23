@@ -29,6 +29,7 @@ import { CredentialDialog } from './components/app/CredentialDialog'
 import { GitSetup } from './components/app/GitSetup'
 import { IdentityDialog } from './components/app/IdentityDialog'
 import { LfsBanner } from './components/app/LfsBanner'
+import { MissingRepo } from './components/app/MissingRepo'
 import { TrustDialog } from './components/app/TrustDialog'
 import { UpdateBanner } from './components/app/UpdateBanner'
 import { Welcome } from './components/app/Welcome'
@@ -87,6 +88,15 @@ export function App() {
   // the trust prompt, with `trusting` true while persisting the exception.
   const [trustPath, setTrustPath] = useState<string | null>(null)
   const [trusting, setTrusting] = useState(false)
+
+  // A repo whose folder is gone — set to swap the workspace for the recovery
+  // screen (Locate / Clone Again / Remove). `recovering` drives "Check again".
+  const [missingRepo, setMissingRepo] = useState<{
+    path: string
+    name: string
+    remoteUrl: string | null
+  } | null>(null)
+  const [recovering, setRecovering] = useState(false)
 
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -223,6 +233,25 @@ export function App() {
     const message = e instanceof Error ? e.message : String(e)
     setError(message)
   }, [])
+
+  // A git command failed: if the open repo's folder has vanished, drop into the
+  // recovery screen instead of a cryptic error toast; otherwise surface it
+  // normally. Used by the refresh/open paths that touch the working tree.
+  const failOrRecover = useCallback(
+    async (e: unknown) => {
+      const path = repoRef.current?.path
+      if (path) {
+        const res = await window.gitgrove.openRepo(path).catch(() => null)
+        if (res && !res.ok && res.reason === 'missing') {
+          setRepo(null)
+          setMissingRepo({ path: res.path, name: res.name, remoteUrl: res.remoteUrl })
+          return
+        }
+      }
+      fail(e)
+    },
+    [fail]
+  )
 
   const updates = useUpdateBanner(aboutOpen, fail)
 
@@ -561,7 +590,7 @@ export function App() {
         loadWorkingDiff(stillThere)
       }
     } catch (e) {
-      fail(e)
+      await failOrRecover(e)
     } finally {
       refreshInFlight.current = false
       setRefreshing(false)
@@ -570,7 +599,7 @@ export function App() {
         refreshRef.current()
       }
     }
-  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, fail])
+  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, failOrRecover])
 
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
@@ -608,6 +637,7 @@ export function App() {
       // branch list and status are fetched here so the repo switch itself is
       // instant and each panel shows its own progress.
       setRepo(summary)
+      setMissingRepo(null)
       setBranch(summary.branch)
       setChanges([])
       setCommits([])
@@ -637,21 +667,25 @@ export function App() {
         const files = await loadSnapshot(summary.path)
         if (files.length > 0) autoSelect(files, tabRef.current === 'changes')
       } catch (e) {
-        fail(e)
+        await failOrRecover(e)
       } finally {
         setChangesLoading(false)
       }
     },
-    [loadSnapshot, loadBranches, autoSelect, clearDiff, fail]
+    [loadSnapshot, loadBranches, autoSelect, clearDiff, fail, failOrRecover]
   )
 
   // Route an open outcome: success applies the repo, an untrusted folder opens
-  // the trust prompt, and a non-repo surfaces the familiar error.
+  // the trust prompt, a vanished folder opens the recovery screen, and a
+  // non-repo surfaces the familiar error.
   const handleOpen = useCallback(
     (res: RepoOpenResult) => {
       if (res.ok) applyRepo(res.summary)
       else if (res.reason === 'untrusted') setTrustPath(res.path)
-      else setError('The selected folder is not a git repository.')
+      else if (res.reason === 'missing') {
+        setRepo(null)
+        setMissingRepo({ path: res.path, name: res.name, remoteUrl: res.remoteUrl })
+      } else setError('The selected folder is not a git repository.')
     },
     [applyRepo]
   )
@@ -690,6 +724,50 @@ export function App() {
       setTrusting(false)
     }
   }, [trustPath, handleOpen, fail])
+
+  // ── Missing-repo recovery (Locate / Clone Again / Remove / Check again) ────
+  const recoverCheckAgain = useCallback(async () => {
+    if (!missingRepo) return
+    setRecovering(true)
+    try {
+      handleOpen(await window.gitgrove.openRepo(missingRepo.path))
+    } catch (e) {
+      fail(e)
+    } finally {
+      setRecovering(false)
+    }
+  }, [missingRepo, handleOpen, fail])
+
+  const recoverLocate = useCallback(async () => {
+    if (!missingRepo) return
+    const stalePath = missingRepo.path
+    try {
+      const res = await window.gitgrove.pickRepo()
+      if (!res) return
+      // Opened a folder elsewhere — forget the dead path so it stops haunting
+      // the recents (the newly-opened one was just remembered under its path).
+      if (res.ok) await window.gitgrove.removeRecent(stalePath)
+      handleOpen(res)
+    } catch (e) {
+      fail(e)
+    }
+  }, [missingRepo, handleOpen, fail])
+
+  const recoverRemove = useCallback(async () => {
+    if (!missingRepo) return
+    await window.gitgrove.removeRecent(missingRepo.path).catch(() => {})
+    setMissingRepo(null)
+  }, [missingRepo])
+
+  const recoverCloneAgain = useCallback(() => {
+    if (!missingRepo?.remoteUrl) return
+    // Clone back into the same parent folder; the dialog composes the leaf from
+    // the repo name and a successful clone replaces the missing recent in place.
+    const trimmed = missingRepo.path.replace(/[\\/]+$/, '')
+    const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+    const baseDir = cut > 0 ? trimmed.slice(0, cut) : trimmed
+    setModal({ kind: 'clone', initial: { url: missingRepo.remoteUrl, baseDir } })
+  }, [missingRepo])
 
   /** The switch itself: checkout, refresh, and narrate where the changes went. */
   const performCheckout = useCallback(
@@ -1505,6 +1583,7 @@ export function App() {
       )}
       {modal?.kind === 'clone' && (
         <CloneDialog
+          initial={modal.initial}
           onDone={(path) => {
             setModal(null)
             openRepoByPath(path)
@@ -1568,6 +1647,7 @@ export function App() {
           resolvedTheme={theme}
           onOpenRepo={openRepoByPath}
           onPickRepo={pickRepo}
+          onClone={() => setModal({ kind: 'clone' })}
           onCheckout={checkout}
           onRefresh={refresh}
           onThemeChange={setThemePref}
@@ -1580,6 +1660,17 @@ export function App() {
             </div>
           ) : !git.available ? (
             <GitSetup platform={git.platform} checking={gitChecking} onRecheck={recheckGit} />
+          ) : missingRepo ? (
+            <MissingRepo
+              name={missingRepo.name}
+              path={missingRepo.path}
+              remoteUrl={missingRepo.remoteUrl}
+              checking={recovering}
+              onLocate={recoverLocate}
+              onCloneAgain={recoverCloneAgain}
+              onRemove={recoverRemove}
+              onCheckAgain={recoverCheckAgain}
+            />
           ) : (
             <Welcome
               onPickRepo={pickRepo}
@@ -1613,6 +1704,7 @@ export function App() {
         onBranchesOpen={reloadBranches}
         onOpenRepo={openRepoByPath}
         onPickRepo={pickRepo}
+        onClone={() => setModal({ kind: 'clone' })}
         onCheckout={checkout}
         onRefresh={refresh}
         onThemeChange={setThemePref}

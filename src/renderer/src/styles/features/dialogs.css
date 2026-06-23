@@ -501,6 +501,188 @@
   font-size: 11.5px;
   color: var(--fg-muted);
 }
+/* ── Clone dialog: source tabs + repository picker ───────────────────────── */
+/* Components: CloneDialog.tsx, CloneRepoPicker.tsx */
+.clone-tabs.segmented,
+.clone-acct.segmented {
+  display: flex;
+  width: 100%;
+}
+.clone-tabs {
+  margin-bottom: 14px;
+}
+.clone-acct {
+  margin-bottom: 10px;
+}
+.clone-tabs button,
+.clone-acct button {
+  flex: 1;
+  justify-content: center;
+}
+.clone-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+/* Filter box + a separate refresh button beside it (refresh lives outside the
+   field so it doesn't read as part of the input). */
+.clone-picker__head {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.clone-picker__search {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg-muted);
+}
+.clone-picker__refresh {
+  flex: 0 0 auto;
+}
+.clone-picker__search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 8px 0;
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+}
+/* Fixed height (not max-height) so filtering the list never resizes the
+   dialog — it just scrolls internally. */
+.clone-picker__list {
+  height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+.clone-picker__group + .clone-picker__group {
+  margin-top: 4px;
+}
+.clone-picker__owner {
+  padding: 6px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.clone-picker__empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+/* "Loading more…" / partial-error footer under the streaming list. */
+.clone-picker__more {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 2px 0;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
+/* Loading / error / connect-account states all share this centered column. */
+.clone-picker__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 170px;
+  padding: 24px 16px;
+  margin-bottom: 12px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+/* Inside the list, the loading/error state fills the fixed list height and
+   centers — so refreshing swaps only the list body, leaving the filter, the
+   refresh button and the dialog size untouched (no jump). */
+.clone-picker__list .clone-picker__state {
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+}
+/* Fixed row height with centered content so rows with a description and rows
+   without one are the same height — the list reads as an even grid, not a
+   jagged mix of tall and short rows. The description is single-line + clipped
+   (below), so two-line rows never exceed this height. */
+.clone-repo {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: 46px;
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.clone-repo:hover {
+  background: var(--bg-hover);
+}
+.clone-repo.is-selected {
+  background: var(--accent-soft);
+}
+.clone-repo__icon {
+  flex: 0 0 auto;
+  color: var(--fg-muted);
+}
+.clone-repo__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.clone-repo__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.clone-repo__lock {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+.clone-repo__tag {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--fg-muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.clone-repo__desc {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* Faint placeholder so every row keeps the same two-line shape — names stay on
+   a consistent baseline whether or not a repo has a description. */
+.clone-repo__desc--empty {
+  color: var(--fg-faint);
+  font-style: italic;
+}
 /* ── Stash review (a stash explored like a commit) ───────────────────────── */
 .stash-review {
   display: flex;

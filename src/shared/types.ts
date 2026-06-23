@@ -244,6 +244,14 @@ export interface OpProgress {
   percent: number
 }
 
+/**
+ * Whether a chosen clone destination can be used: `ok` (the path is missing or
+ * an empty directory — git can clone into it), `not-empty` (a directory with
+ * contents — git would refuse), `file` (a file sits at that path). The dialog
+ * checks this as the user edits the path and blocks the clone unless `ok`.
+ */
+export type CloneTargetState = 'ok' | 'not-empty' | 'file'
+
 /** Progress of a `git clone`, pushed from main while a clone runs. */
 export interface CloneProgress {
   /** Phase reported by git, e.g. "Receiving objects". */
@@ -332,16 +340,32 @@ export interface RepoSummary extends RepoInfo {
 
 export interface RecentRepo extends RepoInfo {
   lastOpened: number
+  /**
+   * The repo's clone URL (origin), captured on open. Persisted so a repo whose
+   * folder later disappears can still offer "Clone Again" from the recovery
+   * screen — git can't be asked once the folder is gone. Null when the repo had
+   * no remote.
+   */
+  remoteUrl?: string | null
+  /**
+   * True when the folder no longer exists on disk. Missing repos stay in the
+   * list (greyed) so the user can recover them — selecting one opens the
+   * recovery screen rather than a dead repo.
+   */
+  missing: boolean
 }
 
 /**
  * Outcome of trying to open a repo. Expected, recoverable cases are modelled as
  * data (not thrown) so the renderer can react: `not-git` shows an error,
- * `untrusted` (git "dubious ownership") prompts the user to trust the folder.
+ * `untrusted` (git "dubious ownership") prompts the user to trust the folder,
+ * `missing` (the folder is gone) opens the recovery screen — which needs the
+ * name and last-known clone URL since git can't be queried on a vanished path.
  */
 export type RepoOpenResult =
   | { ok: true; summary: RepoSummary }
   | { ok: false; reason: 'not-git' | 'untrusted'; path: string }
+  | { ok: false; reason: 'missing'; path: string; name: string; remoteUrl: string | null }
 
 export interface LogOptions {
   /** Branch / ref to read history from. Defaults to the checked-out branch. */
@@ -495,6 +519,43 @@ export interface ConnectedAccount {
    * token is kept in memory for this session only, never written to disk.
    */
   persisted: boolean
+}
+
+/**
+ * A repository on a connected git host, as the clone dialog lists it. Carries
+ * exactly what the picker shows (owner grouping, private/fork/archived badges,
+ * description) plus the HTTPS URL to clone — credentials still come from the
+ * connected account via the askpass responder, so no token is embedded here.
+ */
+export interface RemoteRepo {
+  /** Stable id `${host}/${owner}/${name}`, also the React key. */
+  id: string
+  /** Account host this repo was listed from (github.com or a GHES hostname). */
+  host: string
+  owner: string
+  name: string
+  /** `owner/name`, the label and the filter key. */
+  fullName: string
+  /** HTTPS clone URL (`https://host/owner/name.git`). */
+  cloneUrl: string
+  private: boolean
+  fork: boolean
+  archived: boolean
+  description: string | null
+  /** Epoch ms of the last push, for "most recent first" ordering. */
+  pushedAt: number
+}
+
+/**
+ * One page of a repository listing, pushed to the renderer as it arrives so
+ * the picker shows repos within a second instead of waiting for the whole
+ * (often 10-page / 1000-repo) walk. `accountId` lets a picker ignore pages
+ * meant for another account; pages come most-recently-pushed first, so the
+ * renderer can simply append them.
+ */
+export interface RemoteRepoPage {
+  accountId: string
+  repos: RemoteRepo[]
 }
 
 /**

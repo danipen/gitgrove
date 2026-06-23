@@ -19,6 +19,7 @@ interface Props {
   repo: RepoSummary | null
   onOpenRepo: (path: string) => void
   onPickRepo: () => void
+  onClone: () => void
 }
 
 /** A right-click target: where to anchor the menu, which repo, and whether it's
@@ -38,7 +39,7 @@ interface MenuState {
 /** Past this many known repos the popover gains a filter + Recent/All split. */
 const RECENT_TOP = 5
 
-export function RepoSwitcher({ repo, onOpenRepo, onPickRepo }: Props) {
+export function RepoSwitcher({ repo, onOpenRepo, onPickRepo, onClone }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [recents, setRecents] = useState<RecentRepo[]>([])
@@ -214,7 +215,7 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo }: Props) {
       key={key}
       className={`popover__item${repo?.path === r.path ? ' is-active' : ''}${kbd ? ' is-kbd' : ''}${
         menu?.key === key ? ' is-context' : ''
-      }`}
+      }${r.missing ? ' is-missing' : ''}`}
       onClick={() => {
         close()
         onOpenRepo(r.path)
@@ -290,16 +291,26 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo }: Props) {
             )
           )}
         </div>
-        <div className="popover__footer">
+        <div className="popover__footer" style={{ display: 'flex', gap: 6 }}>
           <button
             className="btn-ghost"
-            style={{ width: '100%', justifyContent: 'center' }}
+            style={{ flex: 1, justifyContent: 'center', whiteSpace: 'nowrap' }}
             onClick={() => {
               close()
               onPickRepo()
             }}
           >
-            <Icon.Folder size={15} /> Open another repository…
+            <Icon.Folder size={15} /> Open repository…
+          </button>
+          <button
+            className="btn-ghost"
+            style={{ flex: 1, justifyContent: 'center', whiteSpace: 'nowrap' }}
+            onClick={() => {
+              close()
+              onClone()
+            }}
+          >
+            <Icon.Download size={15} /> Clone repository…
           </button>
         </div>
       </Popover>

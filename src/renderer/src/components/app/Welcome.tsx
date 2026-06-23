@@ -42,7 +42,12 @@ export function Welcome({ onPickRepo, onOpenRepo, onClone }: Props) {
           <div className="welcome__recents">
             <h4>Recent</h4>
             {recents.slice(0, 6).map((r) => (
-              <button key={r.path} className="recent-row" onClick={() => onOpenRepo(r.path)}>
+              <button
+                key={r.path}
+                className={`recent-row${r.missing ? ' is-missing' : ''}`}
+                data-tip={r.missing ? 'Folder not found — click to recover' : undefined}
+                onClick={() => onOpenRepo(r.path)}
+              >
                 <span className="icon-muted" style={{ color: 'var(--fg-muted)' }}>
                   <Icon.Repo size={18} />
                 </span>

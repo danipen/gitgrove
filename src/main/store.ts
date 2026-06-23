@@ -3,29 +3,35 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { RecentRepo, RepoInfo } from '@shared/types'
+import type { RepoInfo } from '@shared/types'
 import { app } from 'electron'
 
 // Generous cap: the switcher shows the newest few under "Recent" and the rest
 // under "All", so retaining a long tail is what makes the filter useful.
 const MAX_RECENT = 100
 
+/** What we persist per recent repo (the `missing` flag is computed on read). */
+interface StoredRepo extends RepoInfo {
+  lastOpened: number
+  remoteUrl?: string | null
+}
+
 function storePath(): string {
   return join(app.getPath('userData'), 'recent-repos.json')
 }
 
-function read(): RecentRepo[] {
+function read(): StoredRepo[] {
   try {
     const file = storePath()
     if (!existsSync(file)) return []
     const parsed = JSON.parse(readFileSync(file, 'utf8'))
-    return Array.isArray(parsed) ? (parsed as RecentRepo[]) : []
+    return Array.isArray(parsed) ? (parsed as StoredRepo[]) : []
   } catch {
     return []
   }
 }
 
-function write(repos: RecentRepo[]): void {
+function write(repos: StoredRepo[]): void {
   try {
     const dir = app.getPath('userData')
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
@@ -35,15 +41,25 @@ function write(repos: RecentRepo[]): void {
   }
 }
 
-export function getRecentRepos(): RecentRepo[] {
+/**
+ * All recent repos, newest first. Repos whose folder is gone are kept (flagged
+ * `missing`) rather than filtered out, so the user can recover them — selecting
+ * one opens the recovery screen (Locate / Clone Again / Remove).
+ */
+export function getRecentRepos() {
   return read()
-    .filter((r) => existsSync(r.path))
     .sort((a, b) => b.lastOpened - a.lastOpened)
+    .map((r) => ({ ...r, missing: !existsSync(r.path) }))
 }
 
-export function rememberRepo(repo: RepoInfo): RecentRepo[] {
+/** The stored entry for `path` (name + last-known remote), or null. */
+export function getRecentRepo(path: string): StoredRepo | null {
+  return read().find((r) => r.path === path) ?? null
+}
+
+export function rememberRepo(repo: RepoInfo & { remoteUrl?: string | null }) {
   const existing = read().filter((r) => r.path !== repo.path)
-  const updated: RecentRepo[] = [{ ...repo, lastOpened: Date.now() }, ...existing].slice(
+  const updated: StoredRepo[] = [{ ...repo, lastOpened: Date.now() }, ...existing].slice(
     0,
     MAX_RECENT
   )
@@ -51,7 +67,7 @@ export function rememberRepo(repo: RepoInfo): RecentRepo[] {
   return getRecentRepos()
 }
 
-export function removeRecentRepo(path: string): RecentRepo[] {
+export function removeRecentRepo(path: string) {
   write(read().filter((r) => r.path !== path))
   return getRecentRepos()
 }

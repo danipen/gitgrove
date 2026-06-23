@@ -10,11 +10,11 @@
 // message — git's raw stderr dump stays out of the toast.
 
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
 import { askpassEnv } from './askpass'
 import { friendlyAuthError } from './askpass-prompt'
-import { locateGit } from './bin'
+import { locateGit, locateGitLfs } from './bin'
 import { type ProgressHandler, parseProgressText, run, runOnce } from './exec'
+import { getLfsHealth } from './lfs'
 import { openLfsProgressChannel } from './lfs-progress'
 
 /**
@@ -95,21 +95,23 @@ function rethrowFriendly(env: Record<string, string>): (e: unknown) => never {
 }
 
 /**
- * Clone with progress. git reports progress on stderr as lines like
- * "Receiving objects:  42% (1234/2934)"; we forward phase + percent to the
- * caller. Resolves with the path of the new repo.
+ * Clone with progress into the exact directory `dest` (the dialog composes it
+ * as `<base>/<repo-name>`, but the user can edit the whole path, so we clone
+ * where told rather than re-deriving a name). git reports progress on stderr
+ * as lines like "Receiving objects:  42% (1234/2934)"; we forward phase +
+ * percent to the caller. `--recurse-submodules` brings submodules down in the
+ * same pass; LFS content is materialized afterwards (see materializeLfs).
+ * Resolves with the path of the new repo.
  */
 export async function clone(
   url: string,
-  parentDir: string,
+  dest: string,
   onProgress: ProgressHandler
 ): Promise<string> {
-  const name = (url.split('/').pop() ?? 'repository').replace(/\.git$/, '') || 'repository'
-  const dest = join(parentDir, name)
   const bin = await locateGit()
   const credentialEnv = await askpassEnv()
-  await withLfsProgress(onProgress, (lfsEnv) => {
-    return new Promise<void>((resolve, reject) => {
+  await withLfsProgress(onProgress, async (lfsEnv) => {
+    await new Promise<void>((resolve, reject) => {
       const child = spawn(bin, ['clone', '--progress', '--recurse-submodules', url, dest], {
         windowsHide: true,
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...credentialEnv, ...lfsEnv }
@@ -132,6 +134,31 @@ export async function clone(
         }
       })
     })
+    await materializeLfs(dest, lfsEnv, onProgress)
   })
   return dest
+}
+
+/**
+ * Pull the real LFS content of a freshly cloned repo. git clone only smudges
+ * LFS files into their real bytes when the smudge/clean filters already exist
+ * machine-wide; on a machine where `git lfs install` was never run they land
+ * as small pointer text files and the repo looks broken. So for an LFS repo
+ * with the binary available we wire up this repo's filters and pull — turning
+ * a just-cloned LFS repo usable immediately instead of after the user trips
+ * over the repo-open LFS banner. Entirely best-effort: any failure here leaves
+ * the clone itself intact (that banner is still the safety net), so we never
+ * reject the clone over an LFS hiccup.
+ */
+async function materializeLfs(
+  dest: string,
+  lfsEnv: Record<string, string>,
+  onProgress: ProgressHandler
+): Promise<void> {
+  const health = await getLfsHealth(dest).catch(() => null)
+  if (!health?.usesLfs || !health.binaryAvailable) return
+  await locateGitLfs()
+  await run(dest, ['lfs', 'install', '--local']).catch(() => {})
+  onProgress('Fetching LFS objects', 0)
+  await run(dest, ['lfs', 'pull'], { onProgress, env: lfsEnv }).catch(() => {})
 }

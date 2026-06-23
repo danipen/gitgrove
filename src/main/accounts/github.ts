@@ -10,7 +10,7 @@
 // responses — no sockets, no timers, no flakiness.
 
 import { normalizeHost } from '@shared/git-hosts'
-import type { AccountErrorCode } from '@shared/types'
+import type { AccountErrorCode, RemoteRepo } from '@shared/types'
 
 /**
  * Scopes GitGrove asks for: `repo` (read/write private repos over HTTPS),
@@ -243,4 +243,137 @@ export async function fetchProfile(
     email,
     scopes
   }
+}
+
+/**
+ * The `rel="next"` link out of a paginated response's `Link` header, or null
+ * at the last page. GitHub paginates `/user/repos` this way; following the
+ * header (rather than counting `?page=`) is the documented, future-proof walk.
+ * Pure + exported for tests.
+ */
+export function nextPageUrl(linkHeader: string | null): string | null {
+  if (!linkHeader) return null
+  for (const part of linkHeader.split(',')) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="next"/)
+    if (match) return match[1]
+  }
+  return null
+}
+
+/**
+ * Map one repo object from the GitHub REST API to a RemoteRepo, or null when
+ * it's unusable (no owner — a repo whose owner was deleted, which the API can
+ * still return). `host` is the account's host so the id and clone URL stay
+ * consistent with the connected account, not whatever the API echoes back.
+ */
+export function parseRepo(value: unknown, host: string): RemoteRepo | null {
+  if (!value || typeof value !== 'object') return null
+  const r = value as Record<string, unknown>
+  const owner = (r.owner as Record<string, unknown> | undefined)?.login
+  if (typeof owner !== 'string' || typeof r.name !== 'string') return null
+  const cloneUrl =
+    typeof r.clone_url === 'string' ? r.clone_url : `https://${host}/${owner}/${r.name}.git`
+  const pushed = typeof r.pushed_at === 'string' ? Date.parse(r.pushed_at) : NaN
+  return {
+    id: `${host}/${owner}/${r.name}`,
+    host,
+    owner,
+    name: r.name,
+    fullName: typeof r.full_name === 'string' ? r.full_name : `${owner}/${r.name}`,
+    cloneUrl,
+    private: r.private === true,
+    fork: r.fork === true,
+    archived: r.archived === true,
+    description: typeof r.description === 'string' ? r.description : null,
+    pushedAt: Number.isNaN(pushed) ? 0 : pushed
+  }
+}
+
+/** Bounds a runaway walk — 10 pages × 100 is more repos than any picker needs. */
+const MAX_REPO_PAGES = 10
+
+/**
+ * The affiliations we list, each fetched as its own paginated stream. Fetching
+ * them separately — rather than `affiliation=owner,collaborator,organization_member`
+ * in a single call — is what keeps the per-affiliation page cap from dropping
+ * the user's own repositories behind a flood of recently-pushed org repos: a
+ * combined, pushed-sorted, capped list silently omits a user's older personal
+ * repos when they belong to busy organizations (the GitHub Desktop approach).
+ */
+const REPO_AFFILIATIONS = ['owner', 'collaborator', 'organization_member']
+
+/** Walk one `/user/repos` query page by page via the Link header. */
+async function walkRepoPages(
+  host: string,
+  token: string,
+  query: string,
+  fetchImpl: FetchLike,
+  onPageRepos: (repos: RemoteRepo[]) => void
+): Promise<void> {
+  let url: string | null = `${apiBaseUrl(host)}/user/repos?${query}`
+  for (let pageCount = 0; url && pageCount < MAX_REPO_PAGES; pageCount++) {
+    let response: Response
+    try {
+      response = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      })
+    } catch {
+      throw new AccountAuthError('network')
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new AccountAuthError('bad-token')
+    }
+    if (!response.ok) throw new AccountAuthError('network')
+    const items = (await response.json().catch(() => null)) as unknown
+    if (!Array.isArray(items)) break
+    const pageRepos: RemoteRepo[] = []
+    for (const raw of items) {
+      const repo = parseRepo(raw, host)
+      if (repo) pageRepos.push(repo)
+    }
+    if (pageRepos.length) onPageRepos(pageRepos)
+    url = nextPageUrl(response.headers.get('link'))
+  }
+}
+
+/**
+ * Every repository the token can clone — owned, collaborator and org repos,
+ * most recently pushed first. Each affiliation is walked concurrently (see
+ * REPO_AFFILIATIONS) and merged, de-duplicated by id; auth/network failures
+ * surface as AccountAuthError (the IPC layer turns them into a human message
+ * the picker shows with a retry).
+ *
+ * `onPage` is invoked with each batch of newly-seen repos the moment it parses,
+ * so callers can show results within a second instead of after the whole walk.
+ */
+export async function fetchRepositories(
+  host: string,
+  token: string,
+  fetchImpl: FetchLike = fetch,
+  onPage?: (repos: RemoteRepo[]) => void
+): Promise<RemoteRepo[]> {
+  const byId = new Map<string, RemoteRepo>()
+  const collect = (repos: RemoteRepo[]) => {
+    // A repo can appear under more than one affiliation — emit each only once.
+    const fresh = repos.filter((r) => !byId.has(r.id))
+    for (const r of fresh) byId.set(r.id, r)
+    if (fresh.length && onPage) onPage(fresh)
+  }
+  await Promise.all(
+    REPO_AFFILIATIONS.map((affiliation) =>
+      walkRepoPages(
+        host,
+        token,
+        `per_page=100&sort=pushed&affiliation=${affiliation}`,
+        fetchImpl,
+        collect
+      )
+    )
+  )
+  return [...byId.values()].sort((a, b) => b.pushedAt - a.pushedAt)
 }

@@ -18,7 +18,7 @@ import { WorktreesDialog } from './WorktreesDialog'
 /** App-level modal dialogs (branch/tag/reset/rebase/clone/worktrees/…). */
 export type Modal =
   | { kind: 'settings' }
-  | { kind: 'clone' }
+  | { kind: 'clone'; initial?: { url: string; baseDir: string } }
   | { kind: 'identity' }
   | { kind: 'merge'; name: string }
   | { kind: 'new-branch'; from?: string; fromLabel?: string; initialName?: string }

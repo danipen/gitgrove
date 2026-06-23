@@ -7,6 +7,7 @@ import type {
   DiffArea,
   LogOptions,
   OpProgress,
+  RemoteRepoPage,
   UpdateStatus
 } from '@shared/types'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -59,6 +60,7 @@ const api: GitGroveApi = {
   removeAccount: (id) => ipcRenderer.invoke(IPC.accountsRemove, id),
   hasOAuthClient: (host) => ipcRenderer.invoke(IPC.accountsHasOAuthClient, host),
   lookupAvatarUrl: (email) => ipcRenderer.invoke(IPC.accountsLookupAvatar, email),
+  listAccountRepos: (accountId) => ipcRenderer.invoke(IPC.accountRepos, accountId),
   createBranch: (repoPath, name, opts) =>
     ipcRenderer.invoke(IPC.createBranch, repoPath, name, opts),
   deleteBranch: (repoPath, name, opts) =>
@@ -102,7 +104,9 @@ const api: GitGroveApi = {
   lfsEnable: (repoPath) => ipcRenderer.invoke(IPC.lfsEnable, repoPath),
   optimizeRepo: (repoPath) => ipcRenderer.invoke(IPC.optimizeRepo, repoPath),
   selectionSize: (repoPath, paths) => ipcRenderer.invoke(IPC.selectionSize, repoPath, paths),
-  cloneRepo: (url, parentDir) => ipcRenderer.invoke(IPC.cloneRepo, url, parentDir),
+  cloneRepo: (url, targetPath) => ipcRenderer.invoke(IPC.cloneRepo, url, targetPath),
+  defaultCloneDir: () => ipcRenderer.invoke(IPC.defaultCloneDir),
+  checkCloneTarget: (targetPath) => ipcRenderer.invoke(IPC.checkCloneTarget, targetPath),
   pickDirectory: (title) => ipcRenderer.invoke(IPC.pickDirectory, title),
   checkGit: (force) => ipcRenderer.invoke(IPC.checkGit, force),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),
@@ -165,6 +169,11 @@ const api: GitGroveApi = {
     const listener = () => handler()
     ipcRenderer.on(IPC.accountsChanged, listener)
     return () => ipcRenderer.removeListener(IPC.accountsChanged, listener)
+  },
+  onAccountReposPage: (handler) => {
+    const listener = (_e: unknown, page: RemoteRepoPage) => handler(page)
+    ipcRenderer.on(IPC.accountReposPage, listener)
+    return () => ipcRenderer.removeListener(IPC.accountReposPage, listener)
   },
   onOpProgress: (handler) => {
     const listener = (_e: unknown, progress: OpProgress) => handler(progress)

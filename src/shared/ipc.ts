@@ -13,6 +13,7 @@ import type {
   CheckoutOutcome,
   CheckoutResult,
   CloneProgress,
+  CloneTargetState,
   Commit,
   CommitSelection,
   ConflictSides,
@@ -33,6 +34,8 @@ import type {
   OpProgress,
   RebaseTodoItem,
   RecentRepo,
+  RemoteRepo,
+  RemoteRepoPage,
   RepoOpenResult,
   RepoOpKind,
   ResetMode,
@@ -87,6 +90,7 @@ export const IPC = {
   accountsRemove: 'accounts:remove',
   accountsHasOAuthClient: 'accounts:has-oauth-client',
   accountsLookupAvatar: 'accounts:avatar-lookup',
+  accountRepos: 'accounts:repos',
   // branches
   createBranch: 'repo:branch:create',
   deleteBranch: 'repo:branch:delete',
@@ -133,6 +137,8 @@ export const IPC = {
   selectionSize: 'repo:selection-size',
   // clone
   cloneRepo: 'repo:clone',
+  defaultCloneDir: 'repo:clone:default-dir',
+  checkCloneTarget: 'repo:clone:check-target',
   pickDirectory: 'app:pick-directory',
   // environment / app / updates
   checkGit: 'git:check',
@@ -164,6 +170,8 @@ export const IPC = {
   accountsDeviceCode: 'accounts:oauth:device-code',
   /** The connected-accounts list changed (added/removed) — refetch. */
   accountsChanged: 'accounts:changed',
+  /** One page of a repo listing, pushed as it arrives (RemoteRepoPage). */
+  accountReposPage: 'accounts:repos-page',
   /** Determinate progress of a running checkout/fetch/pull/push (OpProgress). */
   opProgress: 'repo:op-progress',
   updateStatus: 'update:status',
@@ -309,6 +317,14 @@ export interface GitGroveApi {
    * runs in main because it needs the account token.
    */
   lookupAvatarUrl(email: string): Promise<AvatarLookupResult>
+  /**
+   * Repositories the connected account `accountId` can clone, most recently
+   * pushed first. Runs in main because it needs the account's token; rejects
+   * with a human message on auth/network failure so the picker can retry.
+   * Pages also stream in via onAccountReposPage as they arrive — await this
+   * for the final, complete (de-duplicated, sorted) list and the "done" signal.
+   */
+  listAccountRepos(accountId: string): Promise<RemoteRepo[]>
   // ── Branches ──
   /**
    * Create a branch, optionally from a base ref and optionally carrying or
@@ -395,10 +411,19 @@ export interface GitGroveApi {
   selectionSize(repoPath: string, paths: string[]): Promise<number>
   // ── Clone ──
   /**
-   * Clone `url` into `parentDir`; progress arrives via onCloneProgress.
-   * Resolves to the path of the new repository.
+   * Clone `url` into `targetPath` — the exact directory the new repo lands in
+   * (the dialog composes it as `<base>/<repo-name>` but the user can edit it).
+   * A leading `~` is expanded. Progress arrives via onCloneProgress; resolves
+   * to the path of the new repository.
    */
-  cloneRepo(url: string, parentDir: string): Promise<string>
+  cloneRepo(url: string, targetPath: string): Promise<string>
+  /** Whether `targetPath` can be cloned into (missing/empty vs. occupied). */
+  checkCloneTarget(targetPath: string): Promise<CloneTargetState>
+  /**
+   * A sensible parent folder to clone into, prefilled in the clone dialog: the
+   * last folder the user cloned into, or `<home>/Projects` the first time.
+   */
+  defaultCloneDir(): Promise<string>
   /** Open the native directory picker; null when cancelled. */
   pickDirectory(title?: string): Promise<string | null>
   /**
@@ -448,6 +473,8 @@ export interface GitGroveApi {
   onAccountDeviceCode(handler: (info: DeviceCodeInfo) => void): () => void
   /** Subscribe to connected-account list changes. Returns an unsubscribe fn. */
   onAccountsChanged(handler: () => void): () => void
+  /** Subscribe to repo-listing pages as they stream in. Returns an unsubscribe fn. */
+  onAccountReposPage(handler: (page: RemoteRepoPage) => void): () => void
   /** Subscribe to determinate progress of running checkout/fetch/pull/push ops. */
   onOpProgress(handler: (progress: OpProgress) => void): () => void
   /** Subscribe to auto-update lifecycle pushes. Returns an unsubscribe fn. */
