@@ -79,13 +79,15 @@
   animation: pop-in 0.1s ease-out;
 }
 .popover__search {
+  position: relative;
   padding: 8px;
   border-bottom: 1px solid var(--border);
 }
 .popover__search input {
   width: 100%;
   height: 30px;
-  padding: 0 9px;
+  /* Right room for the clear "×". */
+  padding: 0 30px 0 9px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg);
@@ -96,6 +98,9 @@
 }
 .popover__search input:focus {
   border-color: var(--accent-border);
+}
+.popover__search .input-clear {
+  right: 15px;
 }
 .popover__list {
   /* Custom main-thread scrolling (see BranchSwitcher): native overflow scroll
@@ -783,12 +788,14 @@
    input that filters a list. Used by FilterInput.tsx (History + File History
    commit lists); kept visually in step with .wfl-filter__input. */
 .list-filter {
+  position: relative;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
 }
 .list-filter__input {
   width: 100%;
-  padding: 5px 9px;
+  /* Right room for the clear "×" / loading spinner that overlay the input. */
+  padding: 5px 28px 5px 9px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
@@ -798,4 +805,45 @@
 .list-filter__input:focus {
   outline: none;
   border-color: var(--accent-border);
+}
+.list-filter .input-clear,
+.list-filter .input-spin {
+  right: 16px;
+}
+
+/* ── Clear "×" + busy spinner shared by every list filter ─────────────────── */
+/* The clear button (ClearButton.tsx) and the optional loading spinner overlay
+   an input at its right edge. Absolutely placed by default (the filter's
+   wrapper is position:relative and reserves right padding); each filter nudges
+   `right` to clear its own padding. The clone picker, whose search row is a
+   flex line, opts out of absolute placement below. */
+.input-clear {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+/* No hover chip — just darken the glyph so it reads as "clear" without adding a
+   competing shape next to the input. */
+.input-clear:hover {
+  color: var(--fg);
+}
+.input-spin {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  pointer-events: none;
 }

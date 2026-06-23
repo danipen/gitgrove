@@ -5,6 +5,7 @@
 
 import type { StashEntry } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ClearButton } from '@/components/common/ClearButton'
 import { Popover } from '@/components/common/Popover'
 import { pluralize, stashLabel } from '@/lib/format'
 import { highlightMatch } from '@/lib/highlight'
@@ -91,6 +92,7 @@ export function StashPanel({ repoPath, stashes, busy, theme, runOp }: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            {query !== '' && <ClearButton label="Clear filter" onClear={() => setQuery('')} />}
           </div>
         ) : (
           <div className="popover__group-label" style={{ position: 'static' }}>
