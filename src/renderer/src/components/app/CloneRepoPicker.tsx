@@ -146,9 +146,11 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
                       {repo.fork && <span className="clone-repo__tag">fork</span>}
                       {repo.archived && <span className="clone-repo__tag">archived</span>}
                     </span>
-                    {repo.description && (
-                      <span className="clone-repo__desc">{repo.description}</span>
-                    )}
+                    <span
+                      className={`clone-repo__desc${repo.description ? '' : ' clone-repo__desc--empty'}`}
+                    >
+                      {repo.description || 'No description'}
+                    </span>
                   </span>
                 </button>
               ))}

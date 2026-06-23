@@ -677,6 +677,12 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* Faint placeholder so every row keeps the same two-line shape — names stay on
+   a consistent baseline whether or not a repo has a description. */
+.clone-repo__desc--empty {
+  color: var(--fg-faint);
+  font-style: italic;
+}
 /* ── Stash review (a stash explored like a commit) ───────────────────────── */
 .stash-review {
   display: flex;
