@@ -230,8 +230,8 @@ export function BranchSwitcher({
       : '—'
 
   // The `#123` pill marking a branch that has a PR. Open PRs carry the CI rollup
-  // glyph (green/red/amber); merged PRs go purple with a merge glyph, closed PRs
-  // go muted — neither shows a CI dot, since their checks are long settled.
+  // glyph (green/red/amber); merged PRs go purple and closed red, each with
+  // GitHub's own PR-state octicon and no CI dot (their checks are long settled).
   // styles: features/toolbar.css (.branch-pr)
   const renderPrBadge = (pr: PullRequestInfo | undefined) => {
     if (!pr) return null
@@ -261,7 +261,7 @@ export function BranchSwitcher({
           pr.checks && <CiStatus state={pr.checks} />
         ) : (
           <span className="ci-status" aria-hidden>
-            {pr.state === 'merged' ? <Icon.Merge size={10} /> : <Icon.Close size={10} />}
+            {pr.state === 'merged' ? <Icon.PrMerged size={11} /> : <Icon.PrClosed size={11} />}
           </span>
         )}
         #{pr.number}
@@ -319,7 +319,7 @@ export function BranchSwitcher({
         </span>
       </button>
 
-      <Popover anchor={anchor.current} open={open} onClose={() => setOpen(false)} width={300}>
+      <Popover anchor={anchor.current} open={open} onClose={() => setOpen(false)} width={340}>
         <div className="popover__search">
           <input
             data-autofocus=""
