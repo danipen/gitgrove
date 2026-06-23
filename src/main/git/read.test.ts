@@ -215,6 +215,25 @@ describe('getLog', () => {
     const log = await getLog(repo, { search: 'initial' })
     expect(log.map((c) => c.subject)).toEqual(['initial commit'])
   })
+
+  it('matches search case-insensitively', async () => {
+    const log = await getLog(repo, { search: 'INITIAL' })
+    expect(log.map((c) => c.subject)).toEqual(['initial commit'])
+  })
+
+  it('requires every whitespace-separated term to match', async () => {
+    // Both words live in the same message; word order in the query is irrelevant.
+    expect((await getLog(repo, { search: 'rename unicode' })).map((c) => c.subject)).toEqual([
+      'rename and unicode'
+    ])
+    // A term absent from any single message yields no results (terms are ANDed).
+    expect(await getLog(repo, { search: 'rename second' })).toEqual([])
+  })
+
+  it('treats the query as literal text, not a regex', async () => {
+    // `.` is a regex wildcard; as a fixed string it matches nothing here.
+    expect(await getLog(repo, { search: 'initial.commit' })).toEqual([])
+  })
 })
 
 describe('toWebUrl', () => {

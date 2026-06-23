@@ -771,9 +771,31 @@
   background: var(--bg-elevated);
   box-shadow: var(--popover-shadow);
 }
-/* Matched substring inside a filtered list item (files, branches, repos). */
+/* Matched substring inside a filtered list item (files, branches, repos,
+   commits). */
 .hl {
   background: var(--accent-glow);
   color: inherit;
   border-radius: 2px;
+}
+/* ── List filter (plain text bar) ─────────────────────────────────────────── */
+/* The chip-less sibling of the Changes file filter (.wfl-filter): a single text
+   input that filters a list. Used by FilterInput.tsx (History + File History
+   commit lists); kept visually in step with .wfl-filter__input. */
+.list-filter {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.list-filter__input {
+  width: 100%;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12px;
+}
+.list-filter__input:focus {
+  outline: none;
+  border-color: var(--accent-border);
 }

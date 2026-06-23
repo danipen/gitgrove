@@ -3,12 +3,15 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
 import { copyPathItems } from '@/components/common/copyPathItems'
 import { useFileFilter } from '@/components/common/FileFilter'
+import { FilterInput } from '@/components/common/FilterInput'
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
 import { Resizer } from '@/components/common/Resizer'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
 import { coAuthorsOf } from '@/lib/coauthors'
+import { filterTerms } from '@/lib/commitFilter'
 import { parseRefs, pluralize } from '@/lib/format'
+import { highlightTerms } from '@/lib/highlight'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
 import { navTarget } from '@/lib/useListKeyNav'
@@ -20,6 +23,9 @@ interface Props {
   repoPath: string
   commits: Commit[]
   loading: boolean
+  /** Free-text filter applied to the log (server-side `git log --grep`). */
+  search: string
+  onSearchChange: (query: string) => void
   selectedCommit: Commit | null
   onSelectCommit: (commit: Commit) => void
   commitFiles: ChangedFile[]
@@ -64,6 +70,8 @@ export function HistoryView({
   repoPath,
   commits,
   loading,
+  search,
+  onSearchChange,
   selectedCommit,
   onSelectCommit,
   commitFiles,
@@ -149,102 +157,123 @@ export function HistoryView({
     if (target !== current) onSelectCommit(commits[target])
   }
 
-  if (loading && commits.length === 0) {
-    return (
-      <div className="center-state">
-        <div className="spinner" />
-      </div>
-    )
-  }
+  const searching = search.trim() !== ''
+  const terms = filterTerms(search)
 
-  if (commits.length === 0) {
+  // An empty repo with no active filter is the friendly first-run state — no
+  // filter bar, since there's nothing to filter. With a filter set we always
+  // keep the bar mounted (below) so the user can refine or clear it.
+  if (!searching && commits.length === 0) {
     return (
       <div className="center-state">
-        <div className="icon-ring">
-          <Icon.History size={22} />
-        </div>
-        <h3>No history</h3>
-        <p>This branch doesn’t have any commits yet.</p>
+        {loading ? (
+          <div className="spinner" />
+        ) : (
+          <>
+            <div className="icon-ring">
+              <Icon.History size={22} />
+            </div>
+            <h3>No history</h3>
+            <p>This branch doesn’t have any commits yet.</p>
+          </>
+        )}
       </div>
     )
   }
 
   return (
     <div className="history">
-      <div
-        className="commit-list"
-        ref={vs.viewportRef}
-        role="listbox"
-        aria-label="Commit history"
-        tabIndex={0}
-        onKeyDown={handleKeyDown}
-      >
-        <div className="vlist__sizer" style={{ height: vs.totalHeight }} aria-hidden="true" />
-        <div className="vlist__content" style={{ transform: `translateY(${-vs.top}px)` }}>
-          {commits.slice(vs.start, vs.end).map((commit, i) => {
-            const refs = parseRefs(commit.refs)
-            const overflow = refs.length - MAX_LIST_REFS
-            const active = selectedCommit?.hash === commit.hash
-            return (
-              <button
-                key={commit.hash}
-                className={`commit${active ? ' is-active' : ''}`}
-                role="option"
-                aria-selected={active}
-                style={{ position: 'absolute', top: vs.rowTop(vs.start + i), left: 0, right: 0 }}
-                onClick={() => {
-                  vs.viewportEl?.focus()
-                  onSelectCommit(commit)
-                }}
-                onContextMenu={
-                  commitMenuFor
-                    ? (e) => {
-                        e.preventDefault()
-                        onSelectCommit(commit)
-                        setMenu({ x: e.clientX, y: e.clientY, items: commitMenuFor(commit) })
-                      }
-                    : undefined
-                }
-              >
-                <AvatarStack
-                  author={{ name: commit.authorName, email: commit.authorEmail }}
-                  coAuthors={coAuthorsOf(commit)}
-                  size={28}
-                />
-                <div className="commit__main">
-                  <div className="commit__subject" data-tip={commit.subject} data-tip-overflow="">
-                    {commit.subject}
-                  </div>
-                  {refs.length > 0 && (
-                    <div className="commit__refs">
-                      {refs.slice(0, MAX_LIST_REFS).map((ref) => (
-                        <RefChip key={ref.name} refItem={ref} />
-                      ))}
-                      {overflow > 0 && <span className="ref-chip ref-chip--more">+{overflow}</span>}
-                    </div>
-                  )}
-                  <div className="commit__meta">
-                    <span className="commit__author">{commit.authorName}</span>
-                    <span>· {commit.relativeDate}</span>
-                  </div>
-                </div>
-              </button>
-            )
-          })}
-          {hasMore && (
-            <div
-              className="commit-list__more"
-              style={{ position: 'absolute', top: vs.rowTop(commits.length), left: 0, right: 0 }}
-              aria-hidden="true"
-            >
-              {loadingMore && <div className="spinner spinner--sm" />}
-            </div>
-          )}
+      <FilterInput value={search} onChange={onSearchChange} placeholder="Filter commits…" />
+      {loading && commits.length === 0 ? (
+        <div className="center-state">
+          <div className="spinner" />
         </div>
-        <VScrollbar vs={vs} />
-      </div>
+      ) : commits.length === 0 ? (
+        <div className="center-state">
+          <div className="icon-ring">
+            <Icon.History size={22} />
+          </div>
+          <h3>No matches</h3>
+          <p>No commits match “{search.trim()}”.</p>
+        </div>
+      ) : (
+        <div
+          className="commit-list"
+          ref={vs.viewportRef}
+          role="listbox"
+          aria-label="Commit history"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+        >
+          <div className="vlist__sizer" style={{ height: vs.totalHeight }} aria-hidden="true" />
+          <div className="vlist__content" style={{ transform: `translateY(${-vs.top}px)` }}>
+            {commits.slice(vs.start, vs.end).map((commit, i) => {
+              const refs = parseRefs(commit.refs)
+              const overflow = refs.length - MAX_LIST_REFS
+              const active = selectedCommit?.hash === commit.hash
+              return (
+                <button
+                  key={commit.hash}
+                  className={`commit${active ? ' is-active' : ''}`}
+                  role="option"
+                  aria-selected={active}
+                  style={{ position: 'absolute', top: vs.rowTop(vs.start + i), left: 0, right: 0 }}
+                  onClick={() => {
+                    vs.viewportEl?.focus()
+                    onSelectCommit(commit)
+                  }}
+                  onContextMenu={
+                    commitMenuFor
+                      ? (e) => {
+                          e.preventDefault()
+                          onSelectCommit(commit)
+                          setMenu({ x: e.clientX, y: e.clientY, items: commitMenuFor(commit) })
+                        }
+                      : undefined
+                  }
+                >
+                  <AvatarStack
+                    author={{ name: commit.authorName, email: commit.authorEmail }}
+                    coAuthors={coAuthorsOf(commit)}
+                    size={28}
+                  />
+                  <div className="commit__main">
+                    <div className="commit__subject" data-tip={commit.subject} data-tip-overflow="">
+                      {searching ? highlightTerms(commit.subject, terms) : commit.subject}
+                    </div>
+                    {refs.length > 0 && (
+                      <div className="commit__refs">
+                        {refs.slice(0, MAX_LIST_REFS).map((ref) => (
+                          <RefChip key={ref.name} refItem={ref} />
+                        ))}
+                        {overflow > 0 && (
+                          <span className="ref-chip ref-chip--more">+{overflow}</span>
+                        )}
+                      </div>
+                    )}
+                    <div className="commit__meta">
+                      <span className="commit__author">{commit.authorName}</span>
+                      <span>· {commit.relativeDate}</span>
+                    </div>
+                  </div>
+                </button>
+              )
+            })}
+            {hasMore && (
+              <div
+                className="commit-list__more"
+                style={{ position: 'absolute', top: vs.rowTop(commits.length), left: 0, right: 0 }}
+                aria-hidden="true"
+              >
+                {loadingMore && <div className="spinner spinner--sm" />}
+              </div>
+            )}
+          </div>
+          <VScrollbar vs={vs} />
+        </div>
+      )}
 
-      {selectedCommit && (
+      {selectedCommit && commits.length > 0 && (
         <>
           <Resizer
             orientation="y"

@@ -163,6 +163,10 @@ export function App() {
   // window: paging the log deep enough to reach a super-old commit can take a
   // moment, so HistoryView shows a blocking overlay for it. Null otherwise.
   const [revealingCommit, setRevealingCommit] = useState<string | null>(null)
+  // Free-text History filter. Applied server-side (`git log --grep`) so it
+  // searches the whole history, not just the loaded page; a short debounce keeps
+  // typing from re-running the log on every keystroke.
+  const [logSearch, setLogSearch] = useState('')
 
   // Commit-selection request token: selecting a commit fires an async
   // `commitFiles` fetch, and a slow one can resolve after the user has already
@@ -207,6 +211,13 @@ export function App() {
   // stale page from another branch would corrupt the list.
   const loadingMoreRef = useRef(false)
   const logReq = useRef(0)
+  // Current History filter, read by loadLog/loadMoreLog so every refresh and
+  // paged fetch honours it without depending on the search's identity.
+  const logSearchRef = useRef(logSearch)
+  logSearchRef.current = logSearch
+  // Debounce handle for the search-triggered reload (cleared on a fresh keystroke
+  // and when a commit is revealed, which clears the filter outright).
+  const logSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const branchRef = useRef<BranchInfo | null>(branch)
   branchRef.current = branch
   // Ref so doCommit can route a mid-merge commit without re-creating on every
@@ -333,7 +344,11 @@ export function App() {
       const id = ++logReq.current
       setCommitsLoading(true)
       try {
-        const log = await window.gitgrove.log(repoPath, { limit, ref })
+        const log = await window.gitgrove.log(repoPath, {
+          limit,
+          ref,
+          search: logSearchRef.current
+        })
         if (id === logReq.current) {
           setCommits(log)
           // A short page means we hit the root commit — nothing left to page in.
@@ -358,7 +373,8 @@ export function App() {
     try {
       const page = await window.gitgrove.log(repoPath, {
         limit: LOG_LIMIT,
-        skip: commitsRef.current.length
+        skip: commitsRef.current.length,
+        search: logSearchRef.current
       })
       // A reload (branch switch / refresh) raced us: drop this stale page.
       if (id !== logReq.current) return
@@ -380,6 +396,26 @@ export function App() {
       setCommitsLoadingMore(false)
     }
   }, [fail])
+
+  /**
+   * Drive the History filter: keep the input responsive (state updates at once)
+   * while debouncing the `git log --grep` reload that re-fetches the first page
+   * for the new query. `logSearchRef` is set synchronously so the reload — and
+   * any refresh racing it — reads the latest term.
+   */
+  const onLogSearchChange = useCallback(
+    (query: string) => {
+      setLogSearch(query)
+      logSearchRef.current = query
+      if (logSearchTimer.current) clearTimeout(logSearchTimer.current)
+      logSearchTimer.current = setTimeout(() => {
+        logSearchTimer.current = null
+        const repoPath = repoRef.current?.path
+        if (repoPath) loadLog(repoPath).catch(fail)
+      }, 200)
+    },
+    [loadLog, fail]
+  )
 
   // ── Selection handlers ─────────────────────────────────────────────────────
   // biome-ignore lint/correctness/useExhaustiveDependencies: diffRef is read for its live value, not as a trigger — depending on it would churn this handler on every diff load.
@@ -496,8 +532,23 @@ export function App() {
       if (!repoPath) return
       setFileHistory(null)
       setTab('history')
-      // Fast path: already paged in — select it straight away, no overlay.
-      const loaded = logLoadedRef.current ? commitsRef.current.find((c) => c.hash === hash) : null
+      // A revealed commit is located in the full HEAD history; an active filter
+      // would likely exclude it, so clear the filter (and any pending reload)
+      // before paging. While a filter was set the loaded list is the *filtered*
+      // one, so the loaded-list fast paths below can't be trusted — force a fresh
+      // unfiltered load instead.
+      if (logSearchTimer.current) {
+        clearTimeout(logSearchTimer.current)
+        logSearchTimer.current = null
+      }
+      const wasFiltered = logSearchRef.current.trim() !== ''
+      setLogSearch('')
+      logSearchRef.current = ''
+      // Fast path: already paged in (and unfiltered) — select it straight away.
+      const loaded =
+        !wasFiltered && logLoadedRef.current
+          ? commitsRef.current.find((c) => c.hash === hash)
+          : null
       if (loaded) {
         selectCommit(loaded)
         return
@@ -508,9 +559,10 @@ export function App() {
       // switch tabs — not after a stale/partial list has flashed in.
       setRevealingCommit(hash)
       try {
-        let list = logLoadedRef.current
-          ? commitsRef.current
-          : await loadLog(repoPath).catch(() => [])
+        let list =
+          !wasFiltered && logLoadedRef.current
+            ? commitsRef.current
+            : await loadLog(repoPath).catch(() => [])
         if (!list.some((c) => c.hash === hash)) {
           const index = await window.gitgrove.commitIndex(repoPath, hash).catch(() => -1)
           if (index < 0) return
@@ -643,6 +695,8 @@ export function App() {
       setCommits([])
       setLogHasMore(false)
       setLogLoaded(false)
+      setLogSearch('')
+      logSearchRef.current = ''
       setSelectedCommit(null)
       setCommitFiles([])
       setCommitSelPath(null)
@@ -1769,6 +1823,8 @@ export function App() {
                 repoPath={repo.path}
                 commits={commits}
                 loading={commitsLoading}
+                search={logSearch}
+                onSearchChange={onLogSearchChange}
                 hasMore={logHasMore}
                 loadingMore={commitsLoadingMore}
                 onLoadMore={loadMoreLog}
