@@ -384,6 +384,25 @@ describe('parsePullRequest', () => {
     expect(parsePullRequest({ ...node, headRefName: undefined })).toBeNull()
     expect(parsePullRequest(null)).toBeNull()
   })
+
+  const withRollup = (state: string | null) => ({
+    ...node,
+    commits: { nodes: [{ commit: { statusCheckRollup: state === null ? null : { state } } }] }
+  })
+
+  test('collapses the statusCheckRollup state into the CI signal', () => {
+    expect(parsePullRequest(withRollup('SUCCESS'))?.checks).toBe('success')
+    expect(parsePullRequest(withRollup('FAILURE'))?.checks).toBe('failure')
+    expect(parsePullRequest(withRollup('ERROR'))?.checks).toBe('failure')
+    expect(parsePullRequest(withRollup('PENDING'))?.checks).toBe('pending')
+    expect(parsePullRequest(withRollup('EXPECTED'))?.checks).toBe('pending')
+  })
+
+  test('checks is null when no rollup is present (no checks configured)', () => {
+    expect(parsePullRequest(withRollup(null))?.checks).toBeNull()
+    expect(parsePullRequest({ ...node, commits: { nodes: [] } })?.checks).toBeNull()
+    expect(parsePullRequest(node)?.checks).toBeNull()
+  })
 })
 
 describe('fetchPullRequests', () => {

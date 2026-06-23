@@ -10,7 +10,12 @@
 // responses — no sockets, no timers, no flakiness.
 
 import { normalizeHost } from '@shared/git-hosts'
-import type { AccountErrorCode, PullRequestInfo, RemoteRepo } from '@shared/types'
+import type {
+  AccountErrorCode,
+  PullRequestChecks,
+  PullRequestInfo,
+  RemoteRepo
+} from '@shared/types'
 
 /**
  * Scopes GitGrove asks for: `repo` (read/write private repos over HTTPS),
@@ -426,9 +431,42 @@ async function graphqlQuery<T>(
 }
 
 /**
+ * Collapse a GraphQL `statusCheckRollup.state` into our three-state CI signal.
+ * The rollup is GitHub's own server-side reduction of every status + check run
+ * on the head commit, so the precedence (any failure → red, all passing →
+ * green, else still running) is already applied. `EXPECTED` means a required
+ * check hasn't reported yet — still pending. Null/absent means no checks ran.
+ */
+function rollupChecks(node: Record<string, unknown>): PullRequestChecks | null {
+  const commits = (node.commits as { nodes?: unknown[] } | undefined)?.nodes
+  const head =
+    Array.isArray(commits) && commits[0] && typeof commits[0] === 'object' ? commits[0] : null
+  const commit = head ? (head as Record<string, unknown>).commit : null
+  const rollup =
+    commit && typeof commit === 'object'
+      ? (commit as Record<string, unknown>).statusCheckRollup
+      : null
+  const state =
+    rollup && typeof rollup === 'object' ? (rollup as Record<string, unknown>).state : null
+  switch (state) {
+    case 'SUCCESS':
+      return 'success'
+    case 'FAILURE':
+    case 'ERROR':
+      return 'failure'
+    case 'PENDING':
+    case 'EXPECTED':
+      return 'pending'
+    default:
+      return null
+  }
+}
+
+/**
  * Map one pull request node from the GraphQL API to a PullRequestInfo, or null
- * when it's unusable (no number/head ref). `checks` is left null here — the CI
- * rollup is a separate concern wired through the same query.
+ * when it's unusable (no number/head ref). `checks` carries the rolled-up CI
+ * state of the head commit, or null when the query didn't ask for it / no
+ * checks ran.
  */
 export function parsePullRequest(node: unknown): PullRequestInfo | null {
   if (!node || typeof node !== 'object') return null
@@ -442,7 +480,7 @@ export function parsePullRequest(node: unknown): PullRequestInfo | null {
     headBranch: n.headRefName,
     baseBranch: typeof n.baseRefName === 'string' ? n.baseRefName : '',
     isCrossRepo: n.isCrossRepository === true,
-    checks: null
+    checks: rollupChecks(n)
   }
 }
 
@@ -453,7 +491,10 @@ const PULL_REQUESTS_QUERY = `
 query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
     pullRequests(states: OPEN, first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) {
-      nodes { number title url isDraft headRefName baseRefName isCrossRepository }
+      nodes {
+        number title url isDraft headRefName baseRefName isCrossRepository
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
     }
   }
 }`
