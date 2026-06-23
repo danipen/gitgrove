@@ -1320,8 +1320,7 @@ export function App() {
 
   // The compare URL for the "Create Pull Request" banner, or null when it
   // shouldn't show: only on a GitHub host, for a published branch (has an
-  // upstream) that isn't the default branch and has no open PR yet. Once a PR
-  // exists the branch pill covers it, so the banner steps aside.
+  // upstream) that isn't the default branch and has no PR at all yet.
   const createPrUrl = useMemo(() => {
     // Wait until PRs have loaded — otherwise the banner flashes on every repo
     // open before we know whether the branch already has a PR.
@@ -1330,9 +1329,10 @@ export function App() {
     if (!branch || branch.detached || !branch.defaultBranch) return null
     const current = branch.current
     if (!current || current === branch.defaultBranch) return null
-    // Offer "create" only when there's no OPEN PR yet (a merged/closed one
-    // shouldn't block proposing a fresh PR for new work on the branch).
-    if (!sync?.upstream || prByBranch.get(current)?.state === 'open') return null
+    // Any PR — open, merged or closed — means the branch's PR story is already
+    // told (the menu's "Open Pull Request #N" reaches it), so don't nag to
+    // create another. In particular, a just-merged branch must not reopen this.
+    if (!sync?.upstream || prByBranch.has(current)) return null
     return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
   }, [hostInfo, branch, sync, prByBranch, prsLoaded])
 
