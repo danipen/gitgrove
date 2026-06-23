@@ -11,7 +11,8 @@
 
 import type { ConnectedAccount, RemoteRepo } from '@shared/types'
 import { useEffect, useState } from 'react'
-import { groupReposByOwner } from '@/lib/clone-repos'
+import { filterTerms, groupReposByOwner } from '@/lib/clone-repos'
+import { highlightTerms } from '@/lib/highlight'
 import { Icon } from '@/lib/icons'
 
 interface Props {
@@ -81,6 +82,7 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
   }
 
   const groups = groupReposByOwner(repos, account.login, filter)
+  const terms = filterTerms(filter)
   // Loading and error states render *inside* the fixed-size list so the header
   // (filter + refresh) and the dialog's size stay put — a refresh just swaps
   // the list's contents, never the whole panel.
@@ -141,7 +143,10 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
                   <Icon.Repo size={15} className="clone-repo__icon" />
                   <span className="clone-repo__main">
                     <span className="clone-repo__name">
-                      {repo.name}
+                      {/* One span so highlight fragments flow inline, not as flex items. */}
+                      <span className="clone-repo__name-text">
+                        {highlightTerms(repo.name, terms)}
+                      </span>
                       {repo.private && <Icon.Lock size={11} className="clone-repo__lock" />}
                       {repo.fork && <span className="clone-repo__tag">fork</span>}
                       {repo.archived && <span className="clone-repo__tag">archived</span>}
@@ -149,7 +154,9 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
                     <span
                       className={`clone-repo__desc${repo.description ? '' : ' clone-repo__desc--empty'}`}
                     >
-                      {repo.description || 'No description'}
+                      {repo.description
+                        ? highlightTerms(repo.description, terms)
+                        : 'No description'}
                     </span>
                   </span>
                 </button>

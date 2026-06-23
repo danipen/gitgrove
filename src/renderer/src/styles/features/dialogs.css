@@ -656,6 +656,14 @@
   font-size: 13px;
   font-weight: 500;
 }
+/* Wraps the (highlighted) name so its fragments flow inline inside the flex
+   row, and a long name truncates instead of pushing the lock/tags off-row. */
+.clone-repo__name-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .clone-repo__lock {
   flex: 0 0 auto;
   color: var(--fg-faint);

@@ -10,14 +10,20 @@ export interface RepoGroup {
   repos: RemoteRepo[]
 }
 
+/** Split a filter into the lowercase terms every match must contain. */
+export function filterTerms(filter: string): string[] {
+  return filter.trim().toLowerCase().split(/\s+/).filter(Boolean)
+}
+
 /**
  * Does `repo` match the filter? Every whitespace-separated term must appear in
- * `owner/name` (case-insensitive), so "git grove" finds "danipen/gitgrove" and
- * a multi-word filter narrows progressively. An empty filter matches all.
+ * `owner/name` or the description (case-insensitive), so "git grove" finds
+ * "danipen/gitgrove" and a word from the description narrows by topic too. An
+ * empty filter matches all.
  */
 function matches(repo: RemoteRepo, terms: string[]): boolean {
   if (terms.length === 0) return true
-  const haystack = repo.fullName.toLowerCase()
+  const haystack = `${repo.fullName}\n${repo.description ?? ''}`.toLowerCase()
   return terms.every((t) => haystack.includes(t))
 }
 
@@ -32,7 +38,7 @@ export function groupReposByOwner(
   selfLogin: string,
   filter: string
 ): RepoGroup[] {
-  const terms = filter.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const terms = filterTerms(filter)
   const byOwner = new Map<string, RepoGroup>()
   for (const repo of repos) {
     if (!matches(repo, terms)) continue
