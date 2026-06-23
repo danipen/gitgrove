@@ -300,7 +300,9 @@ export function registerIpc(ctx: IpcContext): void {
     const account = store.listAccounts().find((a) => a.id === accountId)
     const token = account && store.getTokenForHost(account.host)
     if (!account || !token) throw new Error('That account is no longer connected.')
-    return fetchRepositories(account.host, token)
+    return fetchRepositories(account.host, token, fetch, (repos) => {
+      getWindow()?.webContents.send(IPC.accountReposPage, { accountId, repos })
+    })
   })
 
   // One sign-in at a time: a newly started flow supersedes (aborts) the old.

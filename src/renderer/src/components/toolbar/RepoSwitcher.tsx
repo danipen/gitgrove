@@ -19,6 +19,7 @@ interface Props {
   repo: RepoSummary | null
   onOpenRepo: (path: string) => void
   onPickRepo: () => void
+  onClone: () => void
 }
 
 /** A right-click target: where to anchor the menu, which repo, and whether it's
@@ -38,7 +39,7 @@ interface MenuState {
 /** Past this many known repos the popover gains a filter + Recent/All split. */
 const RECENT_TOP = 5
 
-export function RepoSwitcher({ repo, onOpenRepo, onPickRepo }: Props) {
+export function RepoSwitcher({ repo, onOpenRepo, onPickRepo, onClone }: Props) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [recents, setRecents] = useState<RecentRepo[]>([])
@@ -290,7 +291,20 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo }: Props) {
             )
           )}
         </div>
-        <div className="popover__footer">
+        <div
+          className="popover__footer"
+          style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
+        >
+          <button
+            className="btn-ghost"
+            style={{ width: '100%', justifyContent: 'center' }}
+            onClick={() => {
+              close()
+              onClone()
+            }}
+          >
+            <Icon.Download size={15} /> Clone a repository…
+          </button>
           <button
             className="btn-ghost"
             style={{ width: '100%', justifyContent: 'center' }}

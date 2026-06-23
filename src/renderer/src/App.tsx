@@ -1568,6 +1568,7 @@ export function App() {
           resolvedTheme={theme}
           onOpenRepo={openRepoByPath}
           onPickRepo={pickRepo}
+          onClone={() => setModal({ kind: 'clone' })}
           onCheckout={checkout}
           onRefresh={refresh}
           onThemeChange={setThemePref}
@@ -1613,6 +1614,7 @@ export function App() {
         onBranchesOpen={reloadBranches}
         onOpenRepo={openRepoByPath}
         onPickRepo={pickRepo}
+        onClone={() => setModal({ kind: 'clone' })}
         onCheckout={checkout}
         onRefresh={refresh}
         onThemeChange={setThemePref}

@@ -7,6 +7,7 @@ import type {
   DiffArea,
   LogOptions,
   OpProgress,
+  RemoteRepoPage,
   UpdateStatus
 } from '@shared/types'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -167,6 +168,11 @@ const api: GitGroveApi = {
     const listener = () => handler()
     ipcRenderer.on(IPC.accountsChanged, listener)
     return () => ipcRenderer.removeListener(IPC.accountsChanged, listener)
+  },
+  onAccountReposPage: (handler) => {
+    const listener = (_e: unknown, page: RemoteRepoPage) => handler(page)
+    ipcRenderer.on(IPC.accountReposPage, listener)
+    return () => ipcRenderer.removeListener(IPC.accountReposPage, listener)
   },
   onOpProgress: (handler) => {
     const listener = (_e: unknown, progress: OpProgress) => handler(progress)

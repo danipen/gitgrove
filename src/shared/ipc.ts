@@ -34,6 +34,7 @@ import type {
   RebaseTodoItem,
   RecentRepo,
   RemoteRepo,
+  RemoteRepoPage,
   RepoOpenResult,
   RepoOpKind,
   ResetMode,
@@ -167,6 +168,8 @@ export const IPC = {
   accountsDeviceCode: 'accounts:oauth:device-code',
   /** The connected-accounts list changed (added/removed) — refetch. */
   accountsChanged: 'accounts:changed',
+  /** One page of a repo listing, pushed as it arrives (RemoteRepoPage). */
+  accountReposPage: 'accounts:repos-page',
   /** Determinate progress of a running checkout/fetch/pull/push (OpProgress). */
   opProgress: 'repo:op-progress',
   updateStatus: 'update:status',
@@ -316,6 +319,8 @@ export interface GitGroveApi {
    * Repositories the connected account `accountId` can clone, most recently
    * pushed first. Runs in main because it needs the account's token; rejects
    * with a human message on auth/network failure so the picker can retry.
+   * Pages also stream in via onAccountReposPage as they arrive — await this
+   * for the final, complete (de-duplicated, sorted) list and the "done" signal.
    */
   listAccountRepos(accountId: string): Promise<RemoteRepo[]>
   // ── Branches ──
@@ -462,6 +467,8 @@ export interface GitGroveApi {
   onAccountDeviceCode(handler: (info: DeviceCodeInfo) => void): () => void
   /** Subscribe to connected-account list changes. Returns an unsubscribe fn. */
   onAccountsChanged(handler: () => void): () => void
+  /** Subscribe to repo-listing pages as they stream in. Returns an unsubscribe fn. */
+  onAccountReposPage(handler: (page: RemoteRepoPage) => void): () => void
   /** Subscribe to determinate progress of running checkout/fetch/pull/push ops. */
   onOpProgress(handler: (progress: OpProgress) => void): () => void
   /** Subscribe to auto-update lifecycle pushes. Returns an unsubscribe fn. */

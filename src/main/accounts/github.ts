@@ -297,11 +297,17 @@ const MAX_REPO_PAGES = 10
  * most recently pushed first. Walks `/user/repos` page by page via the Link
  * header; auth/network failures surface as AccountAuthError (the IPC layer
  * turns them into a human message the picker shows with a retry).
+ *
+ * `onPage` is invoked with each page's repos the moment it parses, so callers
+ * can show results within a second instead of after the whole walk; the pages
+ * arrive most-recently-pushed first, so appending them preserves the order of
+ * the final returned (de-duplicated, sorted) list.
  */
 export async function fetchRepositories(
   host: string,
   token: string,
-  fetchImpl: FetchLike = fetch
+  fetchImpl: FetchLike = fetch,
+  onPage?: (repos: RemoteRepo[]) => void
 ): Promise<RemoteRepo[]> {
   const params = 'per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member'
   let url: string | null = `${apiBaseUrl(host)}/user/repos?${params}`
@@ -326,10 +332,13 @@ export async function fetchRepositories(
     if (!response.ok) throw new AccountAuthError('network')
     const items = (await response.json().catch(() => null)) as unknown
     if (!Array.isArray(items)) break
+    const pageRepos: RemoteRepo[] = []
     for (const raw of items) {
       const repo = parseRepo(raw, host)
-      if (repo) repos.push(repo)
+      if (repo) pageRepos.push(repo)
     }
+    repos.push(...pageRepos)
+    if (pageRepos.length) onPage?.(pageRepos)
     url = nextPageUrl(response.headers.get('link'))
   }
   return repos.sort((a, b) => b.pushedAt - a.pushedAt)

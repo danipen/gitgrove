@@ -275,4 +275,20 @@ describe('fetchRepositories', () => {
     const { impl } = scriptedFetch([{ status: 401, json: { message: 'Bad credentials' } }])
     expect(await code(fetchRepositories('github.com', 'nope', impl))).toBe('bad-token')
   })
+
+  test('streams each page to onPage as it arrives', async () => {
+    const { impl } = scriptedFetch([
+      {
+        json: [repoJson('a'), repoJson('b')],
+        headers: { link: '<https://api.github.com/user/repos?page=2>; rel="next"' }
+      },
+      { json: [repoJson('c')] }
+    ])
+    const pages: string[][] = []
+    const all = await fetchRepositories('github.com', 'tok', impl, (repos) =>
+      pages.push(repos.map((r) => r.name))
+    )
+    expect(pages).toEqual([['a', 'b'], ['c']])
+    expect(all).toHaveLength(3)
+  })
 })

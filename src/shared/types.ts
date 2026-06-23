@@ -523,6 +523,18 @@ export interface RemoteRepo {
 }
 
 /**
+ * One page of a repository listing, pushed to the renderer as it arrives so
+ * the picker shows repos within a second instead of waiting for the whole
+ * (often 10-page / 1000-repo) walk. `accountId` lets a picker ignore pages
+ * meant for another account; pages come most-recently-pushed first, so the
+ * renderer can simply append them.
+ */
+export interface RemoteRepoPage {
+  accountId: string
+  repos: RemoteRepo[]
+}
+
+/**
  * Outcome of resolving a commit email to a host avatar via the connected
  * account's API. `ok: false` means a transient failure (network, rate limit,
  * bad token) — the renderer must retry later, never cache it. `ok: true`

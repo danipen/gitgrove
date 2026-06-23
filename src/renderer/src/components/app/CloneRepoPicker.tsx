@@ -1,9 +1,11 @@
 // The repository browser inside the clone dialog's GitHub.com / Enterprise
 // tabs: a filter box over the connected account's repositories, grouped by
 // owner with the user's own repos first. Selecting a repo hands its clone URL
-// back up to the dialog. Fetched lists are cached for the app session so
-// flipping between tabs (or reopening the dialog) is instant; the refresh
-// button forces a re-fetch when something was just created on the host.
+// back up to the dialog. Repos stream in page by page (most-recent first) so
+// the first ones show within a second on accounts with hundreds of repos,
+// rather than blocking on the whole walk; a "Loading more…" footer shows while
+// the rest arrive. Completed lists are cached for the app session so flipping
+// between tabs (or reopening the dialog) is instant; refresh forces a re-fetch.
 //
 // styles: features/dialogs.css (.clone-picker, .clone-repo)
 
@@ -20,52 +22,66 @@ interface Props {
 }
 
 // Session cache keyed by account id — the API list rarely changes mid-session,
-// and a network round-trip per tab switch would feel sluggish. Refresh clears
-// the relevant entry to pull a fresh list on demand.
+// and a fresh multi-page walk per tab switch would feel sluggish. Only complete
+// lists are cached; refresh clears the entry to pull a fresh one on demand.
 const repoCache = new Map<string, RemoteRepo[]>()
 
 export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Props) {
-  const [repos, setRepos] = useState<RemoteRepo[] | null>(() => repoCache.get(account.id) ?? null)
+  const [repos, setRepos] = useState<RemoteRepo[]>(() => repoCache.get(account.id) ?? [])
+  const [loading, setLoading] = useState(!repoCache.has(account.id))
   const [error, setError] = useState(false)
   const [filter, setFilter] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
 
+  // reloadKey is an intentional re-run trigger (refresh), not read in the body.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reloadKey re-fetches on demand
   useEffect(() => {
-    let cancelled = false
     const cached = repoCache.get(account.id)
     if (cached) {
       setRepos(cached)
+      setLoading(false)
       setError(false)
       return
     }
-    setRepos(null)
+    let cancelled = false
+    const seen = new Set<string>()
+    setRepos([])
+    setLoading(true)
     setError(false)
+    // Append each page as it streams in (deduped) so results appear fast.
+    const off = window.gitgrove.onAccountReposPage((page) => {
+      if (cancelled || page.accountId !== account.id) return
+      const fresh = page.repos.filter((r) => !seen.has(r.id))
+      if (fresh.length === 0) return
+      for (const r of fresh) seen.add(r.id)
+      setRepos((prev) => [...prev, ...fresh])
+    })
     window.gitgrove
       .listAccountRepos(account.id)
       .then((list) => {
         if (cancelled) return
         repoCache.set(account.id, list)
-        setRepos(list)
+        setRepos(list) // canonical, complete, sorted list supersedes the stream
+        setLoading(false)
       })
-      .catch(() => !cancelled && setError(true))
+      .catch(() => {
+        if (cancelled) return
+        setError(true)
+        setLoading(false)
+      })
     return () => {
       cancelled = true
+      off()
     }
-  }, [account.id])
+  }, [account.id, reloadKey])
 
   const refresh = () => {
     repoCache.delete(account.id)
-    setRepos(null)
-    setError(false)
-    window.gitgrove
-      .listAccountRepos(account.id)
-      .then((list) => {
-        repoCache.set(account.id, list)
-        setRepos(list)
-      })
-      .catch(() => setError(true))
+    setReloadKey((k) => k + 1)
   }
 
-  if (error) {
+  // Hard failure with nothing to show — offer a retry.
+  if (error && repos.length === 0) {
     return (
       <div className="clone-picker__state">
         <p className="trust__body">Couldn’t load your repositories from {account.host}.</p>
@@ -76,7 +92,8 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
     )
   }
 
-  if (!repos) {
+  // First page hasn't arrived yet — the only time the picker is fully blank.
+  if (loading && repos.length === 0) {
     return (
       <div className="clone-picker__state">
         <span className="spinner" />
@@ -104,9 +121,7 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
       </div>
       <div className="clone-picker__list">
         {groups.length === 0 ? (
-          <p className="clone-picker__empty">
-            {repos.length === 0 ? 'No repositories on this account.' : 'No repositories match.'}
-          </p>
+          <p className="clone-picker__empty">No repositories match.</p>
         ) : (
           groups.map((group) => (
             <div key={group.owner} className="clone-picker__group">
@@ -139,6 +154,19 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
           ))
         )}
       </div>
+      {loading && (
+        <div className="clone-picker__more">
+          <span className="spinner spinner--sm" /> Loading more…
+        </div>
+      )}
+      {error && !loading && (
+        <div className="clone-picker__more">
+          Couldn’t load all repositories.{' '}
+          <button className="link-button" onClick={refresh}>
+            Retry
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -30,6 +30,7 @@ interface Props {
   onBranchesOpen?: () => void
   onOpenRepo: (path: string) => void
   onPickRepo: () => void
+  onClone: () => void
   onCheckout: (branch: string) => void
   onRefresh: () => void
   onThemeChange: (pref: ThemePref) => void
@@ -64,6 +65,7 @@ export function Toolbar({
   onBranchesOpen,
   onOpenRepo,
   onPickRepo,
+  onClone,
   onCheckout,
   onRefresh,
   onThemeChange,
@@ -105,7 +107,7 @@ export function Toolbar({
       </button>
       {!isMac && <MenuBar expanded={menuExpanded} />}
       <div className="toolbar__sep" />
-      <RepoSwitcher repo={repo} onOpenRepo={onOpenRepo} onPickRepo={onPickRepo} />
+      <RepoSwitcher repo={repo} onOpenRepo={onOpenRepo} onPickRepo={onPickRepo} onClone={onClone} />
       {repo && (
         <BranchSwitcher
           branch={branch}
