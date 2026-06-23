@@ -167,6 +167,9 @@ export function App() {
   // searches the whole history, not just the loaded page; a short debounce keeps
   // typing from re-running the log on every keystroke.
   const [logSearch, setLogSearch] = useState('')
+  // True from the keystroke until the grep's results land (covers the debounce
+  // too) so the filter bar can show a spinner — the grep is slow on big repos.
+  const [logSearching, setLogSearching] = useState(false)
 
   // Commit-selection request token: selecting a commit fires an async
   // `commitFiles` fetch, and a slow one can resolve after the user has already
@@ -357,7 +360,12 @@ export function App() {
         }
         return log
       } finally {
-        if (id === logReq.current) setCommitsLoading(false)
+        if (id === logReq.current) {
+          setCommitsLoading(false)
+          // The freshest load has landed — drop the filter spinner (any load
+          // settles it; only a search keystroke ever raises it).
+          setLogSearching(false)
+        }
       }
     },
     []
@@ -407,6 +415,9 @@ export function App() {
     (query: string) => {
       setLogSearch(query)
       logSearchRef.current = query
+      // Feedback starts now (through the debounce + grep), cleared when loadLog
+      // settles. Stays false for an unchanged query so clearing it is silent.
+      setLogSearching(true)
       if (logSearchTimer.current) clearTimeout(logSearchTimer.current)
       logSearchTimer.current = setTimeout(() => {
         logSearchTimer.current = null
@@ -1824,6 +1835,7 @@ export function App() {
                 commits={commits}
                 loading={commitsLoading}
                 search={logSearch}
+                searchLoading={logSearching}
                 onSearchChange={onLogSearchChange}
                 hasMore={logHasMore}
                 loadingMore={commitsLoadingMore}

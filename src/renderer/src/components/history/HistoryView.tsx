@@ -25,6 +25,8 @@ interface Props {
   loading: boolean
   /** Free-text filter applied to the log (server-side `git log --grep`). */
   search: string
+  /** True while a filter reload (debounce + grep) is in flight. */
+  searchLoading: boolean
   onSearchChange: (query: string) => void
   selectedCommit: Commit | null
   onSelectCommit: (commit: Commit) => void
@@ -71,6 +73,7 @@ export function HistoryView({
   commits,
   loading,
   search,
+  searchLoading,
   onSearchChange,
   selectedCommit,
   onSelectCommit,
@@ -90,6 +93,9 @@ export function HistoryView({
   // Commit files usually load in a few ms — render a quiet blank panel during
   // that window instead of flashing a spinner; the spinner is for slow loads.
   const filesSpin = useSpinDelay(commitFilesLoading)
+  // Flicker-free filter spinner: a fast grep just swaps the list; only a slow
+  // one (a big repo) shows the spinner in the filter bar.
+  const searchSpin = useSpinDelay(searchLoading)
   // Right-clicked commit: cursor position + menu items for that commit.
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
   // Name + type filter over the selected commit's files (same UI as Changes;
@@ -183,7 +189,12 @@ export function HistoryView({
 
   return (
     <div className="history">
-      <FilterInput value={search} onChange={onSearchChange} placeholder="Filter commits…" />
+      <FilterInput
+        value={search}
+        onChange={onSearchChange}
+        placeholder="Filter commits…"
+        busy={searchSpin}
+      />
       {loading && commits.length === 0 ? (
         <div className="center-state">
           <div className="spinner" />
