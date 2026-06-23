@@ -33,6 +33,7 @@ import type {
   OpProgress,
   RebaseTodoItem,
   RecentRepo,
+  RemoteRepo,
   RepoOpenResult,
   RepoOpKind,
   ResetMode,
@@ -87,6 +88,7 @@ export const IPC = {
   accountsRemove: 'accounts:remove',
   accountsHasOAuthClient: 'accounts:has-oauth-client',
   accountsLookupAvatar: 'accounts:avatar-lookup',
+  accountRepos: 'accounts:repos',
   // branches
   createBranch: 'repo:branch:create',
   deleteBranch: 'repo:branch:delete',
@@ -133,6 +135,7 @@ export const IPC = {
   selectionSize: 'repo:selection-size',
   // clone
   cloneRepo: 'repo:clone',
+  defaultCloneDir: 'repo:clone:default-dir',
   pickDirectory: 'app:pick-directory',
   // environment / app / updates
   checkGit: 'git:check',
@@ -309,6 +312,12 @@ export interface GitGroveApi {
    * runs in main because it needs the account token.
    */
   lookupAvatarUrl(email: string): Promise<AvatarLookupResult>
+  /**
+   * Repositories the connected account `accountId` can clone, most recently
+   * pushed first. Runs in main because it needs the account's token; rejects
+   * with a human message on auth/network failure so the picker can retry.
+   */
+  listAccountRepos(accountId: string): Promise<RemoteRepo[]>
   // ── Branches ──
   /**
    * Create a branch, optionally from a base ref and optionally carrying or
@@ -399,6 +408,11 @@ export interface GitGroveApi {
    * Resolves to the path of the new repository.
    */
   cloneRepo(url: string, parentDir: string): Promise<string>
+  /**
+   * A sensible parent folder to clone into, prefilled in the clone dialog: the
+   * last folder the user cloned into, or `<home>/Projects` the first time.
+   */
+  defaultCloneDir(): Promise<string>
   /** Open the native directory picker; null when cancelled. */
   pickDirectory(title?: string): Promise<string | null>
   /**

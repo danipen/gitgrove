@@ -4,6 +4,9 @@ import {
   apiBaseUrl,
   type DeviceCodeGrant,
   fetchProfile,
+  fetchRepositories,
+  nextPageUrl,
+  parseRepo,
   pollForAccessToken,
   requestDeviceCode,
   webBaseUrl
@@ -190,5 +193,86 @@ describe('fetchProfile', () => {
     expect(profile.login).toBe('limited')
     expect(profile.email).toBeNull()
     expect(profile.scopes).toEqual([])
+  })
+})
+
+describe('nextPageUrl', () => {
+  test('extracts the rel="next" link, ignoring other rels', () => {
+    const header =
+      '<https://api.github.com/user/repos?page=2>; rel="next", ' +
+      '<https://api.github.com/user/repos?page=5>; rel="last"'
+    expect(nextPageUrl(header)).toBe('https://api.github.com/user/repos?page=2')
+  })
+
+  test('null/absent next means the last page', () => {
+    expect(nextPageUrl(null)).toBeNull()
+    expect(nextPageUrl('<https://api.github.com/user/repos?page=5>; rel="last"')).toBeNull()
+  })
+})
+
+describe('parseRepo', () => {
+  test('maps the API shape and pins host/clone URL to the account host', () => {
+    const repo = parseRepo(
+      {
+        name: 'gitgrove',
+        full_name: 'danipen/gitgrove',
+        owner: { login: 'danipen' },
+        clone_url: 'https://github.com/danipen/gitgrove.git',
+        private: true,
+        fork: false,
+        archived: false,
+        description: 'A git client',
+        pushed_at: '2026-06-20T10:00:00Z'
+      },
+      'github.com'
+    )
+    expect(repo).toEqual({
+      id: 'github.com/danipen/gitgrove',
+      host: 'github.com',
+      owner: 'danipen',
+      name: 'gitgrove',
+      fullName: 'danipen/gitgrove',
+      cloneUrl: 'https://github.com/danipen/gitgrove.git',
+      private: true,
+      fork: false,
+      archived: false,
+      description: 'A git client',
+      pushedAt: Date.parse('2026-06-20T10:00:00Z')
+    })
+  })
+
+  test('drops an owner-less repo (deleted owner) rather than crash', () => {
+    expect(parseRepo({ name: 'orphan', owner: {} }, 'github.com')).toBeNull()
+    expect(parseRepo(null, 'github.com')).toBeNull()
+  })
+})
+
+describe('fetchRepositories', () => {
+  const repoJson = (name: string, owner = 'me', pushed = '2026-01-01T00:00:00Z') => ({
+    name,
+    full_name: `${owner}/${name}`,
+    owner: { login: owner },
+    clone_url: `https://github.com/${owner}/${name}.git`,
+    pushed_at: pushed
+  })
+
+  test('walks every page via the Link header and sorts most-recent first', async () => {
+    const { impl, calls } = scriptedFetch([
+      {
+        json: [repoJson('older', 'me', '2026-01-01T00:00:00Z')],
+        headers: { link: '<https://api.github.com/user/repos?page=2>; rel="next"' }
+      },
+      { json: [repoJson('newer', 'me', '2026-06-01T00:00:00Z')] }
+    ])
+    const repos = await fetchRepositories('github.com', 'tok', impl)
+    expect(repos.map((r) => r.name)).toEqual(['newer', 'older'])
+    expect(calls).toHaveLength(2)
+    expect(calls[0].url).toContain('https://api.github.com/user/repos?per_page=100')
+    expect(calls[0].url).toContain('affiliation=owner,collaborator,organization_member')
+  })
+
+  test('a 401 surfaces as bad-token', async () => {
+    const { impl } = scriptedFetch([{ status: 401, json: { message: 'Bad credentials' } }])
+    expect(await code(fetchRepositories('github.com', 'nope', impl))).toBe('bad-token')
   })
 })

@@ -19,6 +19,14 @@ type Step =
 interface Props {
   onDone: (account: ConnectedAccount) => void
   onCancel: () => void
+  /**
+   * Skip the provider chooser and go straight in — used when the surface
+   * already names the provider (the clone dialog's GitHub.com / Enterprise
+   * tabs). 'github' kicks off the browser sign-in; 'enterprise' opens the
+   * server field. Omitted (the Settings pane) shows the chooser. With a
+   * `start` set, the first step's Back button cancels the whole flow.
+   */
+  start?: 'github' | 'enterprise'
 }
 
 /** Human copy for the stable failure codes connect can come back with. */
@@ -39,8 +47,10 @@ function errorCopy(code: AccountErrorCode): string {
   }
 }
 
-export function AddAccountFlow({ onDone, onCancel }: Props) {
-  const [step, setStep] = useState<Step>({ id: 'choose' })
+export function AddAccountFlow({ onDone, onCancel, start }: Props) {
+  const [step, setStep] = useState<Step>(
+    start === 'enterprise' ? { id: 'enterprise-url' } : { id: 'choose' }
+  )
   const [serverInput, setServerInput] = useState('')
   const [token, setToken] = useState('')
   const [clientId, setClientId] = useState('')
@@ -81,6 +91,13 @@ export function AddAccountFlow({ onDone, onCancel }: Props) {
     if (await window.gitgrove.hasOAuthClient('github.com')) startOAuth('github.com')
     else setStep({ id: 'token', host: 'github.com' })
   }
+
+  // start='github' enters straight into the browser sign-in (the clone
+  // dialog's GitHub.com tab already named the provider). Once only.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: run once on mount
+  useEffect(() => {
+    if (start === 'github') chooseGitHub()
+  }, [])
 
   const continueToServer = async (e?: FormEvent) => {
     e?.preventDefault()
@@ -174,7 +191,7 @@ export function AddAccountFlow({ onDone, onCancel }: Props) {
             <button
               type="button"
               className="btn-ghost btn-ghost--sm"
-              onClick={() => setStep({ id: 'choose' })}
+              onClick={() => (start === 'enterprise' ? onCancel() : setStep({ id: 'choose' }))}
             >
               Back
             </button>

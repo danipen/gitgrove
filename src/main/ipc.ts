@@ -30,8 +30,10 @@ import { type BrowserWindow, clipboard, dialog, ipcMain, Menu, shell } from 'ele
 import { lookupAvatarUrl } from './accounts/avatar'
 import { accountsStore } from './accounts/cipher'
 import { connectViaOAuth, connectWithToken, oauthClientIdFor } from './accounts/connect'
+import { fetchRepositories } from './accounts/github'
 import { answerFromAccounts } from './accounts/store'
 import { appInfo } from './app-info'
+import { getCloneBaseDir, rememberCloneBaseDir } from './clone-prefs'
 import { setCredentialResponder } from './git/askpass'
 import { rejectStoredCredential } from './git/credential-store'
 import { getGlobalIdentity, getIdentity, setGlobalIdentity, setIdentity } from './git/identity'
@@ -293,6 +295,13 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.accountsLookupAvatar, (_e, email: string) =>
     lookupAvatarUrl(accountsStore(), email)
   )
+  ipcMain.handle(IPC.accountRepos, (_e, accountId: string) => {
+    const store = accountsStore()
+    const account = store.listAccounts().find((a) => a.id === accountId)
+    const token = account && store.getTokenForHost(account.host)
+    if (!account || !token) throw new Error('That account is no longer connected.')
+    return fetchRepositories(account.host, token)
+  })
 
   // One sign-in at a time: a newly started flow supersedes (aborts) the old.
   let oauthInFlight: AbortController | null = null
@@ -482,11 +491,15 @@ export function registerIpc(ctx: IpcContext): void {
   })
 
   // ── Clone ──
-  ipcMain.handle(IPC.cloneRepo, (_e, url: string, parentDir: string) =>
-    gitSync.clone(url, parentDir, (phase, percent) => {
+  ipcMain.handle(IPC.cloneRepo, async (_e, url: string, parentDir: string) => {
+    const dest = await gitSync.clone(url, parentDir, (phase, percent) => {
       getWindow()?.webContents.send(IPC.cloneProgress, { phase, percent, done: false })
     })
-  )
+    // The next clone should land beside this one — remember where it went.
+    rememberCloneBaseDir(parentDir)
+    return dest
+  })
+  ipcMain.handle(IPC.defaultCloneDir, () => getCloneBaseDir())
   ipcMain.handle(IPC.pickDirectory, async (_e, title?: string) => {
     const window = getWindow()
     if (!window) return null

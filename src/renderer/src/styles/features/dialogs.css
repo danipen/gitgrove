@@ -501,6 +501,152 @@
   font-size: 11.5px;
   color: var(--fg-muted);
 }
+/* ── Clone dialog: source tabs + repository picker ───────────────────────── */
+/* Components: CloneDialog.tsx, CloneRepoPicker.tsx */
+.clone-tabs.segmented,
+.clone-acct.segmented {
+  display: flex;
+  width: 100%;
+}
+.clone-tabs {
+  margin-bottom: 14px;
+}
+.clone-acct {
+  margin-bottom: 10px;
+}
+.clone-tabs button,
+.clone-acct button {
+  flex: 1;
+  justify-content: center;
+}
+.clone-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.clone-picker__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg-muted);
+}
+.clone-picker__search input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  padding: 8px 0;
+  color: var(--fg);
+  font: inherit;
+  outline: none;
+}
+.clone-picker__list {
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+}
+.clone-picker__group + .clone-picker__group {
+  margin-top: 4px;
+}
+.clone-picker__owner {
+  padding: 6px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+.clone-picker__empty {
+  padding: 28px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+/* Loading / error / connect-account states all share this centered column. */
+.clone-picker__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 170px;
+  padding: 24px 16px;
+  margin-bottom: 12px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+.clone-repo {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+}
+.clone-repo:hover {
+  background: var(--bg-hover);
+}
+.clone-repo.is-selected {
+  background: var(--accent-soft);
+}
+.clone-repo__icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--fg-muted);
+}
+.clone-repo__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.clone-repo__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.clone-repo__lock {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+.clone-repo__tag {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--bg-active);
+  color: var(--fg-muted);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+.clone-repo__desc {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.clone-dest {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--fg-muted);
+}
 /* ── Stash review (a stash explored like a commit) ───────────────────────── */
 .stash-review {
   display: flex;

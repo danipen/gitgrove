@@ -498,6 +498,31 @@ export interface ConnectedAccount {
 }
 
 /**
+ * A repository on a connected git host, as the clone dialog lists it. Carries
+ * exactly what the picker shows (owner grouping, private/fork/archived badges,
+ * description) plus the HTTPS URL to clone — credentials still come from the
+ * connected account via the askpass responder, so no token is embedded here.
+ */
+export interface RemoteRepo {
+  /** Stable id `${host}/${owner}/${name}`, also the React key. */
+  id: string
+  /** Account host this repo was listed from (github.com or a GHES hostname). */
+  host: string
+  owner: string
+  name: string
+  /** `owner/name`, the label and the filter key. */
+  fullName: string
+  /** HTTPS clone URL (`https://host/owner/name.git`). */
+  cloneUrl: string
+  private: boolean
+  fork: boolean
+  archived: boolean
+  description: string | null
+  /** Epoch ms of the last push, for "most recent first" ordering. */
+  pushedAt: number
+}
+
+/**
  * Outcome of resolving a commit email to a host avatar via the connected
  * account's API. `ok: false` means a transient failure (network, rate limit,
  * bad token) — the renderer must retry later, never cache it. `ok: true`

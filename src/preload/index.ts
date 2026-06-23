@@ -59,6 +59,7 @@ const api: GitGroveApi = {
   removeAccount: (id) => ipcRenderer.invoke(IPC.accountsRemove, id),
   hasOAuthClient: (host) => ipcRenderer.invoke(IPC.accountsHasOAuthClient, host),
   lookupAvatarUrl: (email) => ipcRenderer.invoke(IPC.accountsLookupAvatar, email),
+  listAccountRepos: (accountId) => ipcRenderer.invoke(IPC.accountRepos, accountId),
   createBranch: (repoPath, name, opts) =>
     ipcRenderer.invoke(IPC.createBranch, repoPath, name, opts),
   deleteBranch: (repoPath, name, opts) =>
@@ -103,6 +104,7 @@ const api: GitGroveApi = {
   optimizeRepo: (repoPath) => ipcRenderer.invoke(IPC.optimizeRepo, repoPath),
   selectionSize: (repoPath, paths) => ipcRenderer.invoke(IPC.selectionSize, repoPath, paths),
   cloneRepo: (url, parentDir) => ipcRenderer.invoke(IPC.cloneRepo, url, parentDir),
+  defaultCloneDir: () => ipcRenderer.invoke(IPC.defaultCloneDir),
   pickDirectory: (title) => ipcRenderer.invoke(IPC.pickDirectory, title),
   checkGit: (force) => ipcRenderer.invoke(IPC.checkGit, force),
   openExternal: (url) => ipcRenderer.invoke(IPC.openExternal, url),

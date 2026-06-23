@@ -10,7 +10,7 @@
 // responses — no sockets, no timers, no flakiness.
 
 import { normalizeHost } from '@shared/git-hosts'
-import type { AccountErrorCode } from '@shared/types'
+import type { AccountErrorCode, RemoteRepo } from '@shared/types'
 
 /**
  * Scopes GitGrove asks for: `repo` (read/write private repos over HTTPS),
@@ -243,4 +243,94 @@ export async function fetchProfile(
     email,
     scopes
   }
+}
+
+/**
+ * The `rel="next"` link out of a paginated response's `Link` header, or null
+ * at the last page. GitHub paginates `/user/repos` this way; following the
+ * header (rather than counting `?page=`) is the documented, future-proof walk.
+ * Pure + exported for tests.
+ */
+export function nextPageUrl(linkHeader: string | null): string | null {
+  if (!linkHeader) return null
+  for (const part of linkHeader.split(',')) {
+    const match = part.match(/<([^>]+)>\s*;\s*rel="next"/)
+    if (match) return match[1]
+  }
+  return null
+}
+
+/**
+ * Map one repo object from the GitHub REST API to a RemoteRepo, or null when
+ * it's unusable (no owner — a repo whose owner was deleted, which the API can
+ * still return). `host` is the account's host so the id and clone URL stay
+ * consistent with the connected account, not whatever the API echoes back.
+ */
+export function parseRepo(value: unknown, host: string): RemoteRepo | null {
+  if (!value || typeof value !== 'object') return null
+  const r = value as Record<string, unknown>
+  const owner = (r.owner as Record<string, unknown> | undefined)?.login
+  if (typeof owner !== 'string' || typeof r.name !== 'string') return null
+  const cloneUrl =
+    typeof r.clone_url === 'string' ? r.clone_url : `https://${host}/${owner}/${r.name}.git`
+  const pushed = typeof r.pushed_at === 'string' ? Date.parse(r.pushed_at) : NaN
+  return {
+    id: `${host}/${owner}/${r.name}`,
+    host,
+    owner,
+    name: r.name,
+    fullName: typeof r.full_name === 'string' ? r.full_name : `${owner}/${r.name}`,
+    cloneUrl,
+    private: r.private === true,
+    fork: r.fork === true,
+    archived: r.archived === true,
+    description: typeof r.description === 'string' ? r.description : null,
+    pushedAt: Number.isNaN(pushed) ? 0 : pushed
+  }
+}
+
+/** Bounds a runaway walk — 10 pages × 100 is more repos than any picker needs. */
+const MAX_REPO_PAGES = 10
+
+/**
+ * Every repository the token can clone — owned, collaborator and org repos —
+ * most recently pushed first. Walks `/user/repos` page by page via the Link
+ * header; auth/network failures surface as AccountAuthError (the IPC layer
+ * turns them into a human message the picker shows with a retry).
+ */
+export async function fetchRepositories(
+  host: string,
+  token: string,
+  fetchImpl: FetchLike = fetch
+): Promise<RemoteRepo[]> {
+  const params = 'per_page=100&sort=pushed&affiliation=owner,collaborator,organization_member'
+  let url: string | null = `${apiBaseUrl(host)}/user/repos?${params}`
+  const repos: RemoteRepo[] = []
+  for (let pageCount = 0; url && pageCount < MAX_REPO_PAGES; pageCount++) {
+    let response: Response
+    try {
+      response = await fetchImpl(url, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'X-GitHub-Api-Version': '2022-11-28'
+        }
+      })
+    } catch {
+      throw new AccountAuthError('network')
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new AccountAuthError('bad-token')
+    }
+    if (!response.ok) throw new AccountAuthError('network')
+    const items = (await response.json().catch(() => null)) as unknown
+    if (!Array.isArray(items)) break
+    for (const raw of items) {
+      const repo = parseRepo(raw, host)
+      if (repo) repos.push(repo)
+    }
+    url = nextPageUrl(response.headers.get('link'))
+  }
+  return repos.sort((a, b) => b.pushedAt - a.pushedAt)
 }
