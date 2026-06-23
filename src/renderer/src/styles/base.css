@@ -62,6 +62,8 @@
   --st-conflicted: #f0616d;
   --st-modified-soft: rgba(214, 160, 39, 0.16);
   --st-added-soft: rgba(63, 185, 80, 0.14);
+  /* Merged pull request — GitHub's merge purple. */
+  --pr-merged: #a371f7;
 
   /* Themed chrome details */
   --scrollbar-thumb: #2c2f39;
@@ -132,6 +134,8 @@
   --st-conflicted: #cf222e;
   --st-modified-soft: rgba(154, 103, 0, 0.14);
   --st-added-soft: rgba(26, 127, 55, 0.12);
+  /* Merged pull request — GitHub's merge purple. */
+  --pr-merged: #8250df;
 
   /* Themed chrome details */
   --scrollbar-thumb: #c9ced7;

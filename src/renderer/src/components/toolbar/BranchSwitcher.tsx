@@ -40,7 +40,8 @@ interface Props {
   /** The repo's GitHub web base URL, when the host supports it — enables
    *  "View Branch on GitHub" for branches that exist on the remote. */
   githubWebUrl?: string | null
-  /** Open PRs keyed by head branch — drives the `#123` badge and "Open PR". */
+  /** Each branch's most recent PR (any state) keyed by head branch — drives the
+   *  `#123` badge and the "Open Pull Request" menu entry. */
   prByBranch?: Map<string, PullRequestInfo>
   /** The checkout in flight: target branch + determinate progress (null while
    *  git hasn't reported any — fast switches never do). */
@@ -228,20 +229,42 @@ export function BranchSwitcher({
         : branch.current
       : '—'
 
-  // The `#123` pill marking a branch that has an open PR (dimmed for drafts),
-  // with the CI rollup glyph when checks have run.
+  // The `#123` pill marking a branch that has a PR. Open PRs carry the CI rollup
+  // glyph (green/red/amber); merged PRs go purple with a merge glyph, closed PRs
+  // go muted — neither shows a CI dot, since their checks are long settled.
   // styles: features/toolbar.css (.branch-pr)
   const renderPrBadge = (pr: PullRequestInfo | undefined) => {
-    // Only open PRs earn the at-a-glance badge; merged/closed are menu-only.
-    if (pr?.state !== 'open') return null
-    const kind = pr.draft ? 'Draft PR' : 'PR'
-    const checks = pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
+    if (!pr) return null
+    const stateClass =
+      pr.state === 'merged'
+        ? ' branch-pr--merged'
+        : pr.state === 'closed'
+          ? ' branch-pr--closed'
+          : pr.draft
+            ? ' branch-pr--draft'
+            : ''
+    const kind =
+      pr.state === 'merged'
+        ? 'Merged PR'
+        : pr.state === 'closed'
+          ? 'Closed PR'
+          : pr.draft
+            ? 'Draft PR'
+            : 'PR'
+    const checks = pr.state === 'open' && pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
     return (
       <span
-        className={`branch-pr${pr.draft ? ' branch-pr--draft' : ''}`}
+        className={`branch-pr${stateClass}`}
         data-tip={`${kind} #${pr.number}: ${pr.title}${checks}`}
       >
-        {pr.checks && <CiStatus state={pr.checks} />}#{pr.number}
+        {pr.state === 'open' ? (
+          pr.checks && <CiStatus state={pr.checks} />
+        ) : (
+          <span className="ci-status" aria-hidden>
+            {pr.state === 'merged' ? <Icon.Merge size={10} /> : <Icon.Close size={10} />}
+          </span>
+        )}
+        #{pr.number}
       </span>
     )
   }

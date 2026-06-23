@@ -275,9 +275,10 @@
   color: var(--st-added);
 }
 
-/* The `#123` badge marking a branch that has an open pull request — shown on the
-   branch switcher's trigger pill and its list rows. Neutral pill; the nested CI
-   glyph carries the green/red/amber status. Dimmed for drafts.
+/* The `#123` badge marking a branch that has a pull request — shown on the
+   branch switcher's trigger pill and its list rows. Open PRs use a neutral pill
+   with the green/red/amber CI glyph; merged/closed use a state-tinted glyph and
+   no CI dot (its CI is long settled). Open drafts are dimmed.
    styles: BranchSwitcher.tsx */
 .branch-pr {
   display: inline-flex;
@@ -293,6 +294,12 @@
 }
 .branch-pr--draft {
   color: var(--fg-muted);
+}
+.branch-pr--merged {
+  color: var(--pr-merged);
+}
+.branch-pr--closed {
+  color: var(--fg-faint);
 }
 /* CI rollup inside the badge: ✓ passing, ✗ failing, or a pulsing dot running. */
 .ci-status {
