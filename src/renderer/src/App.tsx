@@ -13,6 +13,7 @@ import type {
   MergeKind,
   MergeOutcome,
   ProgressOpKind,
+  PullRequestInfo,
   RepoHostInfo,
   RepoOpenResult,
   RepoSnapshot,
@@ -21,7 +22,7 @@ import type {
   StashEntry,
   SyncStatus
 } from '@shared/types'
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AboutDialog } from './components/app/AboutDialog'
 import { AppModals, type Modal } from './components/app/AppModals'
 import { CloneDialog } from './components/app/CloneDialog'
@@ -75,6 +76,8 @@ export function App() {
   // Full SHAs of commits not yet on any remote: their host commit page 404s, so
   // "View on GitHub" is grayed out for them. Loaded only for GitHub hosts.
   const [unpushed, setUnpushed] = useState<Set<string>>(new Set())
+  // Open pull requests on the GitHub remote, matched to branches by head ref.
+  const [pullRequests, setPullRequests] = useState<PullRequestInfo[]>([])
   const [branch, setBranch] = useState<BranchInfo | null>(null)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -632,18 +635,18 @@ export function App() {
     ]
   )
 
-  // Refresh the "not pushed yet" SHA set that grays out "View on GitHub".
-  // Only meaningful on GitHub hosts, so it's skipped elsewhere — the rev-walk
-  // never runs where the link isn't even offered. A transient failure keeps the
-  // previous set rather than ungating links.
-  const reloadUnpushed = useCallback(async (repoPath: string) => {
-    if (hostInfoRef.current?.provider !== 'github') return
-    try {
-      const shas = await window.gitgrove.unpushedCommits(repoPath)
-      if (repoRef.current?.path === repoPath) setUnpushed(new Set(shas))
-    } catch {
-      /* keep the last good set */
-    }
+  // Load the GitHub-derived data for a repo: the "not pushed yet" SHA set (grays
+  // out "View on GitHub") and the open pull requests (branch badges). Callers
+  // gate this to GitHub hosts, so neither request runs where it isn't used. A
+  // transient failure keeps the previous values rather than clearing the UI.
+  const loadGithubData = useCallback(async (repoPath: string) => {
+    const [shas, prs] = await Promise.all([
+      window.gitgrove.unpushedCommits(repoPath).catch(() => null),
+      window.gitgrove.pullRequests(repoPath).catch(() => null)
+    ])
+    if (repoRef.current?.path !== repoPath) return
+    if (shas) setUnpushed(new Set(shas))
+    if (prs) setPullRequests(prs)
   }, [])
 
   // ── Refresh: pulls every panel up to date (watcher + post-op) ─────────────
@@ -665,8 +668,9 @@ export function App() {
       const [files] = await Promise.all([
         loadSnapshot(repoPath),
         refreshLog ? loadLog(repoPath, undefined, { keepCount: true }) : Promise.resolve(null),
-        // A commit/push/fetch may have changed which commits are on the remote.
-        reloadUnpushed(repoPath)
+        // A commit/push/fetch may have changed which commits are on the remote
+        // and which branches have PRs.
+        hostInfoRef.current?.provider === 'github' ? loadGithubData(repoPath) : Promise.resolve()
       ])
       // Keep the working selection valid; only re-fetch its diff when the
       // Changes tab is actually showing it, so a background edit never clobbers
@@ -688,7 +692,7 @@ export function App() {
         refreshRef.current()
       }
     }
-  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, failOrRecover, reloadUnpushed])
+  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, failOrRecover, loadGithubData])
 
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
@@ -729,20 +733,15 @@ export function App() {
       setMissingRepo(null)
       // Resolve the host (web URL + GitHub-ness) for view-on-web / PR links;
       // cheap and independent, so it fills in on its own without gating the UI.
-      // On a GitHub host, also load the unpushed set that grays out commit links.
+      // On a GitHub host, also load the unpushed set and open PRs.
       setHostInfo(null)
       setUnpushed(new Set())
+      setPullRequests([])
       window.gitgrove
         .repoHostInfo(summary.path)
         .then((info) => {
           setHostInfo(info)
-          if (info.provider !== 'github') return
-          window.gitgrove
-            .unpushedCommits(summary.path)
-            .then((shas) => {
-              if (repoRef.current?.path === summary.path) setUnpushed(new Set(shas))
-            })
-            .catch(() => {})
+          if (info.provider === 'github') loadGithubData(summary.path)
         })
         .catch(() => setHostInfo(null))
       setBranch(summary.branch)
@@ -781,7 +780,7 @@ export function App() {
         setChangesLoading(false)
       }
     },
-    [loadSnapshot, loadBranches, autoSelect, clearDiff, fail, failOrRecover]
+    [loadSnapshot, loadBranches, autoSelect, clearDiff, fail, failOrRecover, loadGithubData]
   )
 
   // Route an open outcome: success applies the repo, an untrusted folder opens
@@ -1299,6 +1298,17 @@ export function App() {
     [reloadBranches]
   )
 
+  // Map a branch name to its open PR. Same-repo PRs only: a fork PR's head ref
+  // names a branch in another repo, so matching a local branch by name alone
+  // would be wrong. First match wins (PRs arrive newest-activity first).
+  const prByBranch = useMemo(() => {
+    const map = new Map<string, PullRequestInfo>()
+    for (const pr of pullRequests) {
+      if (!pr.isCrossRepo && !map.has(pr.headBranch)) map.set(pr.headBranch, pr)
+    }
+    return map
+  }, [pullRequests])
+
   /** Right-click menu for a history commit. */
   const commitMenuFor = useCallback(
     (commit: Commit): ContextMenuItem[] => {
@@ -1812,6 +1822,7 @@ export function App() {
         branch={branch}
         branchesLoading={branchesLoading}
         githubWebUrl={hostInfo?.provider === 'github' ? hostInfo.webUrl : null}
+        prByBranch={prByBranch}
         busy={busy}
         refreshing={refreshing}
         themePref={themePref}

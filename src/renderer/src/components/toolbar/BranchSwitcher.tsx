@@ -1,5 +1,5 @@
 import { branchUrl } from '@shared/git-host-urls'
-import type { BranchInfo } from '@shared/types'
+import type { BranchInfo, PullRequestInfo } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClearButton } from '@/components/common/ClearButton'
 import { ContextMenu } from '@/components/common/ContextMenu'
@@ -21,6 +21,8 @@ interface Props {
   /** The repo's GitHub web base URL, when the host supports it — enables
    *  "View Branch on GitHub" for branches that exist on the remote. */
   githubWebUrl?: string | null
+  /** Open PRs keyed by head branch — drives the `#123` badge and "Open PR". */
+  prByBranch?: Map<string, PullRequestInfo>
   /** The checkout in flight: target branch + determinate progress (null while
    *  git hasn't reported any — fast switches never do). */
   switching?: { name: string; percent: number | null } | null
@@ -43,6 +45,7 @@ export function BranchSwitcher({
   loading = false,
   busy,
   githubWebUrl = null,
+  prByBranch,
   switching = null,
   onCheckout,
   onBranchAction,
@@ -119,19 +122,28 @@ export function BranchSwitcher({
   const isPublished = (name: string) =>
     branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
 
-  /** "View Branch on GitHub", appended where the host supports it and the
-   *  branch is published. Returns the separator + item, or nothing. */
-  const viewOnGitHubItems = (name: string) =>
-    githubWebUrl && isPublished(name)
-      ? [
-          {},
-          {
-            label: 'View Branch on GitHub',
-            icon: <Icon.Github size={15} />,
-            onClick: () => window.gitgrove.openExternal(branchUrl(githubWebUrl, name))
-          }
-        ]
-      : []
+  /** The GitHub group for a branch's menu — "Open Pull Request #N" (when one
+   *  exists) and "View Branch on GitHub" (when published) — under a single
+   *  leading separator, or nothing when neither applies. */
+  const githubMenuItems = (name: string) => {
+    const items = []
+    const pr = prByBranch?.get(name)
+    if (pr) {
+      items.push({
+        label: `Open Pull Request #${pr.number}`,
+        icon: <Icon.Github size={15} />,
+        onClick: () => window.gitgrove.openExternal(pr.url)
+      })
+    }
+    if (githubWebUrl && isPublished(name)) {
+      items.push({
+        label: 'View Branch on GitHub',
+        icon: <Icon.Github size={15} />,
+        onClick: () => window.gitgrove.openExternal(branchUrl(githubWebUrl, name))
+      })
+    }
+    return items.length > 0 ? [{}, ...items] : []
+  }
 
   /** The full context menu for a local branch row. */
   const localBranchMenuItems = (name: string) => {
@@ -184,7 +196,7 @@ export function BranchSwitcher({
         icon: <Icon.Copy size={15} />,
         onClick: () => window.gitgrove.clipboardWrite(name)
       },
-      ...viewOnGitHubItems(name)
+      ...githubMenuItems(name)
     ]
   }
 
@@ -195,6 +207,23 @@ export function BranchSwitcher({
         ? `detached @ ${branch.current.slice(0, 7)}`
         : branch.current
       : '—'
+
+  // The `#123` pill marking a branch that has an open PR (dimmed for drafts).
+  // The CI status dot lives inside it once checks are wired.
+  // styles: features/toolbar.css (.branch-pr)
+  const renderPrBadge = (pr: PullRequestInfo | undefined) =>
+    pr ? (
+      <span
+        className={`branch-pr${pr.draft ? ' branch-pr--draft' : ''}`}
+        data-tip={
+          pr.draft ? `Draft PR #${pr.number}: ${pr.title}` : `PR #${pr.number}: ${pr.title}`
+        }
+      >
+        #{pr.number}
+      </span>
+    ) : null
+  const headPr =
+    !switching && !branch?.detached ? prByBranch?.get(branch?.current ?? '') : undefined
 
   return (
     <>
@@ -235,6 +264,7 @@ export function BranchSwitcher({
           <span className="pill__caption">Branch</span>
           <span className="pill__label">{label}</span>
         </span>
+        {renderPrBadge(headPr)}
         <span className={`pill__chev${loading || switching ? ' is-spinning' : ''}`}>
           {loading || switching ? <Icon.Refresh size={14} /> : <Icon.Chevron size={14} />}
         </span>
@@ -301,6 +331,7 @@ export function BranchSwitcher({
                     <span className="popover__item-main">
                       <span className="popover__item-title">{highlightMatch(row.name, query)}</span>
                     </span>
+                    {renderPrBadge(prByBranch?.get(row.name))}
                     {row.current && <span className="tag tag--current">current</span>}
                   </button>
                 )
@@ -357,7 +388,7 @@ export function BranchSwitcher({
               icon: <Icon.Pencil size={15} />,
               onClick: () => onBranchAction('rename', branch.current)
             },
-            ...viewOnGitHubItems(branch.current)
+            ...githubMenuItems(branch.current)
           ]}
         />
       )}
