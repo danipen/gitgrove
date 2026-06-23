@@ -33,17 +33,6 @@ export function branchUrl(webBase: string, branch: string): string {
 }
 
 /**
- * The repository's pull-request list filtered to a branch's PRs — `…/pulls?q=
- * head:<branch>`. Unlike the per-PR link this spans every state (open, merged
- * and closed), so it's the way to reach a branch's already-merged or abandoned
- * PRs. A bare `head:` query (no `is:open`) is what makes the page show all
- * states rather than just open ones.
- */
-export function branchPullsUrl(webBase: string, branch: string): string {
-  return `${trimTrailingSlash(webBase)}/pulls?q=${encodeURIComponent(`head:${branch}`)}`
-}
-
-/**
  * The "open a pull request" compare page, pre-expanded (`?expand=1`) so the PR
  * form shows directly instead of the bare diff. `baseBranch` is what the PR
  * merges into (typically the repo's default branch); `headBranch` is the branch

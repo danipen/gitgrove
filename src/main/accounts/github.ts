@@ -14,6 +14,7 @@ import type {
   AccountErrorCode,
   PullRequestChecks,
   PullRequestInfo,
+  PullRequestState,
   RemoteRepo
 } from '@shared/types'
 
@@ -462,6 +463,11 @@ function rollupChecks(node: Record<string, unknown>): PullRequestChecks | null {
   }
 }
 
+/** GraphQL's PullRequestState enum (OPEN/CLOSED/MERGED) → our lowercase form. */
+function prState(value: unknown): PullRequestState {
+  return value === 'MERGED' ? 'merged' : value === 'CLOSED' ? 'closed' : 'open'
+}
+
 /**
  * Map one pull request node from the GraphQL API to a PullRequestInfo, or null
  * when it's unusable (no number/head ref). `checks` carries the rolled-up CI
@@ -474,6 +480,7 @@ export function parsePullRequest(node: unknown): PullRequestInfo | null {
   if (typeof n.number !== 'number' || typeof n.headRefName !== 'string') return null
   return {
     number: n.number,
+    state: prState(n.state),
     title: typeof n.title === 'string' ? n.title : '',
     url: typeof n.url === 'string' ? n.url : '',
     draft: n.isDraft === true,
@@ -484,15 +491,16 @@ export function parsePullRequest(node: unknown): PullRequestInfo | null {
   }
 }
 
-// Open PRs targeting this repo, newest activity first. `first: 100` is more than
-// any branch list needs; a repo with more open PRs than that simply shows the
-// 100 most recently updated, which always covers the branches in play locally.
+// PRs targeting this repo, newest activity first, across all states: open ones
+// drive the branch badge, while merged/closed ones still let the menu link
+// straight to the PR. `first: 100` is plenty — a branch's most recent PR (the
+// one we surface) is by definition recently updated, so it stays in the window.
 const PULL_REQUESTS_QUERY = `
 query($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: OPEN, first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) {
+    pullRequests(states: [OPEN, MERGED, CLOSED], first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) {
       nodes {
-        number title url isDraft headRefName baseRefName isCrossRepository
+        number state title url isDraft headRefName baseRefName isCrossRepository
         commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
       }
     }

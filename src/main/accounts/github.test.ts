@@ -358,6 +358,7 @@ describe('graphqlUrl', () => {
 describe('parsePullRequest', () => {
   const node = {
     number: 7,
+    state: 'OPEN',
     title: 'Add things',
     url: 'https://github.com/o/r/pull/7',
     isDraft: true,
@@ -369,6 +370,7 @@ describe('parsePullRequest', () => {
   test('maps a GraphQL node to PullRequestInfo (checks left null)', () => {
     expect(parsePullRequest(node)).toEqual({
       number: 7,
+      state: 'open',
       title: 'Add things',
       url: 'https://github.com/o/r/pull/7',
       draft: true,
@@ -377,6 +379,12 @@ describe('parsePullRequest', () => {
       isCrossRepo: false,
       checks: null
     })
+  })
+
+  test('maps the lifecycle state (merged/closed/open, defaulting to open)', () => {
+    expect(parsePullRequest({ ...node, state: 'MERGED' })?.state).toBe('merged')
+    expect(parsePullRequest({ ...node, state: 'CLOSED' })?.state).toBe('closed')
+    expect(parsePullRequest({ ...node, state: undefined })?.state).toBe('open')
   })
 
   test('returns null when number or head ref is missing', () => {

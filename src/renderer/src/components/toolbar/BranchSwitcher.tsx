@@ -1,4 +1,4 @@
-import { branchPullsUrl, branchUrl } from '@shared/git-host-urls'
+import { branchUrl } from '@shared/git-host-urls'
 import type { BranchInfo, PullRequestChecks, PullRequestInfo } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClearButton } from '@/components/common/ClearButton'
@@ -142,28 +142,20 @@ export function BranchSwitcher({
     branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
 
   /** The GitHub group for a branch's menu, under a single leading separator (or
-   *  nothing when none apply): "Open Pull Request #N" when an open PR exists,
-   *  else "View Pull Requests on GitHub" for a published branch (which also
-   *  surfaces merged/closed PRs), plus "View Branch on GitHub". */
+   *  nothing when none apply): "Open Pull Request #N" linking straight to the
+   *  branch's most recent PR (with a state hint for merged/closed ones), plus
+   *  "View Branch on GitHub" when the branch is published. */
   const githubMenuItems = (name: string) => {
     const items = []
     const pr = prByBranch?.get(name)
-    const published = !!githubWebUrl && isPublished(name)
     if (pr) {
       items.push({
-        label: `Open Pull Request #${pr.number}`,
+        label: `Open Pull Request #${pr.number}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       })
-    } else if (published && githubWebUrl) {
-      // No open PR — link to the branch's PR list, which spans merged/closed too.
-      items.push({
-        label: 'View Pull Requests on GitHub',
-        icon: <Icon.Github size={15} />,
-        onClick: () => window.gitgrove.openExternal(branchPullsUrl(githubWebUrl, name))
-      })
     }
-    if (published && githubWebUrl) {
+    if (githubWebUrl && isPublished(name)) {
       items.push({
         label: 'View Branch on GitHub',
         icon: <Icon.Github size={15} />,
@@ -240,7 +232,8 @@ export function BranchSwitcher({
   // with the CI rollup glyph when checks have run.
   // styles: features/toolbar.css (.branch-pr)
   const renderPrBadge = (pr: PullRequestInfo | undefined) => {
-    if (!pr) return null
+    // Only open PRs earn the at-a-glance badge; merged/closed are menu-only.
+    if (pr?.state !== 'open') return null
     const kind = pr.draft ? 'Draft PR' : 'PR'
     const checks = pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
     return (

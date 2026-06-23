@@ -578,13 +578,20 @@ export interface RepoHostInfo {
  */
 export type PullRequestChecks = 'success' | 'failure' | 'pending'
 
+/** A pull request's lifecycle state. */
+export type PullRequestState = 'open' | 'closed' | 'merged'
+
 /**
- * An open pull request on the repo's GitHub host, matched to a branch by its
- * head ref. Read-only: GitGrove links out to the browser rather than editing
- * PRs in-app, so this carries just what the pill/menu show.
+ * A pull request on the repo's GitHub host, matched to a branch by its head
+ * ref. Read-only: GitGrove links out to the browser rather than editing PRs
+ * in-app, so this carries just what the pill/menu show. Open PRs drive the
+ * branch badge; merged/closed ones still surface a direct "Open Pull Request"
+ * menu link.
  */
 export interface PullRequestInfo {
   number: number
+  /** Lifecycle state — only `open` PRs get the at-a-glance branch badge. */
+  state: PullRequestState
   title: string
   /** Browsable PR URL, opened in the user's browser. */
   url: string

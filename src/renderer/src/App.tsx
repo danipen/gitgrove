@@ -1299,9 +1299,10 @@ export function App() {
     [reloadBranches]
   )
 
-  // Map a branch name to its open PR. Same-repo PRs only: a fork PR's head ref
-  // names a branch in another repo, so matching a local branch by name alone
-  // would be wrong. First match wins (PRs arrive newest-activity first).
+  // Map a branch name to its most recent PR of any state (PRs arrive
+  // newest-activity first, so the first match wins). Same-repo PRs only: a fork
+  // PR's head ref names a branch in another repo, so matching by name alone
+  // would be wrong. The badge uses only the open ones; the menu links to this.
   const prByBranch = useMemo(() => {
     const map = new Map<string, PullRequestInfo>()
     for (const pr of pullRequests) {
@@ -1319,7 +1320,9 @@ export function App() {
     if (!branch || branch.detached || !branch.defaultBranch) return null
     const current = branch.current
     if (!current || current === branch.defaultBranch) return null
-    if (!sync?.upstream || prByBranch.has(current)) return null
+    // Offer "create" only when there's no OPEN PR yet (a merged/closed one
+    // shouldn't block proposing a fresh PR for new work on the branch).
+    if (!sync?.upstream || prByBranch.get(current)?.state === 'open') return null
     return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
   }, [hostInfo, branch, sync, prByBranch])
 
