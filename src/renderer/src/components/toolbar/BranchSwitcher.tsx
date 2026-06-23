@@ -1,4 +1,4 @@
-import { branchUrl } from '@shared/git-host-urls'
+import { branchPullsUrl, branchUrl } from '@shared/git-host-urls'
 import type { BranchInfo, PullRequestChecks, PullRequestInfo } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClearButton } from '@/components/common/ClearButton'
@@ -27,7 +27,7 @@ function CiStatus({ state }: { state: PullRequestChecks }) {
   if (state === 'pending') return <span className="ci-status ci-status--pending" aria-hidden />
   return (
     <span className={`ci-status ci-status--${state}`} aria-hidden>
-      {state === 'success' ? <Icon.Check size={11} /> : <Icon.Close size={11} />}
+      {state === 'success' ? <Icon.Check size={10} /> : <Icon.Close size={10} />}
     </span>
   )
 }
@@ -141,20 +141,29 @@ export function BranchSwitcher({
   const isPublished = (name: string) =>
     branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
 
-  /** The GitHub group for a branch's menu — "Open Pull Request #N" (when one
-   *  exists) and "View Branch on GitHub" (when published) — under a single
-   *  leading separator, or nothing when neither applies. */
+  /** The GitHub group for a branch's menu, under a single leading separator (or
+   *  nothing when none apply): "Open Pull Request #N" when an open PR exists,
+   *  else "View Pull Requests on GitHub" for a published branch (which also
+   *  surfaces merged/closed PRs), plus "View Branch on GitHub". */
   const githubMenuItems = (name: string) => {
     const items = []
     const pr = prByBranch?.get(name)
+    const published = !!githubWebUrl && isPublished(name)
     if (pr) {
       items.push({
         label: `Open Pull Request #${pr.number}`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       })
+    } else if (published && githubWebUrl) {
+      // No open PR — link to the branch's PR list, which spans merged/closed too.
+      items.push({
+        label: 'View Pull Requests on GitHub',
+        icon: <Icon.Github size={15} />,
+        onClick: () => window.gitgrove.openExternal(branchPullsUrl(githubWebUrl, name))
+      })
     }
-    if (githubWebUrl && isPublished(name)) {
+    if (published && githubWebUrl) {
       items.push({
         label: 'View Branch on GitHub',
         icon: <Icon.Github size={15} />,

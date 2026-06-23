@@ -282,12 +282,12 @@
 .branch-pr {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   flex: none;
   font-size: 10.5px;
   font-weight: 700;
-  padding: 1px 6px;
-  border-radius: 8px;
+  padding: 1px 4px;
+  border-radius: 6px;
   background: var(--bg-active);
   color: var(--fg);
 }
@@ -306,8 +306,8 @@
   color: var(--st-deleted);
 }
 .ci-status--pending {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--st-modified);
   animation: ci-pulse 1.3s ease-in-out infinite;

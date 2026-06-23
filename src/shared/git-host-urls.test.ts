@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { branchUrl, commitUrl, compareUrl, parseOwnerRepo } from './git-host-urls'
+import { branchPullsUrl, branchUrl, commitUrl, compareUrl, parseOwnerRepo } from './git-host-urls'
 
 const BASE = 'https://github.com/octocat/hello'
 
@@ -21,6 +21,14 @@ describe('branchUrl', () => {
   test('percent-encodes slashes and special chars in the branch ref', () => {
     expect(branchUrl(BASE, 'feature/new thing')).toBe(
       'https://github.com/octocat/hello/tree/feature%2Fnew%20thing'
+    )
+  })
+})
+
+describe('branchPullsUrl', () => {
+  test('links to the PR list filtered by head ref (all states)', () => {
+    expect(branchPullsUrl(BASE, 'feature/x')).toBe(
+      'https://github.com/octocat/hello/pulls?q=head%3Afeature%2Fx'
     )
   })
 })
