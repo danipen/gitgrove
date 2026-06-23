@@ -57,6 +57,7 @@ import { rebaseInteractive } from './git/rebase'
 import { getRepoSnapshot } from './git/status'
 import * as gitSync from './git/sync'
 import * as gitWrite from './git/write'
+import { getRepoHostInfo } from './github/host'
 import { openTerminal } from './menu'
 import { getRecentRepos, removeRecentRepo } from './store'
 import { checkForUpdates, quitAndInstall } from './updater'
@@ -104,6 +105,7 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.recentRepos, () => getRecentRepos())
   ipcMain.handle(IPC.removeRecent, (_e, path: string) => removeRecentRepo(path))
   ipcMain.handle(IPC.remoteUrl, (_e, repoPath: string) => getRemoteWebUrl(repoPath))
+  ipcMain.handle(IPC.repoHostInfo, (_e, repoPath: string) => getRepoHostInfo(repoPath))
   ipcMain.handle(IPC.revealRepo, async (_e, repoPath: string) => {
     // openPath returns '' on success, an error string otherwise.
     const err = await shell.openPath(repoPath)

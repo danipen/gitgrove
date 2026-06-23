@@ -36,6 +36,7 @@ import type {
   RecentRepo,
   RemoteRepo,
   RemoteRepoPage,
+  RepoHostInfo,
   RepoOpenResult,
   RepoOpKind,
   ResetMode,
@@ -53,6 +54,7 @@ export const IPC = {
   recentRepos: 'repo:recent',
   removeRecent: 'repo:recent:remove',
   remoteUrl: 'repo:remote-url',
+  repoHostInfo: 'repo:host-info',
   revealRepo: 'repo:reveal',
   openTerminal: 'repo:terminal',
   snapshot: 'repo:snapshot',
@@ -209,6 +211,8 @@ export interface GitGroveApi {
   removeRecent(path: string): Promise<RecentRepo[]>
   /** Resolve the repo's remote to a browsable web URL, or null if it has none. */
   remoteUrl(repoPath: string): Promise<string | null>
+  /** The repo's web URL plus whether its host supports GitHub-aware actions. */
+  repoHostInfo(repoPath: string): Promise<RepoHostInfo>
   /** Open the repo folder in the OS file manager (Finder/Explorer/…). */
   revealRepo(repoPath: string): Promise<boolean>
   /** Open a terminal rooted at the repo. Resolves false if none could launch. */
