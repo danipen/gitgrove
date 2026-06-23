@@ -10,7 +10,7 @@
 // responses — no sockets, no timers, no flakiness.
 
 import { normalizeHost } from '@shared/git-hosts'
-import type { AccountErrorCode, RemoteRepo } from '@shared/types'
+import type { AccountErrorCode, PullRequestInfo, RemoteRepo } from '@shared/types'
 
 /**
  * Scopes GitGrove asks for: `repo` (read/write private repos over HTTPS),
@@ -50,6 +50,18 @@ export function apiBaseUrl(host: string): string {
   if (h === 'github.com') return 'https://api.github.com'
   if (h.endsWith('.ghe.com')) return `https://api.${h}`
   return `https://${h}/api/v3`
+}
+
+/**
+ * GraphQL endpoint: github.com and GHE.com data residency expose it under the
+ * `api.` host, self-hosted GHES serves it at `/api/graphql` (not under the
+ * REST `/api/v3` prefix) — the same host-shape split as apiBaseUrl.
+ */
+export function graphqlUrl(host: string): string {
+  const h = normalizeHost(host)
+  if (h === 'github.com') return 'https://api.github.com/graphql'
+  if (h.endsWith('.ghe.com')) return `https://api.${h}/graphql`
+  return `https://${h}/api/graphql`
 }
 
 /** What POST /login/device/code grants. */
@@ -376,4 +388,96 @@ export async function fetchRepositories(
     )
   )
   return [...byId.values()].sort((a, b) => b.pushedAt - a.pushedAt)
+}
+
+/**
+ * Run a GraphQL query with the account token and return its `data`. GraphQL
+ * reports problems as 200 + `{errors}` with a null/partial `data`, so those are
+ * surfaced as well: auth failures as bad-token, anything else as network. The
+ * caller degrades to "no PR data" rather than blocking the UI, so a precise
+ * error taxonomy isn't needed here.
+ */
+async function graphqlQuery<T>(
+  host: string,
+  token: string,
+  query: string,
+  variables: Record<string, unknown>,
+  fetchImpl: FetchLike = fetch
+): Promise<T> {
+  let response: Response
+  try {
+    response = await fetchImpl(graphqlUrl(host), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ query, variables })
+    })
+  } catch {
+    throw new AccountAuthError('network')
+  }
+  if (response.status === 401 || response.status === 403) throw new AccountAuthError('bad-token')
+  if (!response.ok) throw new AccountAuthError('network')
+  const json = (await response.json().catch(() => null)) as { data?: T; errors?: unknown } | null
+  if (!json || json.errors || json.data == null) throw new AccountAuthError('network')
+  return json.data
+}
+
+/**
+ * Map one pull request node from the GraphQL API to a PullRequestInfo, or null
+ * when it's unusable (no number/head ref). `checks` is left null here — the CI
+ * rollup is a separate concern wired through the same query.
+ */
+export function parsePullRequest(node: unknown): PullRequestInfo | null {
+  if (!node || typeof node !== 'object') return null
+  const n = node as Record<string, unknown>
+  if (typeof n.number !== 'number' || typeof n.headRefName !== 'string') return null
+  return {
+    number: n.number,
+    title: typeof n.title === 'string' ? n.title : '',
+    url: typeof n.url === 'string' ? n.url : '',
+    draft: n.isDraft === true,
+    headBranch: n.headRefName,
+    baseBranch: typeof n.baseRefName === 'string' ? n.baseRefName : '',
+    isCrossRepo: n.isCrossRepository === true,
+    checks: null
+  }
+}
+
+// Open PRs targeting this repo, newest activity first. `first: 100` is more than
+// any branch list needs; a repo with more open PRs than that simply shows the
+// 100 most recently updated, which always covers the branches in play locally.
+const PULL_REQUESTS_QUERY = `
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: OPEN, first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      nodes { number title url isDraft headRefName baseRefName isCrossRepository }
+    }
+  }
+}`
+
+/**
+ * Every open pull request on `owner/repo`, matched to local branches by their
+ * head ref. One GraphQL round trip; auth/network failures throw AccountAuthError
+ * (the caller turns that into an empty list — PR badges just don't show).
+ */
+export async function fetchPullRequests(
+  host: string,
+  token: string,
+  owner: string,
+  repo: string,
+  fetchImpl: FetchLike = fetch
+): Promise<PullRequestInfo[]> {
+  const data = await graphqlQuery<{
+    repository: { pullRequests: { nodes: unknown[] } } | null
+  }>(host, token, PULL_REQUESTS_QUERY, { owner, name: repo }, fetchImpl)
+  const nodes = data.repository?.pullRequests?.nodes ?? []
+  const prs: PullRequestInfo[] = []
+  for (const node of nodes) {
+    const pr = parsePullRequest(node)
+    if (pr) prs.push(pr)
+  }
+  return prs
 }
