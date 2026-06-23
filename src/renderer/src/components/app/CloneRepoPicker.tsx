@@ -80,47 +80,49 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
     setReloadKey((k) => k + 1)
   }
 
-  // Hard failure with nothing to show — offer a retry.
-  if (error && repos.length === 0) {
-    return (
-      <div className="clone-picker__state">
-        <p className="trust__body">Couldn’t load your repositories from {account.host}.</p>
-        <button className="btn-ghost btn-ghost--sm" onClick={refresh}>
-          <Icon.Refresh size={14} /> Try again
-        </button>
-      </div>
-    )
-  }
-
-  // First page hasn't arrived yet — the only time the picker is fully blank.
-  if (loading && repos.length === 0) {
-    return (
-      <div className="clone-picker__state">
-        <span className="spinner" />
-        <span>Loading your repositories…</span>
-      </div>
-    )
-  }
-
   const groups = groupReposByOwner(repos, account.login, filter)
+  // Loading and error states render *inside* the fixed-size list so the header
+  // (filter + refresh) and the dialog's size stay put — a refresh just swaps
+  // the list's contents, never the whole panel.
+  const blankError = error && repos.length === 0
+  const blankLoading = loading && repos.length === 0
 
   return (
     <div className="clone-picker">
-      <div className="clone-picker__search">
-        <Icon.Search size={14} />
-        <input
-          autoFocus
-          placeholder="Filter your repositories"
-          value={filter}
-          disabled={disabled}
-          onChange={(e) => setFilter(e.target.value)}
-        />
-        <button className="icon-btn" data-tip="Refresh list" disabled={disabled} onClick={refresh}>
+      <div className="clone-picker__head">
+        <div className="clone-picker__search">
+          <Icon.Search size={14} />
+          <input
+            autoFocus
+            placeholder="Filter your repositories"
+            value={filter}
+            disabled={disabled}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+        </div>
+        <button
+          className="btn-ghost btn-ghost--sm clone-picker__refresh"
+          data-tip="Refresh list"
+          disabled={disabled || blankLoading}
+          onClick={refresh}
+        >
           <Icon.Refresh size={14} />
         </button>
       </div>
       <div className="clone-picker__list">
-        {groups.length === 0 ? (
+        {blankError ? (
+          <div className="clone-picker__state">
+            <p className="trust__body">Couldn’t load your repositories from {account.host}.</p>
+            <button className="btn-ghost btn-ghost--sm" onClick={refresh}>
+              <Icon.Refresh size={14} /> Try again
+            </button>
+          </div>
+        ) : blankLoading ? (
+          <div className="clone-picker__state">
+            <span className="spinner" />
+            <span>Loading your repositories…</span>
+          </div>
+        ) : groups.length === 0 ? (
           <p className="clone-picker__empty">No repositories match.</p>
         ) : (
           groups.map((group) => (
@@ -154,12 +156,12 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
           ))
         )}
       </div>
-      {loading && (
+      {loading && repos.length > 0 && (
         <div className="clone-picker__more">
           <span className="spinner spinner--sm" /> Loading more…
         </div>
       )}
-      {error && !loading && (
+      {error && !loading && repos.length > 0 && (
         <div className="clone-picker__more">
           Couldn’t load all repositories.{' '}
           <button className="link-button" onClick={refresh}>

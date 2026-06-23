@@ -1,19 +1,20 @@
 // Clone dialog: pick a repository to clone from a connected GitHub.com /
 // Enterprise account (browse + filter your repos), or paste any URL. When the
 // account a tab needs isn't connected yet, the tab offers to connect it right
-// here — no detour through Settings. The destination is prefilled with a
-// sensible base folder (remembered across clones) and the repo's own name, so
-// the common case is "pick a repo, press Clone". Live progress comes from
-// `git clone --progress`; the new repo opens on success.
+// here — no detour through Settings. The "Clone into" field is the single
+// source of truth for where the repo lands: it's a normal editable path,
+// prefilled with `<base>/<repo-name>` and re-composed whenever the chosen repo
+// (or URL) changes, but the user can type any path. We check that path is a
+// clonable (missing/empty) directory and block the clone otherwise. Live
+// progress comes from `git clone --progress`; the new repo opens on success.
 //
-// styles: features/dialogs.css (.clone-tabs, .clone-dest, .clone-progress)
+// styles: features/dialogs.css (.clone-tabs, .clone-progress)
 
 import { isGitHubDotCom } from '@shared/git-hosts'
-import type { CloneProgress, ConnectedAccount, RemoteRepo } from '@shared/types'
-import { useEffect, useState } from 'react'
+import type { CloneProgress, CloneTargetState, ConnectedAccount, RemoteRepo } from '@shared/types'
+import { useEffect, useRef, useState } from 'react'
 import { DialogShell } from '@/components/common/Dialog'
 import { AddAccountFlow } from '@/components/settings/AddAccountFlow'
-import { prettyPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { CloneRepoPicker } from './CloneRepoPicker'
 
@@ -24,10 +25,24 @@ interface Props {
 
 type Tab = 'github' | 'enterprise' | 'url'
 
+// Paths shown in the field are real and OS-native, so compose/split them with
+// the host separator rather than assuming POSIX.
+const SEP = window.gitgrove.platform === 'win32' ? '\\' : '/'
+
 /** The repo folder a URL would clone into — mirrors git's own dest naming. */
 function repoNameFromUrl(url: string): string {
   const last = url.trim().replace(/\/+$/, '').split(/[/:]/).pop() ?? ''
   return last.replace(/\.git$/, '')
+}
+
+function joinPath(dir: string, leaf: string): string {
+  return `${dir.replace(/[\\/]+$/, '')}${SEP}${leaf}`
+}
+
+function parentDir(p: string): string {
+  const trimmed = p.replace(/[\\/]+$/, '')
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
+  return cut > 0 ? trimmed.slice(0, cut) : trimmed
 }
 
 export function CloneDialog({ onDone, onCancel }: Props) {
@@ -37,10 +52,14 @@ export function CloneDialog({ onDone, onCancel }: Props) {
   const [enterpriseId, setEnterpriseId] = useState<string | null>(null)
   const [repo, setRepo] = useState<RemoteRepo | null>(null)
   const [url, setUrl] = useState('')
-  const [dir, setDir] = useState<string | null>(null)
+  const [dest, setDest] = useState('')
+  const [targetState, setTargetState] = useState<CloneTargetState | null>(null)
   const [progress, setProgress] = useState<CloneProgress | null>(null)
   const [cloning, setCloning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Parent folder used to compose `<base>/<name>`; tracks the field's dirname
+  // when typed, the picked folder when browsed, the default folder otherwise.
+  const baseDir = useRef('')
 
   useEffect(() => window.gitgrove.onCloneProgress(setProgress), [])
   useEffect(() => {
@@ -49,7 +68,11 @@ export function CloneDialog({ onDone, onCancel }: Props) {
     return window.gitgrove.onAccountsChanged(reload)
   }, [])
   useEffect(() => {
-    window.gitgrove.defaultCloneDir().then((d) => setDir((prev) => prev ?? d))
+    window.gitgrove.defaultCloneDir().then((d) => {
+      if (!baseDir.current) baseDir.current = d
+      // Show the base folder up front so the field isn't blank before a pick.
+      setDest((cur) => cur || d)
+    })
   }, [])
 
   const githubAccount = accounts?.find((a) => isGitHubDotCom(a.host)) ?? null
@@ -57,10 +80,40 @@ export function CloneDialog({ onDone, onCancel }: Props) {
   const enterprise =
     enterpriseAccounts.find((a) => a.id === enterpriseId) ?? enterpriseAccounts[0] ?? null
 
-  // What pressing Clone would fetch, and the folder it'd land in.
+  // What pressing Clone would fetch, and the leaf folder it implies.
   const targetUrl = tab === 'url' ? url.trim() : (repo?.cloneUrl ?? '')
   const targetName = tab === 'url' ? repoNameFromUrl(url) : (repo?.name ?? '')
-  const canClone = !!targetUrl && !!dir && !cloning
+
+  // Re-compose the destination whenever the chosen repo/URL changes: with a
+  // target it's `<base>/<name>` (selecting a repo swaps the leaf, keeping the
+  // parent); with none it falls back to the bare base folder. A manual edit
+  // (below) doesn't trigger this.
+  useEffect(() => {
+    if (!baseDir.current) return
+    setDest(targetName ? joinPath(baseDir.current, targetName) : baseDir.current)
+  }, [targetName])
+
+  // Validate the destination as it changes (debounced) so a clone into an
+  // occupied folder is blocked before git would reject it. Only meaningful
+  // once there's something to clone — the bare base folder is expected to
+  // already exist, so we don't flag it as "not empty" before a repo is picked.
+  useEffect(() => {
+    if (!dest || !targetUrl) {
+      setTargetState(null)
+      return
+    }
+    setTargetState(null)
+    let cancelled = false
+    const id = setTimeout(() => {
+      window.gitgrove.checkCloneTarget(dest).then((s) => !cancelled && setTargetState(s))
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [dest, targetUrl])
+
+  const canClone = !!targetUrl && !!dest && targetState === 'ok' && !cloning
 
   const switchTab = (next: Tab) => {
     setTab(next)
@@ -75,18 +128,26 @@ export function CloneDialog({ onDone, onCancel }: Props) {
     if (!isGitHubDotCom(account.host)) setEnterpriseId(account.id)
   }
 
-  const pickDir = async () => {
+  const browse = async () => {
     const picked = await window.gitgrove.pickDirectory('Clone into folder')
-    if (picked) setDir(picked)
+    if (!picked) return
+    baseDir.current = picked
+    setDest(targetName ? joinPath(picked, targetName) : picked)
+  }
+
+  const editDest = (value: string) => {
+    setError(null)
+    setDest(value)
+    baseDir.current = parentDir(value)
   }
 
   const start = async () => {
-    if (!canClone || !dir) return
+    if (!canClone) return
     setCloning(true)
     setError(null)
     setProgress(null)
     try {
-      const repoPath = await window.gitgrove.cloneRepo(targetUrl, dir)
+      const repoPath = await window.gitgrove.cloneRepo(targetUrl, dest)
       onDone(repoPath)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -213,21 +274,27 @@ export function CloneDialog({ onDone, onCancel }: Props) {
             <div className="dlg-pickrow">
               <input
                 id="clone-dir"
-                readOnly
-                placeholder="Choose a parent folder…"
-                value={dir ? prettyPath(dir) : ''}
-                onClick={pickDir}
+                placeholder="Choose a folder to clone into…"
+                value={dest}
+                disabled={cloning}
+                spellCheck={false}
+                onChange={(e) => editDest(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && start()}
               />
-              <button className="btn-ghost btn-ghost--sm" onClick={pickDir} disabled={cloning}>
+              <button className="btn-ghost btn-ghost--sm" onClick={browse} disabled={cloning}>
                 <Icon.Folder size={14} /> Browse
               </button>
             </div>
-            {dir && targetName && (
-              <p className="clone-dest">
-                Into <code>{`${prettyPath(dir)}/${targetName}`}</code>
-              </p>
-            )}
           </div>
+
+          {targetState === 'not-empty' && (
+            <p className="dlg-error">
+              That folder already exists and isn’t empty — pick another name or location.
+            </p>
+          )}
+          {targetState === 'file' && (
+            <p className="dlg-error">A file already exists at that path.</p>
+          )}
 
           {cloning && (
             <div className="clone-progress">

@@ -10,7 +10,6 @@
 // message — git's raw stderr dump stays out of the toast.
 
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
 import { askpassEnv } from './askpass'
 import { friendlyAuthError } from './askpass-prompt'
 import { locateGit, locateGitLfs } from './bin'
@@ -96,19 +95,19 @@ function rethrowFriendly(env: Record<string, string>): (e: unknown) => never {
 }
 
 /**
- * Clone with progress. git reports progress on stderr as lines like
- * "Receiving objects:  42% (1234/2934)"; we forward phase + percent to the
- * caller. `--recurse-submodules` brings submodules down in the same pass;
- * LFS content is materialized afterwards (see materializeLfs). Resolves with
- * the path of the new repo.
+ * Clone with progress into the exact directory `dest` (the dialog composes it
+ * as `<base>/<repo-name>`, but the user can edit the whole path, so we clone
+ * where told rather than re-deriving a name). git reports progress on stderr
+ * as lines like "Receiving objects:  42% (1234/2934)"; we forward phase +
+ * percent to the caller. `--recurse-submodules` brings submodules down in the
+ * same pass; LFS content is materialized afterwards (see materializeLfs).
+ * Resolves with the path of the new repo.
  */
 export async function clone(
   url: string,
-  parentDir: string,
+  dest: string,
   onProgress: ProgressHandler
 ): Promise<string> {
-  const name = (url.split('/').pop() ?? 'repository').replace(/\.git$/, '') || 'repository'
-  const dest = join(parentDir, name)
   const bin = await locateGit()
   const credentialEnv = await askpassEnv()
   await withLfsProgress(onProgress, async (lfsEnv) => {

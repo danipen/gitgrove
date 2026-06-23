@@ -291,29 +291,26 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo, onClone }: Props) {
             )
           )}
         </div>
-        <div
-          className="popover__footer"
-          style={{ display: 'flex', flexDirection: 'column', gap: 4 }}
-        >
+        <div className="popover__footer" style={{ display: 'flex', gap: 6 }}>
           <button
             className="btn-ghost"
-            style={{ width: '100%', justifyContent: 'center' }}
-            onClick={() => {
-              close()
-              onClone()
-            }}
-          >
-            <Icon.Download size={15} /> Clone a repository…
-          </button>
-          <button
-            className="btn-ghost"
-            style={{ width: '100%', justifyContent: 'center' }}
+            style={{ flex: 1, justifyContent: 'center', whiteSpace: 'nowrap' }}
             onClick={() => {
               close()
               onPickRepo()
             }}
           >
-            <Icon.Folder size={15} /> Open another repository…
+            <Icon.Folder size={15} /> Open repository…
+          </button>
+          <button
+            className="btn-ghost"
+            style={{ flex: 1, justifyContent: 'center', whiteSpace: 'nowrap' }}
+            onClick={() => {
+              close()
+              onClone()
+            }}
+          >
+            <Icon.Download size={15} /> Clone repository…
           </button>
         </div>
       </Popover>

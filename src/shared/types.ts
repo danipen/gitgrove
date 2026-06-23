@@ -244,6 +244,14 @@ export interface OpProgress {
   percent: number
 }
 
+/**
+ * Whether a chosen clone destination can be used: `ok` (the path is missing or
+ * an empty directory — git can clone into it), `not-empty` (a directory with
+ * contents — git would refuse), `file` (a file sits at that path). The dialog
+ * checks this as the user edits the path and blocks the clone unless `ok`.
+ */
+export type CloneTargetState = 'ok' | 'not-empty' | 'file'
+
 /** Progress of a `git clone`, pushed from main while a clone runs. */
 export interface CloneProgress {
   /** Phase reported by git, e.g. "Receiving objects". */

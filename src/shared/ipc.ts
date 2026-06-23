@@ -13,6 +13,7 @@ import type {
   CheckoutOutcome,
   CheckoutResult,
   CloneProgress,
+  CloneTargetState,
   Commit,
   CommitSelection,
   ConflictSides,
@@ -137,6 +138,7 @@ export const IPC = {
   // clone
   cloneRepo: 'repo:clone',
   defaultCloneDir: 'repo:clone:default-dir',
+  checkCloneTarget: 'repo:clone:check-target',
   pickDirectory: 'app:pick-directory',
   // environment / app / updates
   checkGit: 'git:check',
@@ -409,10 +411,14 @@ export interface GitGroveApi {
   selectionSize(repoPath: string, paths: string[]): Promise<number>
   // ── Clone ──
   /**
-   * Clone `url` into `parentDir`; progress arrives via onCloneProgress.
-   * Resolves to the path of the new repository.
+   * Clone `url` into `targetPath` — the exact directory the new repo lands in
+   * (the dialog composes it as `<base>/<repo-name>` but the user can edit it).
+   * A leading `~` is expanded. Progress arrives via onCloneProgress; resolves
+   * to the path of the new repository.
    */
-  cloneRepo(url: string, parentDir: string): Promise<string>
+  cloneRepo(url: string, targetPath: string): Promise<string>
+  /** Whether `targetPath` can be cloned into (missing/empty vs. occupied). */
+  checkCloneTarget(targetPath: string): Promise<CloneTargetState>
   /**
    * A sensible parent folder to clone into, prefilled in the clone dialog: the
    * last folder the user cloned into, or `<home>/Projects` the first time.
