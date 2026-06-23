@@ -210,3 +210,40 @@
 .stash-reminder__caret svg {
   opacity: 0.85;
 }
+
+/* The "create a pull request" nudge after publishing a branch — the same calm
+   single-row layout as .stash-reminder (icon · message · one button), on the
+   accent surface so it reads as a suggestion, not a warning. One button only,
+   per the sidebar-banner rule.
+   styles: PublishedBranchBanner.tsx */
+.pr-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--accent-soft);
+}
+.pr-banner__icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--accent);
+}
+.pr-banner__text {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.pr-banner__text strong {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.pr-banner__text span {
+  color: var(--fg-muted);
+  line-height: 1.4;
+}

@@ -4,6 +4,7 @@
 // HistoryView's generic ContextMenu can render it; the destructive entries
 // only open confirmation modals — App decides what actually runs.
 
+import { commitUrl } from '@shared/git-host-urls'
 import type { Commit } from '@shared/types'
 import type { ContextMenuItem } from '@/components/common/ContextMenu'
 import { Icon } from '@/lib/icons'
@@ -27,7 +28,12 @@ export function commitMenuItems(
   commit: Commit,
   commits: readonly Commit[],
   currentBranch: string,
-  actions: CommitMenuActions
+  actions: CommitMenuActions,
+  /** The repo's GitHub web base URL, when the host supports it — adds "View on GitHub". */
+  webUrl: string | null,
+  /** True when this commit isn't on the remote yet — its host page would 404, so
+   *  "View on GitHub" is shown grayed out rather than leading to a dead link. */
+  unpushed: boolean
 ): ContextMenuItem[] {
   const idx = commits.findIndex((c) => c.hash === commit.hash)
   const isRoot = commit.parents.length === 0
@@ -94,6 +100,17 @@ export function commitMenuItems(
       label: 'Copy Short Hash',
       icon: <Icon.Copy size={15} />,
       onClick: () => window.gitgrove.clipboardWrite(commit.shortHash)
-    }
+    },
+    ...(webUrl
+      ? [
+          {},
+          {
+            label: 'View Commit on GitHub',
+            icon: <Icon.Github size={15} />,
+            disabled: unpushed,
+            onClick: () => window.gitgrove.openExternal(commitUrl(webUrl, commit.hash))
+          }
+        ]
+      : [])
   ]
 }

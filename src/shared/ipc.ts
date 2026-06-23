@@ -32,10 +32,12 @@ import type {
   MergeOutcome,
   MergePreview,
   OpProgress,
+  PullRequestInfo,
   RebaseTodoItem,
   RecentRepo,
   RemoteRepo,
   RemoteRepoPage,
+  RepoHostInfo,
   RepoOpenResult,
   RepoOpKind,
   ResetMode,
@@ -53,10 +55,13 @@ export const IPC = {
   recentRepos: 'repo:recent',
   removeRecent: 'repo:recent:remove',
   remoteUrl: 'repo:remote-url',
+  repoHostInfo: 'repo:host-info',
+  pullRequests: 'repo:pull-requests',
   revealRepo: 'repo:reveal',
   openTerminal: 'repo:terminal',
   snapshot: 'repo:snapshot',
   branches: 'repo:branches',
+  unpushedCommits: 'repo:unpushed',
   checkout: 'repo:checkout',
   log: 'repo:log',
   commitIndex: 'repo:commit:index',
@@ -209,6 +214,11 @@ export interface GitGroveApi {
   removeRecent(path: string): Promise<RecentRepo[]>
   /** Resolve the repo's remote to a browsable web URL, or null if it has none. */
   remoteUrl(repoPath: string): Promise<string | null>
+  /** The repo's web URL plus whether its host supports GitHub-aware actions. */
+  repoHostInfo(repoPath: string): Promise<RepoHostInfo>
+  /** Open pull requests for the repo's GitHub remote ([] when not on GitHub or
+   *  no account is connected). Matched to branches by head ref in the renderer. */
+  pullRequests(repoPath: string): Promise<PullRequestInfo[]>
   /** Open the repo folder in the OS file manager (Finder/Explorer/…). */
   revealRepo(repoPath: string): Promise<boolean>
   /** Open a terminal rooted at the repo. Resolves false if none could launch. */
@@ -221,6 +231,8 @@ export interface GitGroveApi {
    */
   snapshot(repoPath: string): Promise<string>
   branches(repoPath: string): Promise<BranchInfo>
+  /** Full SHAs of commits on a local branch but no remote ("not pushed yet"). */
+  unpushedCommits(repoPath: string): Promise<string[]>
   /**
    * Switch to a branch. `changes` says what to do with uncommitted changes
    * (bring along / leave auto-stashed) — see git/write.ts checkoutBranch.

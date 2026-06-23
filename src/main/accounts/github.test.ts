@@ -5,8 +5,11 @@ import {
   type DeviceCodeGrant,
   type FetchLike,
   fetchProfile,
+  fetchPullRequests,
   fetchRepositories,
+  graphqlUrl,
   nextPageUrl,
+  parsePullRequest,
   parseRepo,
   pollForAccessToken,
   requestDeviceCode,
@@ -341,5 +344,122 @@ describe('fetchRepositories', () => {
     // 'dup' is emitted once even though two affiliations return it.
     expect(streamed.sort()).toEqual(['a', 'dup'])
     expect(all).toHaveLength(2)
+  })
+})
+
+describe('graphqlUrl', () => {
+  test('github.com and GHES resolve to their GraphQL endpoints', () => {
+    expect(graphqlUrl('github.com')).toBe('https://api.github.com/graphql')
+    expect(graphqlUrl('octo.ghe.com')).toBe('https://api.octo.ghe.com/graphql')
+    expect(graphqlUrl('github.example.com')).toBe('https://github.example.com/api/graphql')
+  })
+})
+
+describe('parsePullRequest', () => {
+  const node = {
+    number: 7,
+    state: 'OPEN',
+    title: 'Add things',
+    url: 'https://github.com/o/r/pull/7',
+    isDraft: true,
+    headRefName: 'feature/x',
+    baseRefName: 'main',
+    isCrossRepository: false
+  }
+
+  test('maps a GraphQL node to PullRequestInfo (checks left null)', () => {
+    expect(parsePullRequest(node)).toEqual({
+      number: 7,
+      state: 'open',
+      title: 'Add things',
+      url: 'https://github.com/o/r/pull/7',
+      draft: true,
+      headBranch: 'feature/x',
+      baseBranch: 'main',
+      isCrossRepo: false,
+      checks: null
+    })
+  })
+
+  test('maps the lifecycle state (merged/closed/open, defaulting to open)', () => {
+    expect(parsePullRequest({ ...node, state: 'MERGED' })?.state).toBe('merged')
+    expect(parsePullRequest({ ...node, state: 'CLOSED' })?.state).toBe('closed')
+    expect(parsePullRequest({ ...node, state: undefined })?.state).toBe('open')
+  })
+
+  test('returns null when number or head ref is missing', () => {
+    expect(parsePullRequest({ ...node, number: undefined })).toBeNull()
+    expect(parsePullRequest({ ...node, headRefName: undefined })).toBeNull()
+    expect(parsePullRequest(null)).toBeNull()
+  })
+
+  const withRollup = (state: string | null) => ({
+    ...node,
+    commits: { nodes: [{ commit: { statusCheckRollup: state === null ? null : { state } } }] }
+  })
+
+  test('collapses the statusCheckRollup state into the CI signal', () => {
+    expect(parsePullRequest(withRollup('SUCCESS'))?.checks).toBe('success')
+    expect(parsePullRequest(withRollup('FAILURE'))?.checks).toBe('failure')
+    expect(parsePullRequest(withRollup('ERROR'))?.checks).toBe('failure')
+    expect(parsePullRequest(withRollup('PENDING'))?.checks).toBe('pending')
+    expect(parsePullRequest(withRollup('EXPECTED'))?.checks).toBe('pending')
+  })
+
+  test('checks is null when no rollup is present (no checks configured)', () => {
+    expect(parsePullRequest(withRollup(null))?.checks).toBeNull()
+    expect(parsePullRequest({ ...node, commits: { nodes: [] } })?.checks).toBeNull()
+    expect(parsePullRequest(node)?.checks).toBeNull()
+  })
+})
+
+describe('fetchPullRequests', () => {
+  const prNode = (over: Record<string, unknown> = {}) => ({
+    number: 1,
+    title: 'PR',
+    url: 'https://github.com/o/r/pull/1',
+    isDraft: false,
+    headRefName: 'feature',
+    baseRefName: 'main',
+    isCrossRepository: false,
+    ...over
+  })
+
+  test('parses open PRs and posts to the GraphQL endpoint', async () => {
+    const { impl, calls } = scriptedFetch([
+      {
+        json: {
+          data: {
+            repository: {
+              pullRequests: {
+                nodes: [prNode(), prNode({ number: 2, headRefName: 'other', isDraft: true })]
+              }
+            }
+          }
+        }
+      }
+    ])
+    const prs = await fetchPullRequests('github.com', 'tok', 'o', 'r', impl)
+    expect(calls[0].url).toBe('https://api.github.com/graphql')
+    expect(calls[0].body).toMatchObject({ variables: { owner: 'o', name: 'r' } })
+    expect(prs.map((p) => ({ n: p.number, head: p.headBranch, draft: p.draft }))).toEqual([
+      { n: 1, head: 'feature', draft: false },
+      { n: 2, head: 'other', draft: true }
+    ])
+  })
+
+  test('treats a missing repository (null data branch) as no PRs', async () => {
+    const { impl } = scriptedFetch([{ json: { data: { repository: null } } }])
+    expect(await fetchPullRequests('github.com', 'tok', 'o', 'r', impl)).toEqual([])
+  })
+
+  test('surfaces a 401 as bad-token', async () => {
+    const { impl } = scriptedFetch([{ status: 401, json: { message: 'Bad credentials' } }])
+    expect(await code(fetchPullRequests('github.com', 'nope', 'o', 'r', impl))).toBe('bad-token')
+  })
+
+  test('treats GraphQL errors as a network failure', async () => {
+    const { impl } = scriptedFetch([{ json: { errors: [{ message: 'NOT_FOUND' }] } }])
+    expect(await code(fetchPullRequests('github.com', 'tok', 'o', 'r', impl))).toBe('network')
   })
 })

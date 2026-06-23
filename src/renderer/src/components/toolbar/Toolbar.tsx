@@ -1,4 +1,4 @@
-import type { BranchInfo, RepoSummary, SyncStatus } from '@shared/types'
+import type { BranchInfo, PullRequestInfo, RepoSummary, SyncStatus } from '@shared/types'
 import { useState } from 'react'
 import { Icon } from '@/lib/icons'
 import { isMac } from '@/lib/platform'
@@ -14,6 +14,10 @@ interface Props {
   repo: RepoSummary | null
   branch: BranchInfo | null
   branchesLoading: boolean
+  /** The repo's GitHub web base URL, when the host supports it (else null). */
+  githubWebUrl?: string | null
+  /** Open PRs keyed by head branch, for the branch switcher's PR badges. */
+  prByBranch?: Map<string, PullRequestInfo>
   busy: boolean
   refreshing: boolean
   themePref: ThemePref
@@ -52,6 +56,8 @@ export function Toolbar({
   repo,
   branch,
   branchesLoading,
+  githubWebUrl,
+  prByBranch,
   busy,
   refreshing,
   themePref,
@@ -113,6 +119,8 @@ export function Toolbar({
           branch={branch}
           loading={branchesLoading}
           busy={busy}
+          githubWebUrl={githubWebUrl}
+          prByBranch={prByBranch}
           switching={switching}
           onCheckout={onCheckout}
           onBranchAction={onBranchAction}

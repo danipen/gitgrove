@@ -274,3 +274,53 @@
 .sync-badge--ahead {
   color: var(--st-added);
 }
+
+/* The `#123` badge marking a branch that has a pull request — shown on the
+   branch switcher's trigger pill and its list rows. The number is a neutral
+   pill across every state (open, draft, merged, closed); only the leading glyph
+   carries meaning: the green/red/amber CI rollup for open PRs, or a merge/closed
+   octicon (no CI dot — that CI is long settled) for merged/closed.
+   styles: BranchSwitcher.tsx */
+.branch-pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 500;
+  padding: 1px 4px;
+  border-radius: 6px;
+  background: var(--bg-active);
+  /* Muted: the number is secondary — the leading glyph is the real signal. */
+  color: var(--fg-muted);
+}
+/* Only the leading state glyph carries the color — merge purple, closed red. */
+.branch-pr--merged .ci-status {
+  color: var(--pr-merged);
+}
+.branch-pr--closed .ci-status {
+  color: var(--st-deleted);
+}
+/* CI rollup inside the badge: ✓ passing, ✗ failing, or a pulsing dot running. */
+.ci-status {
+  display: inline-flex;
+  align-items: center;
+}
+.ci-status--success {
+  color: var(--st-added);
+}
+.ci-status--failure {
+  color: var(--st-deleted);
+}
+.ci-status--pending {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--st-modified);
+  animation: ci-pulse 1.3s ease-in-out infinite;
+}
+@keyframes ci-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}

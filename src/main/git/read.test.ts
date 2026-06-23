@@ -16,6 +16,7 @@ import {
   getMergePreview,
   getMergeToolName,
   getRemoteWebUrl,
+  getUnpushedCommits,
   parseBlamePorcelain,
   parseMergeTreeNames,
   parseRawNumstat,
@@ -576,5 +577,59 @@ describe('parseBlamePorcelain', () => {
     expect(lines[0]).toMatchObject({ lineNumber: 1, content: 'line one', authorName: 'Dana' })
     expect(lines[1]).toMatchObject({ lineNumber: 2, content: 'line two', authorName: 'Dana' })
     expect(lines[1].shortHash).toBe('aaaaaaa')
+  })
+})
+
+describe('getUnpushedCommits', () => {
+  // Its own repo + bare remote so the push/no-push states are exact and the
+  // shared fixture (which has no remote and side branches) stays untouched.
+  let work: string
+  let remote: string
+
+  beforeAll(() => {
+    remote = mkdtempSync(join(tmpdir(), 'gitgrove-remote-'))
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', remote])
+    work = mkdtempSync(join(tmpdir(), 'gitgrove-unpushed-'))
+    const run = (args: string[]) => git(args, work)
+    run(['init', '-q', '-b', 'main'])
+    run(['config', 'commit.gpgsign', 'false'])
+    writeFileSync(join(work, 'a.txt'), 'a\n')
+    run(['add', '.'])
+    run(['commit', '-q', '-m', 'first'])
+    run(['remote', 'add', 'origin', remote])
+    run(['push', '-q', '-u', 'origin', 'main'])
+  })
+
+  afterAll(() => {
+    rmSync(work, { recursive: true, force: true })
+    rmSync(remote, { recursive: true, force: true })
+  })
+
+  it('is empty when every commit is on the remote', async () => {
+    expect(await getUnpushedCommits(work)).toEqual([])
+  })
+
+  it('lists local commits not yet on any remote', async () => {
+    const run = (args: string[]) => git(args, work)
+    writeFileSync(join(work, 'b.txt'), 'b\n')
+    run(['add', '.'])
+    run(['commit', '-q', '-m', 'local on main'])
+    const onMain = run(['rev-parse', 'HEAD'])
+
+    // A commit on a second local branch is unpushed too — `--branches` spans
+    // every local branch, not just the one HEAD points at.
+    run(['checkout', '-q', '-b', 'feature'])
+    writeFileSync(join(work, 'c.txt'), 'c\n')
+    run(['add', '.'])
+    run(['commit', '-q', '-m', 'local on feature'])
+    const onFeature = run(['rev-parse', 'HEAD'])
+    run(['checkout', '-q', 'main'])
+
+    const unpushed = await getUnpushedCommits(work)
+    expect(new Set(unpushed)).toEqual(new Set([onMain, onFeature]))
+  })
+
+  it('returns [] outside a repo rather than throwing', async () => {
+    expect(await getUnpushedCommits(tmpdir())).toEqual([])
   })
 })

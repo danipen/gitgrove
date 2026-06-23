@@ -10,7 +10,13 @@
 // responses — no sockets, no timers, no flakiness.
 
 import { normalizeHost } from '@shared/git-hosts'
-import type { AccountErrorCode, RemoteRepo } from '@shared/types'
+import type {
+  AccountErrorCode,
+  PullRequestChecks,
+  PullRequestInfo,
+  PullRequestState,
+  RemoteRepo
+} from '@shared/types'
 
 /**
  * Scopes GitGrove asks for: `repo` (read/write private repos over HTTPS),
@@ -50,6 +56,18 @@ export function apiBaseUrl(host: string): string {
   if (h === 'github.com') return 'https://api.github.com'
   if (h.endsWith('.ghe.com')) return `https://api.${h}`
   return `https://${h}/api/v3`
+}
+
+/**
+ * GraphQL endpoint: github.com and GHE.com data residency expose it under the
+ * `api.` host, self-hosted GHES serves it at `/api/graphql` (not under the
+ * REST `/api/v3` prefix) — the same host-shape split as apiBaseUrl.
+ */
+export function graphqlUrl(host: string): string {
+  const h = normalizeHost(host)
+  if (h === 'github.com') return 'https://api.github.com/graphql'
+  if (h.endsWith('.ghe.com')) return `https://api.${h}/graphql`
+  return `https://${h}/api/graphql`
 }
 
 /** What POST /login/device/code grants. */
@@ -376,4 +394,139 @@ export async function fetchRepositories(
     )
   )
   return [...byId.values()].sort((a, b) => b.pushedAt - a.pushedAt)
+}
+
+/**
+ * Run a GraphQL query with the account token and return its `data`. GraphQL
+ * reports problems as 200 + `{errors}` with a null/partial `data`, so those are
+ * surfaced as well: auth failures as bad-token, anything else as network. The
+ * caller degrades to "no PR data" rather than blocking the UI, so a precise
+ * error taxonomy isn't needed here.
+ */
+async function graphqlQuery<T>(
+  host: string,
+  token: string,
+  query: string,
+  variables: Record<string, unknown>,
+  fetchImpl: FetchLike = fetch
+): Promise<T> {
+  let response: Response
+  try {
+    response = await fetchImpl(graphqlUrl(host), {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ query, variables })
+    })
+  } catch {
+    throw new AccountAuthError('network')
+  }
+  if (response.status === 401 || response.status === 403) throw new AccountAuthError('bad-token')
+  if (!response.ok) throw new AccountAuthError('network')
+  const json = (await response.json().catch(() => null)) as { data?: T; errors?: unknown } | null
+  if (!json || json.errors || json.data == null) throw new AccountAuthError('network')
+  return json.data
+}
+
+/**
+ * Collapse a GraphQL `statusCheckRollup.state` into our three-state CI signal.
+ * The rollup is GitHub's own server-side reduction of every status + check run
+ * on the head commit, so the precedence (any failure → red, all passing →
+ * green, else still running) is already applied. `EXPECTED` means a required
+ * check hasn't reported yet — still pending. Null/absent means no checks ran.
+ */
+function rollupChecks(node: Record<string, unknown>): PullRequestChecks | null {
+  const commits = (node.commits as { nodes?: unknown[] } | undefined)?.nodes
+  const head =
+    Array.isArray(commits) && commits[0] && typeof commits[0] === 'object' ? commits[0] : null
+  const commit = head ? (head as Record<string, unknown>).commit : null
+  const rollup =
+    commit && typeof commit === 'object'
+      ? (commit as Record<string, unknown>).statusCheckRollup
+      : null
+  const state =
+    rollup && typeof rollup === 'object' ? (rollup as Record<string, unknown>).state : null
+  switch (state) {
+    case 'SUCCESS':
+      return 'success'
+    case 'FAILURE':
+    case 'ERROR':
+      return 'failure'
+    case 'PENDING':
+    case 'EXPECTED':
+      return 'pending'
+    default:
+      return null
+  }
+}
+
+/** GraphQL's PullRequestState enum (OPEN/CLOSED/MERGED) → our lowercase form. */
+function prState(value: unknown): PullRequestState {
+  return value === 'MERGED' ? 'merged' : value === 'CLOSED' ? 'closed' : 'open'
+}
+
+/**
+ * Map one pull request node from the GraphQL API to a PullRequestInfo, or null
+ * when it's unusable (no number/head ref). `checks` carries the rolled-up CI
+ * state of the head commit, or null when the query didn't ask for it / no
+ * checks ran.
+ */
+export function parsePullRequest(node: unknown): PullRequestInfo | null {
+  if (!node || typeof node !== 'object') return null
+  const n = node as Record<string, unknown>
+  if (typeof n.number !== 'number' || typeof n.headRefName !== 'string') return null
+  return {
+    number: n.number,
+    state: prState(n.state),
+    title: typeof n.title === 'string' ? n.title : '',
+    url: typeof n.url === 'string' ? n.url : '',
+    draft: n.isDraft === true,
+    headBranch: n.headRefName,
+    baseBranch: typeof n.baseRefName === 'string' ? n.baseRefName : '',
+    isCrossRepo: n.isCrossRepository === true,
+    checks: rollupChecks(n)
+  }
+}
+
+// PRs targeting this repo, newest activity first, across all states: open ones
+// drive the branch badge, while merged/closed ones still let the menu link
+// straight to the PR. `first: 100` is plenty — a branch's most recent PR (the
+// one we surface) is by definition recently updated, so it stays in the window.
+const PULL_REQUESTS_QUERY = `
+query($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    pullRequests(states: [OPEN, MERGED, CLOSED], first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      nodes {
+        number state title url isDraft headRefName baseRefName isCrossRepository
+        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      }
+    }
+  }
+}`
+
+/**
+ * Every open pull request on `owner/repo`, matched to local branches by their
+ * head ref. One GraphQL round trip; auth/network failures throw AccountAuthError
+ * (the caller turns that into an empty list — PR badges just don't show).
+ */
+export async function fetchPullRequests(
+  host: string,
+  token: string,
+  owner: string,
+  repo: string,
+  fetchImpl: FetchLike = fetch
+): Promise<PullRequestInfo[]> {
+  const data = await graphqlQuery<{
+    repository: { pullRequests: { nodes: unknown[] } } | null
+  }>(host, token, PULL_REQUESTS_QUERY, { owner, name: repo }, fetchImpl)
+  const nodes = data.repository?.pullRequests?.nodes ?? []
+  const prs: PullRequestInfo[] = []
+  for (const node of nodes) {
+    const pr = parsePullRequest(node)
+    if (pr) prs.push(pr)
+  }
+  return prs
 }

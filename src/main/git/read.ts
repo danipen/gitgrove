@@ -391,6 +391,22 @@ export async function getLog(repoPath: string, options: LogOptions = {}): Promis
 }
 
 /**
+ * Full SHAs of every commit that lives on a local branch but on no remote — the
+ * "not pushed yet" set. A host's `/commit/<sha>` page 404s for these, so the UI
+ * grays out "View on GitHub" for them. `--branches --not --remotes` walks only
+ * the distance the local branches are ahead of the remotes (cheap in practice),
+ * and works whatever ref the history shows; callers gate it to repos with a
+ * remote, where that distance is naturally bounded. Returns [] when there's no
+ * history yet (unborn HEAD) or the walk fails for any reason.
+ */
+export async function getUnpushedCommits(repoPath: string): Promise<string[]> {
+  const out = await runGit(repoPath, ['rev-list', '--branches', '--not', '--remotes']).catch(
+    () => ''
+  )
+  return out.split('\n').filter(Boolean)
+}
+
+/**
  * `hash`'s 0-based position in `git log HEAD` — the count of commits reachable
  * from HEAD but not from `hash`, i.e. those strictly newer than it. Lets the
  * History list page far enough to reveal a commit the user jumped to from

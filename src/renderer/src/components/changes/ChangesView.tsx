@@ -23,6 +23,7 @@ import { conflictActionLabels, mergeSourceFromDetail } from '@/lib/merge'
 import { usePersistentState } from '@/lib/persist'
 import type { ResolvedTheme } from '@/lib/theme'
 import { CommitComposer, type CommitMode } from './CommitComposer'
+import { PublishedBranchBanner } from './PublishedBranchBanner'
 import { StashPanel } from './StashPanel'
 import { StashReminder } from './StashReminder'
 
@@ -34,6 +35,9 @@ interface Props {
   busy: boolean
   repoState: RepoState | null
   stashes: StashEntry[]
+  /** Host compare URL when the published branch has no PR yet, else null — shows
+   *  the "Create Pull Request" banner. */
+  createPrUrl: string | null
   selectedPath: string | null
   /** Focus change; null when the list selection was emptied. */
   onSelectFile: (path: string | null) => void
@@ -135,6 +139,7 @@ export function ChangesView({
   busy,
   repoState,
   stashes,
+  createPrUrl,
   selectedPath,
   onSelectFile,
   onFileSelectionChange,
@@ -540,6 +545,8 @@ export function ChangesView({
           runOp={runOp}
         />
       )}
+
+      {createPrUrl && !op && <PublishedBranchBanner branch={branch} compareUrl={createPrUrl} />}
 
       <div className="changes__list">
         {loading && changes.length === 0 ? (
