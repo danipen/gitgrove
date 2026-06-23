@@ -51,6 +51,7 @@ import {
   getMergePreview,
   getMergeToolName,
   getRemoteWebUrl,
+  getUnpushedCommits,
   getWorkingDiff
 } from './git/read'
 import { rebaseInteractive } from './git/rebase'
@@ -121,6 +122,7 @@ export function registerIpc(ctx: IpcContext): void {
     JSON.stringify(await getRepoSnapshot(repoPath))
   )
   ipcMain.handle(IPC.branches, (_e, repoPath: string) => getBranches(repoPath))
+  ipcMain.handle(IPC.unpushedCommits, (_e, repoPath: string) => getUnpushedCommits(repoPath))
   ipcMain.handle(
     IPC.checkout,
     async (

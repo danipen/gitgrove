@@ -59,6 +59,7 @@ export const IPC = {
   openTerminal: 'repo:terminal',
   snapshot: 'repo:snapshot',
   branches: 'repo:branches',
+  unpushedCommits: 'repo:unpushed',
   checkout: 'repo:checkout',
   log: 'repo:log',
   commitIndex: 'repo:commit:index',
@@ -225,6 +226,8 @@ export interface GitGroveApi {
    */
   snapshot(repoPath: string): Promise<string>
   branches(repoPath: string): Promise<BranchInfo>
+  /** Full SHAs of commits on a local branch but no remote ("not pushed yet"). */
+  unpushedCommits(repoPath: string): Promise<string[]>
   /**
    * Switch to a branch. `changes` says what to do with uncommitted changes
    * (bring along / leave auto-stashed) — see git/write.ts checkoutBranch.
