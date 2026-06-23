@@ -235,14 +235,14 @@ export function BranchSwitcher({
   // styles: features/toolbar.css (.branch-pr)
   const renderPrBadge = (pr: PullRequestInfo | undefined) => {
     if (!pr) return null
+    // Number stays neutral for every state, including drafts — "Draft" lives in
+    // the tooltip/menu, not a dimmed number. Only merged/closed tint the glyph.
     const stateClass =
       pr.state === 'merged'
         ? ' branch-pr--merged'
         : pr.state === 'closed'
           ? ' branch-pr--closed'
-          : pr.draft
-            ? ' branch-pr--draft'
-            : ''
+          : ''
     const kind =
       pr.state === 'merged'
         ? 'Merged PR'

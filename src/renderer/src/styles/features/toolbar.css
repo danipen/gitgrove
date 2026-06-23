@@ -276,9 +276,10 @@
 }
 
 /* The `#123` badge marking a branch that has a pull request — shown on the
-   branch switcher's trigger pill and its list rows. Open PRs use a neutral pill
-   with the green/red/amber CI glyph; merged/closed use a state-tinted glyph and
-   no CI dot (its CI is long settled). Open drafts are dimmed.
+   branch switcher's trigger pill and its list rows. The number is a neutral
+   pill across every state (open, draft, merged, closed); only the leading glyph
+   carries meaning: the green/red/amber CI rollup for open PRs, or a merge/closed
+   octicon (no CI dot — that CI is long settled) for merged/closed.
    styles: BranchSwitcher.tsx */
 .branch-pr {
   display: inline-flex;
@@ -290,13 +291,10 @@
   padding: 1px 4px;
   border-radius: 6px;
   background: var(--bg-active);
-  color: var(--fg);
-}
-.branch-pr--draft {
+  /* Muted: the number is secondary — the leading glyph is the real signal. */
   color: var(--fg-muted);
 }
-/* The `#number` stays neutral across states (like open PRs); only the leading
-   state glyph carries the color — merge purple, closed red. */
+/* Only the leading state glyph carries the color — merge purple, closed red. */
 .branch-pr--merged .ci-status {
   color: var(--pr-merged);
 }
