@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'bun:test'
 import type { RemoteRepo } from '@shared/types'
-import { groupReposByOwner } from './clone-repos'
+import { filterTerms, groupReposByOwner } from './clone-repos'
 
-const repo = (owner: string, name: string): RemoteRepo => ({
+const repo = (owner: string, name: string, description: string | null = null): RemoteRepo => ({
   id: `github.com/${owner}/${name}`,
   host: 'github.com',
   owner,
@@ -12,7 +12,7 @@ const repo = (owner: string, name: string): RemoteRepo => ({
   private: false,
   fork: false,
   archived: false,
-  description: null,
+  description,
   pushedAt: 0
 })
 
@@ -44,5 +44,20 @@ describe('groupReposByOwner', () => {
 
   it('an empty filter keeps everything', () => {
     expect(groupReposByOwner(repos, 'danipen', '   ')).toHaveLength(3)
+  })
+
+  it('matches against the description, not just owner/name', () => {
+    const described = [repo('acme', 'widgets', 'A fast desktop git client')]
+    const groups = groupReposByOwner(described, 'danipen', 'desktop git')
+    expect(groups.map((g) => g.repos.map((r) => r.fullName))).toEqual([['acme/widgets']])
+    // A term in neither name nor description excludes the repo.
+    expect(groupReposByOwner(described, 'danipen', 'desktop nope')).toHaveLength(0)
+  })
+})
+
+describe('filterTerms', () => {
+  it('splits on whitespace, lowercases, and drops blanks', () => {
+    expect(filterTerms('  Git   Grove ')).toEqual(['git', 'grove'])
+    expect(filterTerms('   ')).toEqual([])
   })
 })

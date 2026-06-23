@@ -127,6 +127,13 @@ Rules for keeping it maintainable:
 - **Path aliases:** `@/` → `src/renderer/src/`, `@shared/` → `src/shared/`.
 - **Comments explain *why*, richly** (lock semantics, NUL delimiting, PATH probing).
   Match that density on tricky code; don't strip existing rationale.
+- **Every filterable list highlights its matches.** A type-to-filter list (repos,
+  branches, the clone repo picker, the commit file list, …) must wrap the matched text in
+  the list rows using the shared helper (`lib/highlight.tsx`: `highlightMatch` for a single
+  whole-query substring, `highlightTerms` for whitespace-split term filters) — same `<mark
+  class="hl">` UX everywhere. When a list filters across multiple fields, highlight *every*
+  field it searches (e.g. the clone picker matches and highlights name **and** description).
+  Never ship a filter that narrows the list without showing *why* each row matched.
 - **Sidebar banners carry at most one button.** Banners (`.op-banner`,
   `.stash-reminder`) live in a narrow column: every extra button steals width from the
   message and wraps it into a skinny multi-line column. One compact button per banner;
