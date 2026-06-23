@@ -14,6 +14,8 @@ interface Props {
   repo: RepoSummary | null
   branch: BranchInfo | null
   branchesLoading: boolean
+  /** The repo's GitHub web base URL, when the host supports it (else null). */
+  githubWebUrl?: string | null
   busy: boolean
   refreshing: boolean
   themePref: ThemePref
@@ -52,6 +54,7 @@ export function Toolbar({
   repo,
   branch,
   branchesLoading,
+  githubWebUrl,
   busy,
   refreshing,
   themePref,
@@ -113,6 +116,7 @@ export function Toolbar({
           branch={branch}
           loading={branchesLoading}
           busy={busy}
+          githubWebUrl={githubWebUrl}
           switching={switching}
           onCheckout={onCheckout}
           onBranchAction={onBranchAction}

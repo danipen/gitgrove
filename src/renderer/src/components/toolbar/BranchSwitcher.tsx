@@ -1,3 +1,4 @@
+import { branchUrl } from '@shared/git-host-urls'
 import type { BranchInfo } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClearButton } from '@/components/common/ClearButton'
@@ -17,6 +18,9 @@ interface Props {
   /** True while the full branch list is being fetched after a repo open. */
   loading?: boolean
   busy: boolean
+  /** The repo's GitHub web base URL, when the host supports it — enables
+   *  "View Branch on GitHub" for branches that exist on the remote. */
+  githubWebUrl?: string | null
   /** The checkout in flight: target branch + determinate progress (null while
    *  git hasn't reported any — fast switches never do). */
   switching?: { name: string; percent: number | null } | null
@@ -38,6 +42,7 @@ export function BranchSwitcher({
   branch,
   loading = false,
   busy,
+  githubWebUrl = null,
   switching = null,
   onCheckout,
   onBranchAction,
@@ -108,6 +113,26 @@ export function BranchSwitcher({
 
   const visible = rows.slice(vs.start, vs.end)
 
+  // A local branch is browsable on the host only once it exists on a remote;
+  // `branch.remote` holds entries like `origin/feature/x`, so comparing the
+  // part after the remote name avoids offering a link that would 404.
+  const isPublished = (name: string) =>
+    branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
+
+  /** "View Branch on GitHub", appended where the host supports it and the
+   *  branch is published. Returns the separator + item, or nothing. */
+  const viewOnGitHubItems = (name: string) =>
+    githubWebUrl && isPublished(name)
+      ? [
+          {},
+          {
+            label: 'View Branch on GitHub',
+            icon: <Icon.Github size={15} />,
+            onClick: () => window.gitgrove.openExternal(branchUrl(githubWebUrl, name))
+          }
+        ]
+      : []
+
   /** The full context menu for a local branch row. */
   const localBranchMenuItems = (name: string) => {
     if (!onBranchAction) return []
@@ -158,7 +183,8 @@ export function BranchSwitcher({
         label: 'Copy Branch Name',
         icon: <Icon.Copy size={15} />,
         onClick: () => window.gitgrove.clipboardWrite(name)
-      }
+      },
+      ...viewOnGitHubItems(name)
     ]
   }
 
@@ -330,7 +356,8 @@ export function BranchSwitcher({
               label: 'Rename…',
               icon: <Icon.Pencil size={15} />,
               onClick: () => onBranchAction('rename', branch.current)
-            }
+            },
+            ...viewOnGitHubItems(branch.current)
           ]}
         />
       )}

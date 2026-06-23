@@ -13,6 +13,7 @@ import type {
   MergeKind,
   MergeOutcome,
   ProgressOpKind,
+  RepoHostInfo,
   RepoOpenResult,
   RepoSnapshot,
   RepoState,
@@ -69,6 +70,11 @@ const AUTO_FETCH_INTERVAL = 10 * 60 * 1000
 
 export function App() {
   const [repo, setRepo] = useState<RepoSummary | null>(null)
+  // The repo's web URL + whether its host is GitHub, for view-on-web / PR links.
+  const [hostInfo, setHostInfo] = useState<RepoHostInfo | null>(null)
+  // Full SHAs of commits not yet on any remote: their host commit page 404s, so
+  // "View on GitHub" is grayed out for them. Loaded only for GitHub hosts.
+  const [unpushed, setUnpushed] = useState<Set<string>>(new Set())
   const [branch, setBranch] = useState<BranchInfo | null>(null)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -184,6 +190,10 @@ export function App() {
 
   const repoRef = useRef<RepoSummary | null>(null)
   repoRef.current = repo
+  const hostInfoRef = useRef<RepoHostInfo | null>(null)
+  hostInfoRef.current = hostInfo
+  const unpushedRef = useRef<Set<string>>(unpushed)
+  unpushedRef.current = unpushed
   // Refs so the filesystem-driven refresh can read the latest view without
   // being re-created (which would re-subscribe the watcher).
   const tabRef = useRef<Tab>(tab)
@@ -622,6 +632,20 @@ export function App() {
     ]
   )
 
+  // Refresh the "not pushed yet" SHA set that grays out "View on GitHub".
+  // Only meaningful on GitHub hosts, so it's skipped elsewhere — the rev-walk
+  // never runs where the link isn't even offered. A transient failure keeps the
+  // previous set rather than ungating links.
+  const reloadUnpushed = useCallback(async (repoPath: string) => {
+    if (hostInfoRef.current?.provider !== 'github') return
+    try {
+      const shas = await window.gitgrove.unpushedCommits(repoPath)
+      if (repoRef.current?.path === repoPath) setUnpushed(new Set(shas))
+    } catch {
+      /* keep the last good set */
+    }
+  }, [])
+
   // ── Refresh: pulls every panel up to date (watcher + post-op) ─────────────
   const refresh = useCallback(async () => {
     const repoPath = repoRef.current?.path
@@ -640,7 +664,9 @@ export function App() {
       if (logLoadedRef.current && !refreshLog) setLogLoaded(false)
       const [files] = await Promise.all([
         loadSnapshot(repoPath),
-        refreshLog ? loadLog(repoPath, undefined, { keepCount: true }) : Promise.resolve(null)
+        refreshLog ? loadLog(repoPath, undefined, { keepCount: true }) : Promise.resolve(null),
+        // A commit/push/fetch may have changed which commits are on the remote.
+        reloadUnpushed(repoPath)
       ])
       // Keep the working selection valid; only re-fetch its diff when the
       // Changes tab is actually showing it, so a background edit never clobbers
@@ -662,7 +688,7 @@ export function App() {
         refreshRef.current()
       }
     }
-  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, failOrRecover])
+  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, failOrRecover, reloadUnpushed])
 
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
@@ -701,6 +727,24 @@ export function App() {
       // instant and each panel shows its own progress.
       setRepo(summary)
       setMissingRepo(null)
+      // Resolve the host (web URL + GitHub-ness) for view-on-web / PR links;
+      // cheap and independent, so it fills in on its own without gating the UI.
+      // On a GitHub host, also load the unpushed set that grays out commit links.
+      setHostInfo(null)
+      setUnpushed(new Set())
+      window.gitgrove
+        .repoHostInfo(summary.path)
+        .then((info) => {
+          setHostInfo(info)
+          if (info.provider !== 'github') return
+          window.gitgrove
+            .unpushedCommits(summary.path)
+            .then((shas) => {
+              if (repoRef.current?.path === summary.path) setUnpushed(new Set(shas))
+            })
+            .catch(() => {})
+        })
+        .catch(() => setHostInfo(null))
       setBranch(summary.branch)
       setChanges([])
       setCommits([])
@@ -1261,18 +1305,29 @@ export function App() {
       const repoPath = repoRef.current?.path
       if (!repoPath) return []
       const gg = window.gitgrove
-      return commitMenuItems(commit, commits, branchRef.current?.current ?? 'current branch', {
-        checkoutCommit: (c) =>
-          setModal({ kind: 'checkout-commit', hash: c.hash, shortHash: c.shortHash }),
-        newBranchAt: (c) => setModal({ kind: 'new-branch', from: c.hash, fromLabel: c.shortHash }),
-        createTagAt: (c) => setModal({ kind: 'create-tag', hash: c.hash, shortHash: c.shortHash }),
-        cherryPick: (c) => runOpRef.current(() => gg.cherryPick(repoPath, c.hash)),
-        revert: (c) => setModal({ kind: 'revert', hash: c.hash, shortHash: c.shortHash }),
-        interactiveRebase: (chain, base) => setModal({ kind: 'irebase', commits: chain, base }),
-        reset: (c, mode) => runOpRef.current(() => gg.reset(repoPath, c.hash, mode)),
-        confirmHardReset: (c) =>
-          setModal({ kind: 'reset', hash: c.hash, shortHash: c.shortHash, mode: 'hard' })
-      })
+      const host = hostInfoRef.current
+      const webUrl = host?.provider === 'github' ? host.webUrl : null
+      return commitMenuItems(
+        commit,
+        commits,
+        branchRef.current?.current ?? 'current branch',
+        {
+          checkoutCommit: (c) =>
+            setModal({ kind: 'checkout-commit', hash: c.hash, shortHash: c.shortHash }),
+          newBranchAt: (c) =>
+            setModal({ kind: 'new-branch', from: c.hash, fromLabel: c.shortHash }),
+          createTagAt: (c) =>
+            setModal({ kind: 'create-tag', hash: c.hash, shortHash: c.shortHash }),
+          cherryPick: (c) => runOpRef.current(() => gg.cherryPick(repoPath, c.hash)),
+          revert: (c) => setModal({ kind: 'revert', hash: c.hash, shortHash: c.shortHash }),
+          interactiveRebase: (chain, base) => setModal({ kind: 'irebase', commits: chain, base }),
+          reset: (c, mode) => runOpRef.current(() => gg.reset(repoPath, c.hash, mode)),
+          confirmHardReset: (c) =>
+            setModal({ kind: 'reset', hash: c.hash, shortHash: c.shortHash, mode: 'hard' })
+        },
+        webUrl,
+        unpushedRef.current.has(commit.hash)
+      )
     },
     [commits]
   )
@@ -1756,6 +1811,7 @@ export function App() {
         repo={repo}
         branch={branch}
         branchesLoading={branchesLoading}
+        githubWebUrl={hostInfo?.provider === 'github' ? hostInfo.webUrl : null}
         busy={busy}
         refreshing={refreshing}
         themePref={themePref}
