@@ -1,5 +1,5 @@
 import { branchUrl } from '@shared/git-host-urls'
-import type { BranchInfo, PullRequestInfo } from '@shared/types'
+import type { BranchInfo, PullRequestChecks, PullRequestInfo } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ClearButton } from '@/components/common/ClearButton'
 import { ContextMenu } from '@/components/common/ContextMenu'
@@ -12,6 +12,25 @@ import { useListKeyNav } from '@/lib/useListKeyNav'
 
 /** Branch operations surfaced from the switcher (beyond plain checkout). */
 export type BranchAction = 'new' | 'merge' | 'rename' | 'delete'
+
+/** Tooltip wording for each CI rollup state, appended to the PR badge's tip. */
+const CHECKS_LABEL: Record<PullRequestChecks, string> = {
+  success: 'checks passing',
+  failure: 'checks failing',
+  pending: 'checks running'
+}
+
+/** The CI rollup glyph inside a PR badge: a green check when passing, a red
+ *  cross when failing, or a pulsing amber dot while checks are still running.
+ *  styles: features/toolbar.css (.ci-status) */
+function CiStatus({ state }: { state: PullRequestChecks }) {
+  if (state === 'pending') return <span className="ci-status ci-status--pending" aria-hidden />
+  return (
+    <span className={`ci-status ci-status--${state}`} aria-hidden>
+      {state === 'success' ? <Icon.Check size={11} /> : <Icon.Close size={11} />}
+    </span>
+  )
+}
 
 interface Props {
   branch: BranchInfo | null
@@ -208,20 +227,22 @@ export function BranchSwitcher({
         : branch.current
       : '—'
 
-  // The `#123` pill marking a branch that has an open PR (dimmed for drafts).
-  // The CI status dot lives inside it once checks are wired.
+  // The `#123` pill marking a branch that has an open PR (dimmed for drafts),
+  // with the CI rollup glyph when checks have run.
   // styles: features/toolbar.css (.branch-pr)
-  const renderPrBadge = (pr: PullRequestInfo | undefined) =>
-    pr ? (
+  const renderPrBadge = (pr: PullRequestInfo | undefined) => {
+    if (!pr) return null
+    const kind = pr.draft ? 'Draft PR' : 'PR'
+    const checks = pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
+    return (
       <span
         className={`branch-pr${pr.draft ? ' branch-pr--draft' : ''}`}
-        data-tip={
-          pr.draft ? `Draft PR #${pr.number}: ${pr.title}` : `PR #${pr.number}: ${pr.title}`
-        }
+        data-tip={`${kind} #${pr.number}: ${pr.title}${checks}`}
       >
-        #{pr.number}
+        {pr.checks && <CiStatus state={pr.checks} />}#{pr.number}
       </span>
-    ) : null
+    )
+  }
   const headPr =
     !switching && !branch?.detached ? prByBranch?.get(branch?.current ?? '') : undefined
 

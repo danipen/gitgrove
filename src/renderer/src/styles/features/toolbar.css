@@ -276,21 +276,44 @@
 }
 
 /* The `#123` badge marking a branch that has an open pull request — shown on the
-   branch switcher's trigger pill and its list rows. Green like an open PR;
-   dimmed for drafts. The CI status dot nests inside it once checks are wired.
+   branch switcher's trigger pill and its list rows. Neutral pill; the nested CI
+   glyph carries the green/red/amber status. Dimmed for drafts.
    styles: BranchSwitcher.tsx */
 .branch-pr {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
   flex: none;
   font-size: 10.5px;
   font-weight: 700;
   padding: 1px 6px;
   border-radius: 8px;
   background: var(--bg-active);
-  color: var(--st-added);
+  color: var(--fg);
 }
 .branch-pr--draft {
   color: var(--fg-muted);
+}
+/* CI rollup inside the badge: ✓ passing, ✗ failing, or a pulsing dot running. */
+.ci-status {
+  display: inline-flex;
+  align-items: center;
+}
+.ci-status--success {
+  color: var(--st-added);
+}
+.ci-status--failure {
+  color: var(--st-deleted);
+}
+.ci-status--pending {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--st-modified);
+  animation: ci-pulse 1.3s ease-in-out infinite;
+}
+@keyframes ci-pulse {
+  50% {
+    opacity: 0.35;
+  }
 }

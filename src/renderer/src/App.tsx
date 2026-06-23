@@ -1323,6 +1323,29 @@ export function App() {
     return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
   }, [hostInfo, branch, sync, prByBranch])
 
+  // Refresh PRs + CI when the window regains focus — the cheap way to catch a
+  // build that finished while the user was away, without background polling.
+  useEffect(() => {
+    if (hostInfo?.provider !== 'github' || !repo) return
+    const repoPath = repo.path
+    const onFocus = () => loadGithubData(repoPath)
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [hostInfo, repo, loadGithubData])
+
+  // While the window is focused AND a check is still running, poll every 30s so
+  // a pending dot turns green/red on its own. The moment nothing is pending the
+  // effect re-runs with no timer, so it's silent whenever CI is settled.
+  useEffect(() => {
+    if (hostInfo?.provider !== 'github' || !repo) return
+    if (!pullRequests.some((pr) => pr.checks === 'pending')) return
+    const repoPath = repo.path
+    const timer = setInterval(() => {
+      if (document.hasFocus()) loadGithubData(repoPath)
+    }, 30_000)
+    return () => clearInterval(timer)
+  }, [hostInfo, repo, pullRequests, loadGithubData])
+
   /** Right-click menu for a history commit. */
   const commitMenuFor = useCallback(
     (commit: Commit): ContextMenuItem[] => {
