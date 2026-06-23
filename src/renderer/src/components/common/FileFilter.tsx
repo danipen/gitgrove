@@ -5,6 +5,7 @@
 import type { ChangedFile, FileStatus } from '@shared/types'
 import { useCallback, useMemo, useState } from 'react'
 import { statusLabel } from '@/lib/format'
+import { ClearButton } from './ClearButton'
 
 export const DEFAULT_FILTER_TYPES: readonly FileStatus[] = [
   'added',
@@ -69,12 +70,15 @@ export function useFileFilter(
 
   const bar = (
     <div className="wfl-filter">
-      <input
-        className="wfl-filter__input"
-        placeholder="Filter files…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
+      <div className="wfl-filter__field">
+        <input
+          className="wfl-filter__input"
+          placeholder="Filter files…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        {query !== '' && <ClearButton label="Clear filter" onClear={() => setQuery('')} />}
+      </div>
       {types.map((t) => (
         <button
           key={t}

@@ -11,6 +11,7 @@
 
 import type { ConnectedAccount, RemoteRepo } from '@shared/types'
 import { useEffect, useState } from 'react'
+import { ClearButton } from '@/components/common/ClearButton'
 import { filterTerms, groupReposByOwner } from '@/lib/clone-repos'
 import { highlightTerms } from '@/lib/highlight'
 import { Icon } from '@/lib/icons'
@@ -101,6 +102,9 @@ export function CloneRepoPicker({ account, selectedId, onSelect, disabled }: Pro
             disabled={disabled}
             onChange={(e) => setFilter(e.target.value)}
           />
+          {filter !== '' && !disabled && (
+            <ClearButton label="Clear filter" onClear={() => setFilter('')} />
+          )}
         </div>
         <button
           className="btn-ghost btn-ghost--sm clone-picker__refresh"

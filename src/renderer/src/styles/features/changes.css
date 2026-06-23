@@ -399,10 +399,17 @@
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
 }
-.wfl-filter__input {
+/* Wraps the input (not the status chips) so the clear "×" can overlay just the
+   text field. Takes the row's free width; the input fills it. */
+.wfl-filter__field {
+  position: relative;
   flex: 1;
   min-width: 0;
-  padding: 5px 9px;
+}
+.wfl-filter__input {
+  width: 100%;
+  /* Right room for the clear "×". */
+  padding: 5px 28px 5px 9px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);

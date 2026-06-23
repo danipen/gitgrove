@@ -1,10 +1,13 @@
 import type { BlameLine, ChangedFile, Commit, DiffPayload } from '@shared/types'
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { type DiffMode, DiffViewer } from '@/components/common/DiffViewer'
+import { FilterInput } from '@/components/common/FilterInput'
 import { Resizer } from '@/components/common/Resizer'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { type BlameFrame, popReblame, pushReblame } from '@/lib/blame'
+import { filterCommits, filterTerms } from '@/lib/commitFilter'
 import { splitPath } from '@/lib/format'
+import { highlightTerms } from '@/lib/highlight'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
 import type { ResolvedTheme } from '@/lib/theme'
@@ -62,6 +65,10 @@ export function FileHistoryOverlay({
   const [commits, setCommits] = useState<Commit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Free-text filter over this file's commit list. The list is a bounded,
+  // already-loaded snapshot, so it filters in memory (subject + author) — unlike
+  // the main History tab, which pages a far deeper log and so greps server-side.
+  const [query, setQuery] = useState('')
   // The commit identity git would use in this repo. Drives the avatar on the
   // blame gutter's uncommitted ("Not Committed Yet") lines — those are the
   // local user's own edits, so they wear the current user's face.
@@ -97,7 +104,13 @@ export function FileHistoryOverlay({
   const bodyRef = useRef<HTMLDivElement>(null)
 
   const spin = useSpinDelay(loading)
+  // The selection resolves against the full list so it survives a filter that
+  // would hide it (the right pane keeps showing it); the list itself renders the
+  // filtered view.
   const selectedCommit = commits.find((c) => c.hash === blamedHash) ?? null
+  const searching = query.trim() !== ''
+  const terms = useMemo(() => filterTerms(query), [query])
+  const visibleCommits = useMemo(() => filterCommits(commits, query), [commits, query])
 
   // Anchor the blame at a revision the user picked (list row, arrow keys, or the
   // working-tree row), resetting any reblame walk. The list highlight follows.
@@ -222,31 +235,32 @@ export function FileHistoryOverlay({
   }, [mode, blamedHash, repoPath, path])
 
   const rowHeight = useCallback(() => FH_ROW_H, [])
-  const vs = useVirtualScroll({ count: commits.length, rowHeight })
+  const vs = useVirtualScroll({ count: visibleCommits.length, rowHeight })
 
   // Keep the list pinned to the revision being blamed: as the user reblames
   // (walks back) or selects, scroll that commit into view so it's always clear
   // which revision the gutter annotates. The list is the file's full history,
   // so a far-down commit (e.g. selected on open from the History tab) scrolls
   // in too; `ensureVisible` is a no-op when the row is already showing.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: ensureVisible is stable; follow blamedHash + load.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: ensureVisible is stable; follow blamedHash + the visible list.
   useEffect(() => {
-    if (blamedHash == null || commits.length === 0) return
-    const idx = commits.findIndex((c) => c.hash === blamedHash)
+    if (blamedHash == null || visibleCommits.length === 0) return
+    const idx = visibleCommits.findIndex((c) => c.hash === blamedHash)
     if (idx >= 0) vs.ensureVisible(idx)
-  }, [blamedHash, commits.length])
+  }, [blamedHash, visibleCommits])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (commits.length === 0) return
-    // The working tree (null) sits above commit[0]; arrow across the boundary.
+    // Navigation walks the filtered list — the only rows actually on screen.
+    if (visibleCommits.length === 0) return
+    // The working tree (null) sits above the first row; arrow across the boundary.
     if (blamedHash == null) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        anchorTo(commits[0].hash)
+        anchorTo(visibleCommits[0].hash)
       }
       return
     }
-    const current = commits.findIndex((c) => c.hash === blamedHash)
+    const current = visibleCommits.findIndex((c) => c.hash === blamedHash)
     if (current < 0) return
     if (showWorkingTree && e.key === 'ArrowUp' && current === 0) {
       e.preventDefault()
@@ -254,10 +268,10 @@ export function FileHistoryOverlay({
       return
     }
     const page = Math.max(1, Math.floor(vs.viewportH / FH_ROW_H) - 1)
-    const target = navTarget(e.key, current, commits.length, page)
+    const target = navTarget(e.key, current, visibleCommits.length, page)
     if (target === null) return
     e.preventDefault()
-    if (target !== current) anchorTo(commits[target].hash)
+    if (target !== current) anchorTo(visibleCommits[target].hash)
   }
 
   return (
@@ -306,6 +320,9 @@ export function FileHistoryOverlay({
         style={{ '--fh-commits-w': `${commitsWidth}px` } as CSSProperties}
       >
         <div className="fh-commits">
+          {commits.length > 0 && (
+            <FilterInput value={query} onChange={setQuery} placeholder="Filter commits…" />
+          )}
           {/* The working tree (current, on-disk revision) is pinned at the top
               and selected by default — but only when the file has uncommitted
               changes, the way the current branch is marked in the branch list. */}
@@ -351,6 +368,14 @@ export function FileHistoryOverlay({
               <h3>No history</h3>
               <p>This file has no commits yet.</p>
             </div>
+          ) : visibleCommits.length === 0 ? (
+            <div className="center-state">
+              <div className="icon-ring">
+                <Icon.History size={22} />
+              </div>
+              <h3>No matches</h3>
+              <p>No commits match “{query.trim()}”.</p>
+            </div>
           ) : (
             <div
               className="fh-commit-list"
@@ -362,13 +387,15 @@ export function FileHistoryOverlay({
             >
               <div className="vlist__sizer" style={{ height: vs.totalHeight }} aria-hidden="true" />
               <div className="vlist__content" style={{ transform: `translateY(${-vs.top}px)` }}>
-                {commits.slice(vs.start, vs.end).map((commit, i) => {
+                {visibleCommits.slice(vs.start, vs.end).map((commit, i) => {
                   const idx = vs.start + i
                   const active = blamedHash === commit.hash
                   // The newest commit is the version currently checked out —
                   // unless the file has uncommitted edits, in which case the
                   // pinned working-tree row above is what's current instead.
-                  const current = idx === 0 && !showWorkingTree
+                  // Identified by hash, not row index, so a filter can't shift
+                  // the badge onto a different commit.
+                  const current = commit.hash === commits[0]?.hash && !showWorkingTree
                   return (
                     <button
                       key={commit.hash}
@@ -395,12 +422,16 @@ export function FileHistoryOverlay({
                             data-tip={commit.subject}
                             data-tip-overflow=""
                           >
-                            {commit.subject}
+                            {searching ? highlightTerms(commit.subject, terms) : commit.subject}
                           </span>
                           {current && <span className="tag tag--current">current</span>}
                         </div>
                         <div className="fh-commit__meta">
-                          <span className="fh-commit__author">{commit.authorName}</span>
+                          <span className="fh-commit__author">
+                            {searching
+                              ? highlightTerms(commit.authorName, terms)
+                              : commit.authorName}
+                          </span>
                           <span className="fh-commit__when">· {commit.relativeDate}</span>
                           <span className="fh-commit__sha">{commit.shortHash}</span>
                         </div>

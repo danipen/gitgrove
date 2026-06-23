@@ -123,10 +123,10 @@
    Collapsed: the author in front, co-author discs peeking out behind like a
    short stack of coins. Hovering fans it open macOS-dock style: each disc
    springs to its own slot slightly after the one before it (overshoot +
-   stagger), and the disc under the cursor magnifies while its neighbours lean
-   in. Everything is transform-only and the container keeps its collapsed
-   width — the open fan floats over the row on a shadow, so the text beside it
-   never reflows and scrolling stays jank-free. */
+   stagger), then magnifies continuously with the cursor's distance to it (the
+   JS sets --mag). Movement is transform + scale only and the container keeps
+   its collapsed width — the open fan floats over the row on a shadow, so the
+   text beside it never reflows and scrolling stays jank-free. */
 .avatar-fan {
   position: relative;
   flex: 0 0 auto;
@@ -137,41 +137,44 @@
   left: 0;
   z-index: var(--z);
   border-radius: 50%;
-  transform: translateX(var(--x));
+  /* The fan offset rides the independent `translate` property — NOT `transform`
+     — so the `scale` below doesn't multiply it. (In one matrix, scale also
+     scales the translate, sliding a growing disc sideways out from under the
+     cursor, which then shrinks it again: a collapsing wobble.) Apart, the disc
+     magnifies in place about its own centre. */
+  translate: var(--x);
+  /* Continuous dock magnification: AvatarStack.tsx sets --mag per pointer move
+     from the cursor's distance to each disc, so it grows symmetrically with how
+     close the cursor is. */
+  scale: var(--mag, 1);
   /* A soft left-edge shadow separates the overlapped discs on any background
      (rows change color on hover/active, so a solid “ring” can't match). */
   box-shadow: -2px 0 4px rgba(0, 0, 0, 0.2);
-  /* Spring-ish overshoot. Closing runs outermost-first (--rev) so the fan
-     visibly folds back into the stack instead of vanishing as one block. */
-  transition:
-    transform 0.3s cubic-bezier(0.32, 1.45, 0.36, 1),
-    box-shadow 0.2s ease;
-  transition-delay: calc(var(--rev) * 15ms);
+  /* Spring-ish overshoot on the fan slide; scale chases the cursor on its own
+     short ease (no stagger) so magnification tracks the pointer smoothly.
+     Closing runs outermost-first (--rev) so the fan visibly folds back into the
+     stack instead of vanishing as one block. */
+  transition-property: translate, scale, box-shadow;
+  transition-duration: 0.3s, 0.12s, 0.2s;
+  transition-timing-function: cubic-bezier(0.32, 1.45, 0.36, 1), ease-out, ease;
+  transition-delay: calc(var(--rev) * 15ms), 0s, 0s;
 }
 .avatar-fan:hover .avatar-fan__item {
-  transform: translateX(var(--fan-x));
-  transition-delay: calc(var(--i) * 24ms);
+  translate: var(--fan-x);
+  transition-delay: calc(var(--i) * 24ms), 0s, 0s;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.28);
-}
-/* Dock magnification: the hovered disc pops above everything; its immediate
-   neighbours lean in a notch. Magnification reacts faster than the fan slide
-   (and with no stagger) so it tracks the cursor like the real Dock. */
-.avatar-fan:hover .avatar-fan__item:hover {
-  transform: translateX(var(--fan-x)) translateY(-2px) scale(1.18);
-  transition-delay: 0s;
-  transition-duration: 0.16s;
-  z-index: 99;
-}
-.avatar-fan:hover .avatar-fan__item:hover + .avatar-fan__item,
-.avatar-fan:hover .avatar-fan__item:has(+ .avatar-fan__item:hover) {
-  transform: translateX(var(--fan-x)) translateY(-1px) scale(1.08);
-  transition-delay: 0s;
-  transition-duration: 0.16s;
 }
 @media (prefers-reduced-motion: reduce) {
   .avatar-fan__item {
     transition: none;
   }
+}
+/* The "+N" counter that caps the fan when a commit lists more authors than fit
+   (AvatarStack.tsx) — a neutral disc instead of an identity's colored one. */
+.avatar.avatar--more {
+  background: var(--bg-active);
+  color: var(--fg-muted);
+  font-weight: 700;
 }
 
 /* Refs in the list stay on a single line (capped to +N) so rows keep an even

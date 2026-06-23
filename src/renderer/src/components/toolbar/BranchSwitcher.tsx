@@ -1,5 +1,6 @@
 import type { BranchInfo } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { ClearButton } from '@/components/common/ClearButton'
 import { ContextMenu } from '@/components/common/ContextMenu'
 import { Popover } from '@/components/common/Popover'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
@@ -221,6 +222,7 @@ export function BranchSwitcher({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
+          {query !== '' && <ClearButton label="Clear filter" onClear={() => setQuery('')} />}
         </div>
         {rows.length === 0 ? (
           <div className="popover__empty">No matching branches</div>

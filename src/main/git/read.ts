@@ -376,8 +376,14 @@ export async function getLog(repoPath: string, options: LogOptions = {}): Promis
   const { ref, limit = 200, skip = 0, search } = options
   const args = ['log', '-z', `--format=${LOG_FORMAT}`, `--max-count=${limit}`]
   if (skip > 0) args.push(`--skip=${skip}`)
-  if (search?.trim()) {
-    args.push(`--grep=${search.trim()}`, '-i', '--all-match')
+  // Free-text message search: every whitespace-separated word must appear
+  // (`--all-match` ANDs the `--grep`s), case-insensitively (`-i`) and as literal
+  // text (`-F`) so regex metacharacters a user types aren't interpreted. Matched
+  // against the whole message (subject + body), like the rest of git.
+  const terms = (search ?? '').trim().split(/\s+/).filter(Boolean)
+  if (terms.length > 0) {
+    args.push('-i', '-F', '--all-match')
+    for (const term of terms) args.push(`--grep=${term}`)
   }
   args.push(ref?.trim() ? ref : 'HEAD')
 

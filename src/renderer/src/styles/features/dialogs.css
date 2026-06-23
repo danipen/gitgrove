@@ -557,6 +557,14 @@
   font: inherit;
   outline: none;
 }
+/* The search row is a flex line (search icon + input + clear), so the clear "×"
+   sits inline at the end rather than overlaying the input like the other
+   filters. */
+.clone-picker__search .input-clear {
+  position: static;
+  transform: none;
+  flex: 0 0 auto;
+}
 /* Fixed height (not max-height) so filtering the list never resizes the
    dialog — it just scrolls internally. */
 .clone-picker__list {

@@ -1,6 +1,7 @@
 import type { RecentRepo, RepoInfo, RepoSummary } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { ClearButton } from '@/components/common/ClearButton'
 import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
 import { Popover } from '@/components/common/Popover'
 import { Toast } from '@/components/common/Toast'
@@ -272,6 +273,7 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo, onClone }: Props) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
             />
+            {query !== '' && <ClearButton label="Clear filter" onClear={() => setQuery('')} />}
           </div>
         )}
         <div className="repo-list" ref={listRef}>
