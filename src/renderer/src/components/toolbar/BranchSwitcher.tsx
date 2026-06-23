@@ -262,7 +262,10 @@ export function BranchSwitcher({
         </span>
         <span className="pill__stack">
           <span className="pill__caption">Branch</span>
-          <span className="pill__label">{label}</span>
+          {/* Show the full branch name on hover only when it's been ellipsized. */}
+          <span className="pill__label" data-tip={label} data-tip-overflow="">
+            {label}
+          </span>
         </span>
         {renderPrBadge(headPr)}
         <span className={`pill__chev${loading || switching ? ' is-spinning' : ''}`}>
