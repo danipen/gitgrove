@@ -79,6 +79,9 @@ export function App() {
   const [unpushed, setUnpushed] = useState<Set<string>>(new Set())
   // Open pull requests on the GitHub remote, matched to branches by head ref.
   const [pullRequests, setPullRequests] = useState<PullRequestInfo[]>([])
+  // False until the first PR fetch for the current repo resolves, so the
+  // "Create Pull Request" banner never flashes before we know the branch's PRs.
+  const [prsLoaded, setPrsLoaded] = useState(false)
   const [branch, setBranch] = useState<BranchInfo | null>(null)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -647,7 +650,10 @@ export function App() {
     ])
     if (repoRef.current?.path !== repoPath) return
     if (shas) setUnpushed(new Set(shas))
-    if (prs) setPullRequests(prs)
+    if (prs) {
+      setPullRequests(prs)
+      setPrsLoaded(true)
+    }
   }, [])
 
   // ── Refresh: pulls every panel up to date (watcher + post-op) ─────────────
@@ -738,6 +744,7 @@ export function App() {
       setHostInfo(null)
       setUnpushed(new Set())
       setPullRequests([])
+      setPrsLoaded(false)
       window.gitgrove
         .repoHostInfo(summary.path)
         .then((info) => {
@@ -1316,6 +1323,9 @@ export function App() {
   // upstream) that isn't the default branch and has no open PR yet. Once a PR
   // exists the branch pill covers it, so the banner steps aside.
   const createPrUrl = useMemo(() => {
+    // Wait until PRs have loaded — otherwise the banner flashes on every repo
+    // open before we know whether the branch already has a PR.
+    if (!prsLoaded) return null
     if (hostInfo?.provider !== 'github' || !hostInfo.webUrl) return null
     if (!branch || branch.detached || !branch.defaultBranch) return null
     const current = branch.current
@@ -1324,7 +1334,7 @@ export function App() {
     // shouldn't block proposing a fresh PR for new work on the branch).
     if (!sync?.upstream || prByBranch.get(current)?.state === 'open') return null
     return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
-  }, [hostInfo, branch, sync, prByBranch])
+  }, [hostInfo, branch, sync, prByBranch, prsLoaded])
 
   // Refresh PRs + CI when the window regains focus — the cheap way to catch a
   // build that finished while the user was away, without background polling.
