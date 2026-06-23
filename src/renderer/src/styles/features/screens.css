@@ -140,3 +140,66 @@
   justify-content: center;
   flex-wrap: wrap;
 }
+/* ── Missing-repository recovery screen ──────────────────────────────────── */
+.missing-repo__badge {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: var(--st-modified);
+  background: var(--st-modified-soft);
+}
+.missing-repo__path {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-active);
+  color: var(--fg);
+  word-break: break-all;
+}
+/* Equal-width actions for a tidy, unified row (and it still balances when
+   "Clone again" is hidden — two buttons simply split the row). */
+.missing-repo__actions {
+  display: flex;
+  gap: 10px;
+  margin: 24px auto 0;
+  max-width: 400px;
+}
+.missing-repo__actions button {
+  flex: 1;
+  justify-content: center;
+}
+/* Quiet tertiary re-check: a calm pill grouped just under the title/path (not
+   an inline link), so it reads as part of the heading rather than competing
+   with the Locate / Clone again / Remove actions below. */
+.missing-repo__recheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 5px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--fg-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.missing-repo__recheck:hover:not(:disabled) {
+  color: var(--fg);
+  border-color: var(--border);
+  background: var(--bg-elevated);
+}
+.missing-repo__recheck:disabled {
+  cursor: default;
+}
+/* A recent whose folder is gone — kept in the list, greyed, click to recover. */
+.recent-row.is-missing,
+.popover__item.is-missing {
+  opacity: 0.5;
+}

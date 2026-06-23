@@ -21,6 +21,11 @@ import { CloneRepoPicker } from './CloneRepoPicker'
 interface Props {
   onDone: (repoPath: string) => void
   onCancel: () => void
+  /**
+   * Preset the dialog (used by "Clone again" recovery): open on the URL tab
+   * with this URL, cloning back into `baseDir` (the missing repo's parent).
+   */
+  initial?: { url: string; baseDir: string }
 }
 
 type Tab = 'github' | 'enterprise' | 'url'
@@ -45,13 +50,13 @@ function parentDir(p: string): string {
   return cut > 0 ? trimmed.slice(0, cut) : trimmed
 }
 
-export function CloneDialog({ onDone, onCancel }: Props) {
-  const [tab, setTab] = useState<Tab>('github')
+export function CloneDialog({ onDone, onCancel, initial }: Props) {
+  const [tab, setTab] = useState<Tab>(initial ? 'url' : 'github')
   const [accounts, setAccounts] = useState<ConnectedAccount[] | null>(null)
   const [connecting, setConnecting] = useState(false)
   const [enterpriseId, setEnterpriseId] = useState<string | null>(null)
   const [repo, setRepo] = useState<RemoteRepo | null>(null)
-  const [url, setUrl] = useState('')
+  const [url, setUrl] = useState(initial?.url ?? '')
   const [dest, setDest] = useState('')
   const [targetState, setTargetState] = useState<CloneTargetState | null>(null)
   const [progress, setProgress] = useState<CloneProgress | null>(null)
@@ -59,7 +64,8 @@ export function CloneDialog({ onDone, onCancel }: Props) {
   const [error, setError] = useState<string | null>(null)
   // Parent folder used to compose `<base>/<name>`; tracks the field's dirname
   // when typed, the picked folder when browsed, the default folder otherwise.
-  const baseDir = useRef('')
+  // Seeded for "Clone again" so it lands back beside the missing repo.
+  const baseDir = useRef(initial?.baseDir ?? '')
 
   useEffect(() => window.gitgrove.onCloneProgress(setProgress), [])
   useEffect(() => {

@@ -215,7 +215,7 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo, onClone }: Props) {
       key={key}
       className={`popover__item${repo?.path === r.path ? ' is-active' : ''}${kbd ? ' is-kbd' : ''}${
         menu?.key === key ? ' is-context' : ''
-      }`}
+      }${r.missing ? ' is-missing' : ''}`}
       onClick={() => {
         close()
         onOpenRepo(r.path)

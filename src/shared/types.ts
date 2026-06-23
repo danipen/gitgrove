@@ -340,16 +340,32 @@ export interface RepoSummary extends RepoInfo {
 
 export interface RecentRepo extends RepoInfo {
   lastOpened: number
+  /**
+   * The repo's clone URL (origin), captured on open. Persisted so a repo whose
+   * folder later disappears can still offer "Clone Again" from the recovery
+   * screen — git can't be asked once the folder is gone. Null when the repo had
+   * no remote.
+   */
+  remoteUrl?: string | null
+  /**
+   * True when the folder no longer exists on disk. Missing repos stay in the
+   * list (greyed) so the user can recover them — selecting one opens the
+   * recovery screen rather than a dead repo.
+   */
+  missing: boolean
 }
 
 /**
  * Outcome of trying to open a repo. Expected, recoverable cases are modelled as
  * data (not thrown) so the renderer can react: `not-git` shows an error,
- * `untrusted` (git "dubious ownership") prompts the user to trust the folder.
+ * `untrusted` (git "dubious ownership") prompts the user to trust the folder,
+ * `missing` (the folder is gone) opens the recovery screen — which needs the
+ * name and last-known clone URL since git can't be queried on a vanished path.
  */
 export type RepoOpenResult =
   | { ok: true; summary: RepoSummary }
   | { ok: false; reason: 'not-git' | 'untrusted'; path: string }
+  | { ok: false; reason: 'missing'; path: string; name: string; remoteUrl: string | null }
 
 export interface LogOptions {
   /** Branch / ref to read history from. Defaults to the checked-out branch. */

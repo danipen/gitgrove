@@ -314,6 +314,17 @@ export function toWebUrl(remote: string): string | null {
  * no remote or its URL can't be made browsable.
  */
 export async function getRemoteWebUrl(repoPath: string): Promise<string | null> {
+  const raw = await getRemoteCloneUrl(repoPath)
+  return raw ? toWebUrl(raw) : null
+}
+
+/**
+ * The repo's raw remote URL (origin, else the first configured remote), as git
+ * stores it — kept verbatim (not made browsable) because it's what we'd hand
+ * back to `git clone`. Used to remember a repo's origin for "Clone Again" after
+ * its folder is gone. Null when the repo has no remote.
+ */
+export async function getRemoteCloneUrl(repoPath: string): Promise<string | null> {
   const readUrl = async (remote: string): Promise<string | null> => {
     try {
       return (await runGit(repoPath, ['remote', 'get-url', remote])).trim() || null
@@ -321,15 +332,13 @@ export async function getRemoteWebUrl(repoPath: string): Promise<string | null> 
       return null
     }
   }
-  let raw = await readUrl('origin')
-  if (!raw) {
-    const first = (await runGit(repoPath, ['remote']).catch(() => ''))
-      .split('\n')
-      .map((r) => r.trim())
-      .filter(Boolean)[0]
-    if (first) raw = await readUrl(first)
-  }
-  return raw ? toWebUrl(raw) : null
+  const origin = await readUrl('origin')
+  if (origin) return origin
+  const first = (await runGit(repoPath, ['remote']).catch(() => ''))
+    .split('\n')
+    .map((r) => r.trim())
+    .filter(Boolean)[0]
+  return first ? await readUrl(first) : null
 }
 
 // Log fields, NUL-joined: subjects/bodies can contain any byte except NUL, so

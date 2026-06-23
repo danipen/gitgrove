@@ -1,4 +1,5 @@
-import { dirname, join } from 'node:path'
+import { existsSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, nativeImage, shell } from 'electron'
 
@@ -20,11 +21,12 @@ import {
   addSafeDirectory,
   DubiousOwnershipError,
   getQuickSummary,
+  getRemoteCloneUrl,
   resolveRepoRoot
 } from './git/read'
 import { registerIpc } from './ipc'
 import { buildMenu, type MenuContext } from './menu'
-import { rememberRepo } from './store'
+import { getRecentRepo, rememberRepo } from './store'
 import { initAutoUpdater } from './updater'
 import { RepoWatcher } from './watcher'
 import {
@@ -174,6 +176,20 @@ function createWindow(): void {
  * instantly; branches and status are fetched separately by the renderer.
  */
 async function openRepoAtPath(rawPath: string): Promise<RepoOpenResult> {
+  // The folder is gone (a recent whose directory was deleted/moved): hand the
+  // renderer the recovery screen with the last-known name + clone URL, rather
+  // than failing as "not a git repository". git can't be queried on a path
+  // that no longer exists, so this answer comes from the recents store.
+  if (!existsSync(rawPath)) {
+    const known = getRecentRepo(rawPath)
+    return {
+      ok: false,
+      reason: 'missing',
+      path: rawPath,
+      name: known?.name ?? basename(rawPath),
+      remoteUrl: known?.remoteUrl ?? null
+    }
+  }
   // The setup screen normally prevents reaching here without git; locateGit is a
   // backstop that throws a clear GitNotFoundError if git really is missing.
   await locateGit()
@@ -188,7 +204,10 @@ async function openRepoAtPath(rawPath: string): Promise<RepoOpenResult> {
   }
   if (!root) return { ok: false, reason: 'not-git', path: rawPath }
   const summary = await getQuickSummary(root)
-  rememberRepo({ path: summary.path, name: summary.name })
+  // Remember the origin URL so "Clone Again" still works if this folder later
+  // vanishes — best-effort, never block opening on it.
+  const remoteUrl = await getRemoteCloneUrl(root).catch(() => null)
+  rememberRepo({ path: summary.path, name: summary.name, remoteUrl })
   watcher.watch(root)
   // Point the application menu's repo actions at the now-open repo (and enable
   // them if this is the first one).
