@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test'
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { getRepoSnapshot } from './status'
@@ -106,8 +106,8 @@ describe('undo commit', () => {
     // The committed file returns to the working tree (here as untracked, since
     // c0 never had it) — the change is not lost.
     expect(status(dir)).toContain('foo.txt')
-    // The record is consumed: a second undo finds nothing.
-    await expect(undo(dir)).rejects.toThrow(/nothing to undo/i)
+    // The record is consumed (a subsequent undo would derive from git instead).
+    expect(existsSync(join(dir, '.git', 'gitgrove', 'undo.json'))).toBe(false)
   })
 
   test('undoing the very first commit returns to an unborn branch', async () => {
@@ -242,29 +242,62 @@ describe('undo rebase / reset / cherry-pick / revert', () => {
 })
 
 describe('readUndoSnapshot validity & snapshot integration', () => {
-  test('is offered only while HEAD matches the recorded tip', async () => {
+  test('offers a derived undo for an unrecorded commit (terminal / older session)', async () => {
     const dir = seedRepo()
     put(dir, 'foo.txt', 'hi')
-    await commitSelection(dir, 'add foo', COMMIT_ALL)
-    const tip = head(dir)
+    const c = rawCommit(dir, 'add foo') // committed outside GitGrove — no record
 
-    expect((await readUndoSnapshot(dir, tip, null))?.kind).toBe('commit')
-    // A different HEAD (a later operation moved on) makes the record stale.
-    expect(await readUndoSnapshot(dir, '0'.repeat(40), null)).toBeNull()
+    const snap = await readUndoSnapshot(dir, c, null)
+    expect(snap?.kind).toBe('commit')
+    expect(snap?.label).toContain('add foo')
+    expect(snap?.headSha).toBe(c)
+
+    // ...and it actually reverts, handing back the message for the composer.
+    const result = await undo(dir)
+    expect(result.message).toBe('add foo')
+    expect(head(dir)).not.toBe(c)
+    expect(status(dir)).toContain('foo.txt')
   })
 
-  test('flags undone history as pushed when it is an ancestor of the upstream', async () => {
+  test('a stale record falls through to the derived undo of the current commit', async () => {
+    const dir = seedRepo()
+    put(dir, 'foo.txt', 'hi')
+    await commitSelection(dir, 'add foo', COMMIT_ALL) // records this commit
+    put(dir, 'bar.txt', 'bye')
+    const b = rawCommit(dir, 'add bar') // HEAD moves on — the record is now stale
+
+    const snap = await readUndoSnapshot(dir, b, null)
+    expect(snap?.kind).toBe('commit')
+    expect(snap?.label).toContain('add bar')
+    expect(snap?.headSha).toBe(b)
+  })
+
+  test('withholds undo once the commit is pushed (mirrors GitHub Desktop)', async () => {
     const dir = seedRepo()
     put(dir, 'foo.txt', 'hi')
     await commitSelection(dir, 'add foo', COMMIT_ALL)
     const tip = head(dir)
 
-    // Pretend the upstream is at the undone commit → it's been pushed.
+    // Upstream at the undone commit → pushed → no undo offered.
     git(dir, 'update-ref', 'refs/remotes/origin/main', tip)
-    expect((await readUndoSnapshot(dir, tip, 'origin/main'))?.pushed).toBe(true)
-    // Upstream one commit behind → not yet pushed.
+    expect(await readUndoSnapshot(dir, tip, 'origin/main')).toBeNull()
+    // Upstream one commit behind → unpushed → undo offered.
     git(dir, 'update-ref', 'refs/remotes/origin/main', `${tip}~1`)
-    expect((await readUndoSnapshot(dir, tip, 'origin/main'))?.pushed).toBe(false)
+    expect((await readUndoSnapshot(dir, tip, 'origin/main'))?.kind).toBe('commit')
+  })
+
+  test('a reset stays undoable even when its new tip is already pushed', async () => {
+    const dir = seedRepo()
+    put(dir, 'b.txt', 'b')
+    rawCommit(dir, 'c1')
+    const c0 = git(dir, 'rev-parse', 'HEAD~1').trim()
+
+    await reset(dir, c0, 'mixed')
+    expect(head(dir)).toBe(c0)
+    // c0 is on the upstream, but undoing a reset only restores commits — it
+    // never rewrites published history — so it's still offered.
+    git(dir, 'update-ref', 'refs/remotes/origin/main', c0)
+    expect((await readUndoSnapshot(dir, c0, 'origin/main'))?.kind).toBe('reset')
   })
 
   test('the repo snapshot carries the undo affordance', async () => {

@@ -129,21 +129,21 @@ export interface UndoRecord {
 
 /**
  * The undo affordance the renderer shows, derived from the recorded UndoRecord
- * in every snapshot — present only while that record is still valid. The
- * renderer stays dumb: it renders the banner when this is set and calls `undo`
- * when the button is hit.
+ * in every snapshot — present only while that record is still valid and the
+ * change isn't already published (see readUndoSnapshot). The renderer stays
+ * dumb: it renders the banner when this is set and calls `undo` when hit.
  */
 export interface UndoSnapshot {
   kind: UndoableKind
   label: string
+  /**
+   * The current branch tip the undo would unwind from — always HEAD (an undo is
+   * only offered while it matches). Lets the History view show the undo action
+   * on exactly the HEAD commit's context menu.
+   */
+  headSha: string
   /** Relative time since the operation, e.g. "2 minutes ago". */
   relativeTime: string
-  /**
-   * True when the undone history was already pushed to the upstream — undoing it
-   * locally will make the branch diverge from the remote, so the UI confirms
-   * once before proceeding.
-   */
-  pushed: boolean
 }
 
 /** What `undo` hands back, so the renderer can refill the composer and narrate. */

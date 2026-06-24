@@ -5,15 +5,13 @@
 // sidebar-banner rule. Mutually exclusive with the in-progress op banner: you
 // can't undo a finished operation while another one owns the working tree.
 //
-// When the undone history was already pushed, undoing locally diverges the
-// branch from the remote, so the button confirms once before proceeding —
-// "destructive actions ask once". Otherwise it's instant.
+// Already-published changes never reach here: the snapshot withholds the undo
+// once the tip is pushed (see readUndoSnapshot), mirroring GitHub Desktop — so
+// the banner can't rewrite remote history, and needs no warning of its own.
 //
 // styles: features/banners.css
 
 import type { UndoSnapshot } from '@shared/types'
-import { useState } from 'react'
-import { ConfirmDialog } from '@/components/common/Dialog'
 import { Icon } from '@/lib/icons'
 
 interface Props {
@@ -24,49 +22,25 @@ interface Props {
 }
 
 export function UndoBanner({ undo, busy, onUndo }: Props) {
-  const [confirmPushed, setConfirmPushed] = useState(false)
-
   return (
-    <>
-      <div className="undo-banner" role="status">
-        <span className="undo-banner__icon" aria-hidden>
-          <Icon.Undo size={15} />
-        </span>
-        <div className="undo-banner__text">
-          <strong>{undo.label}</strong>
-          <span>{undo.relativeTime} — undo it to get back to where you were.</span>
-        </div>
-        <div className="undo-banner__actions">
-          <button
-            className="btn-ghost btn-ghost--sm"
-            disabled={busy}
-            data-tip="Undo this and restore your previous state"
-            onClick={() => (undo.pushed ? setConfirmPushed(true) : onUndo())}
-          >
-            Undo
-          </button>
-        </div>
+    <div className="undo-banner" role="status">
+      <span className="undo-banner__icon" aria-hidden>
+        <Icon.Undo size={15} />
+      </span>
+      <div className="undo-banner__text">
+        <strong>{undo.label}</strong>
+        <span>{undo.relativeTime} — undo it to get back to where you were.</span>
       </div>
-
-      {confirmPushed && (
-        <ConfirmDialog
-          title="Undo a pushed change?"
-          danger
-          busy={busy}
-          body={
-            <>
-              This was already pushed to the remote. Undoing it here will make your local branch
-              diverge from the remote — you'll need a force-push to update it.
-            </>
-          }
-          confirmLabel="Undo"
-          onConfirm={() => {
-            setConfirmPushed(false)
-            onUndo()
-          }}
-          onCancel={() => setConfirmPushed(false)}
-        />
-      )}
-    </>
+      <div className="undo-banner__actions">
+        <button
+          className="btn-ghost btn-ghost--sm"
+          disabled={busy}
+          data-tip="Undo this and restore your previous state"
+          onClick={onUndo}
+        >
+          Undo
+        </button>
+      </div>
+    </div>
   )
 }
