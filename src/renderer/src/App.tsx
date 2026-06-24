@@ -60,6 +60,7 @@ import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
 import { useTheme } from './lib/theme'
+import { useCommitSize } from './lib/useCommitSize'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
@@ -1157,29 +1158,8 @@ export function App() {
     })
   }, [])
 
-  // On-disk size of the included files — debounced; skipped on gigantic
-  // selections so the stat pass stays trivial.
-  const [commitSize, setCommitSize] = useState<number | null>(null)
-  useEffect(() => {
-    const repoPath = repoRef.current?.path
-    if (!repoPath) return
-    const t = setTimeout(() => {
-      const paths: string[] = []
-      for (const f of changes) {
-        if (f.status === 'conflicted' || f.status === 'deleted') continue
-        if ((selections.get(f.path) ?? 'all') !== 'none') paths.push(f.path)
-      }
-      if (paths.length === 0 || paths.length > 20000) {
-        setCommitSize(paths.length === 0 ? 0 : null)
-        return
-      }
-      window.gitgrove
-        .selectionSize(repoPath, paths)
-        .then(setCommitSize)
-        .catch(() => setCommitSize(null))
-    }, 400)
-    return () => clearTimeout(t)
-  }, [changes, selections])
+  // On-disk size of the files included in the next commit — see useCommitSize.
+  const commitSize = useCommitSize(getRepoPath, changes, selections)
 
   /** Replace one file's hunk selection (from the diff's checkbox bars). */
   const setHunkSelection = useCallback(
