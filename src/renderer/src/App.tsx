@@ -1428,10 +1428,14 @@ export function App() {
           interactiveRebase: (chain, base) => setModal({ kind: 'irebase', commits: chain, base }),
           reset: (c, mode) => runOpRef.current(() => gg.reset(repoPath, c.hash, mode)),
           confirmHardReset: (c) =>
-            setModal({ kind: 'reset', hash: c.hash, shortHash: c.shortHash, mode: 'hard' })
+            setModal({ kind: 'reset', hash: c.hash, shortHash: c.shortHash, mode: 'hard' }),
+          undoLast: () => doUndoRef.current()
         },
         webUrl,
-        unpushedRef.current.has(commit.hash)
+        unpushedRef.current.has(commit.hash),
+        // No undo entry mid-operation — the op owns the working tree (matches the
+        // Changes banner, which also hides while an op is in flight).
+        repoStateRef.current?.op ? null : undoRef.current
       )
     },
     [commits]
