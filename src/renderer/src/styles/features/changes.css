@@ -1,16 +1,22 @@
-/* ── Stash row + popover list ────────────────────────────────────────────── */
-/* The composer's optional header row — just the stash chip, shown only when
-   stashes exist. The 5px resizer strip sits above the composer block; the
-   top border of whichever element comes first is the visible split line. */
+/* ── Composer header row: undo chip (left) + stash chip (right) ───────────── */
+/* The composer's optional header row, shown when there's an undo to offer
+   and/or stashes. The 5px resizer strip sits above the composer block; the
+   top border of whichever element comes first is the visible split line.
+   Wraps on a very narrow sidebar so the two chips stack rather than overflow.
+   styles: UndoChip.tsx, StashPanel.tsx */
 .composer-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px 10px 2px;
   border-top: 1px solid var(--border);
   background: var(--bg-panel);
 }
-.stash-chip {
+/* The two composer-head chips share one quiet pill look — undo is ambient
+   state, deliberately no louder than the stash count beside it. */
+.stash-chip,
+.undo-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -22,11 +28,13 @@
   font-size: 11.5px;
   cursor: pointer;
 }
-.stash-chip:hover:not(:disabled) {
+.stash-chip:hover:not(:disabled),
+.undo-chip:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--fg);
 }
-.stash-chip:disabled {
+.stash-chip:disabled,
+.undo-chip:disabled {
   opacity: 0.5;
   cursor: default;
 }

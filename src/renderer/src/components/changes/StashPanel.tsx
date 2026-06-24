@@ -1,7 +1,8 @@
-// The stash entry point above the composer: a chip with the stash count that
-// opens a filterable popover (arrows + Enter navigate), where each stash can
-// be reviewed (diff dialog), applied, popped or dropped. Renders nothing when
-// the repo has no stashes.
+// The stash entry point in the composer's header row: a chip with the stash
+// count that opens a filterable popover (arrows + Enter navigate), where each
+// stash can be reviewed (diff dialog), applied, popped or dropped. Renders
+// nothing when the repo has no stashes. ChangesView owns the row (.composer-head)
+// and places this chip on the right, opposite the undo chip.
 
 import type { StashEntry } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -61,19 +62,16 @@ export function StashPanel({ repoPath, stashes, busy, theme, runOp }: Props) {
 
   return (
     <>
-      <div className="composer-head">
-        <span className="changes__stash-spacer" />
-        <button
-          ref={anchor}
-          className="stash-chip"
-          disabled={busy}
-          data-tip="Review stashes"
-          onClick={() => setOpen(true)}
-        >
-          <Icon.Stash size={14} />
-          {pluralize(stashes.length, 'stash').replace('stashs', 'stashes')}
-        </button>
-      </div>
+      <button
+        ref={anchor}
+        className="stash-chip"
+        disabled={busy}
+        data-tip="Review stashes"
+        onClick={() => setOpen(true)}
+      >
+        <Icon.Stash size={14} />
+        {pluralize(stashes.length, 'stash').replace('stashs', 'stashes')}
+      </button>
 
       <Popover
         anchor={anchor.current}

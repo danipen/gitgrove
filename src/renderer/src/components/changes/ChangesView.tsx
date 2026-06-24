@@ -26,7 +26,7 @@ import { CommitComposer, type CommitMode, type ComposerDraft } from './CommitCom
 import { PublishedBranchBanner } from './PublishedBranchBanner'
 import { StashPanel } from './StashPanel'
 import { StashReminder } from './StashReminder'
-import { UndoBanner } from './UndoBanner'
+import { UndoChip } from './UndoChip'
 
 interface Props {
   repoPath: string
@@ -553,8 +553,6 @@ export function ChangesView({
         </div>
       )}
 
-      {undo && !op && <UndoBanner undo={undo} busy={busy} onUndo={onUndo} />}
-
       {leftStash && !op && (
         <StashReminder
           repoPath={repoPath}
@@ -656,7 +654,22 @@ export function ChangesView({
         }}
         onCommit={setDescHeight}
       />
-      <StashPanel repoPath={repoPath} stashes={stashes} busy={busy} theme={theme} runOp={runOp} />
+      {/* The composer's header row: the undo chip (left) and the stash chip
+          (right), each shown only when it has something to offer. Undo is
+          ambient — a quiet chip here, never a banner — and hidden mid-op. */}
+      {((undo && !op) || stashes.length > 0) && (
+        <div className="composer-head">
+          {undo && !op && <UndoChip undo={undo} busy={busy} onUndo={onUndo} />}
+          <span className="changes__stash-spacer" />
+          <StashPanel
+            repoPath={repoPath}
+            stashes={stashes}
+            busy={busy}
+            theme={theme}
+            runOp={runOp}
+          />
+        </div>
+      )}
 
       <Popover
         anchor={modeAnchor.current}
