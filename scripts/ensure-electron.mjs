@@ -6,10 +6,13 @@
 // run electron/install.js on demand. It's idempotent: an already-extracted
 // binary is an instant no-op, so a warm machine / repeat install costs nothing.
 //
-// Success here means the binary is *present on disk*, NOT that it launches — the
-// lint and unit-test jobs (and headless Linux generally) can't run `electron
-// --version` without a display/libs, and they don't need to. Whether it
-// actually launches is the E2E smoke's job.
+// We check the installed binary by its files (path.txt + dist), NOT via
+// `require('electron')` — requiring it has a side effect (electron/index.js
+// auto-spawns install.js and prints "Downloading Electron binary..."), which
+// muddies the logs and double-installs. And success means the binary is
+// *present on disk*, NOT that it launches: the lint/unit jobs (and headless
+// Linux) can't run `electron --version`, and don't need to — launching is the
+// E2E smoke's job.
 //
 // By default this is best-effort: if the binary can't be installed (a flaky
 // download, or a platform with no prebuilt — e.g. win32-arm64), it warns and
@@ -23,7 +26,7 @@
 // gives local macOS dev a launchable binary from a plain `bun install`.
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, rmSync } from 'node:fs'
+import { existsSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -33,21 +36,21 @@ const require = createRequire(import.meta.url)
 // Best-effort by default; `--require` (the E2E job) fails hard on a missing binary.
 const required = process.argv.includes('--require')
 
-/** Absolute path to the Electron executable, or null when it isn't installed. */
-function electronBinary() {
-  try {
-    // electron/index.js exports the binary path it read from path.txt; it
-    // throws when the binary hasn't been fetched yet.
-    return require('electron')
-  } catch {
-    return null
-  }
-}
+/** node_modules/electron — resolved without running electron/index.js. */
+const electronDir = dirname(require.resolve('electron/package.json'))
 
-/** True when the binary has been extracted to disk (existence, not launch). */
-function installed() {
-  const bin = electronBinary()
-  return bin !== null && existsSync(bin)
+/**
+ * Absolute path to the extracted Electron executable, or null when it isn't
+ * installed. Reads electron's own path.txt (written by install.js) — no
+ * `require('electron')`, so it has no download side effect.
+ */
+function binaryPath() {
+  const pathFile = join(electronDir, 'path.txt')
+  if (!existsSync(pathFile)) return null
+  const rel = readFileSync(pathFile, 'utf8').trim()
+  if (!rel) return null
+  const bin = join(electronDir, 'dist', rel)
+  return existsSync(bin) ? bin : null
 }
 
 /**
@@ -57,7 +60,7 @@ function installed() {
  */
 function macosFixup() {
   if (process.platform !== 'darwin') return
-  const bin = electronBinary()
+  const bin = binaryPath()
   if (!bin) return
   const i = bin.indexOf('.app')
   if (i === -1) return
@@ -79,25 +82,31 @@ function sleep(ms) {
 }
 
 /**
- * Re-run electron/install.js. `freshDownload` forces a genuine re-download:
- * `force_no_cache` alone is not honored by @electron/get here, so we also delete
- * its on-disk cache — otherwise a poisoned/partial zip is re-extracted forever.
+ * Run electron/install.js directly. `freshDownload` forces a genuine
+ * re-download: `force_no_cache` alone is not honored by @electron/get here, so
+ * we also delete its on-disk cache — otherwise a poisoned/partial zip is
+ * re-extracted forever. DEBUG is always on so a failed download prints its
+ * cause (it only runs when there's actually something to install).
  */
 function reinstall(freshDownload) {
-  const electronDir = dirname(require.resolve('electron/package.json'))
   rmSync(join(electronDir, 'dist'), { recursive: true, force: true })
   rmSync(join(electronDir, 'path.txt'), { force: true })
-  const env = { ...process.env }
+  const env = { ...process.env, DEBUG: '@electron/get:*' }
   if (freshDownload) {
     env.force_no_cache = 'true'
     env.electron_use_remote_checksums = '1'
     for (const dir of cacheDirs) rmSync(dir, { recursive: true, force: true })
   }
-  spawnSync(process.execPath, [join(electronDir, 'install.js')], { stdio: 'inherit', env })
+  const result = spawnSync(process.execPath, [join(electronDir, 'install.js')], {
+    stdio: 'inherit',
+    env
+  })
+  if (result.error) console.warn(`install.js could not run: ${result.error.message}`)
+  else if (result.status !== 0) console.warn(`install.js exited with status ${result.status}`)
 }
 
 // Already extracted (warm machine / repeat install): just keep it launchable.
-if (installed()) {
+if (binaryPath()) {
   macosFixup()
   process.exit(0)
 }
@@ -105,14 +114,14 @@ if (installed()) {
 for (let attempt = 1; attempt <= 4; attempt++) {
   console.log(`Installing the Electron binary (attempt ${attempt}/4)…`)
   reinstall(attempt >= 2) // attempt 1 trusts the cache; later ones force a fresh download
-  if (installed()) {
+  if (binaryPath()) {
     macosFixup()
     process.exit(0)
   }
-  sleep(attempt * 1000)
+  sleep(attempt * 3000) // 3s, 6s, 9s — ride out a transient GitHub-releases blip
 }
 
-const detail = `${process.platform} ${process.arch} — resolved path: ${electronBinary() ?? '(path.txt missing)'}`
+const detail = `${process.platform} ${process.arch}`
 if (required) {
   console.error(`\nElectron binary could not be installed after 4 attempts (${detail}).`)
   process.exit(1)
