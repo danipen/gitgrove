@@ -66,6 +66,7 @@ import { useGitAvailability } from './lib/useGitAvailability'
 import { useLfs } from './lib/useLfs'
 import { useOpProgress } from './lib/useOpProgress'
 import { usePullRequests } from './lib/usePullRequests'
+import { type MissingRepoInfo, useRepoRecovery } from './lib/useRepoRecovery'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history'
@@ -97,13 +98,9 @@ export function App() {
   const [trusting, setTrusting] = useState(false)
 
   // A repo whose folder is gone — set to swap the workspace for the recovery
-  // screen (Locate / Clone Again / Remove). `recovering` drives "Check again".
-  const [missingRepo, setMissingRepo] = useState<{
-    path: string
-    name: string
-    remoteUrl: string | null
-  } | null>(null)
-  const [recovering, setRecovering] = useState(false)
+  // screen (Locate / Clone Again / Remove). The recovery actions + the
+  // "Check again" busy flag live in useRepoRecovery (wired up below).
+  const [missingRepo, setMissingRepo] = useState<MissingRepoInfo | null>(null)
 
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -691,49 +688,10 @@ export function App() {
     }
   }, [trustPath, handleOpen, fail])
 
-  // ── Missing-repo recovery (Locate / Clone Again / Remove / Check again) ────
-  const recoverCheckAgain = useCallback(async () => {
-    if (!missingRepo) return
-    setRecovering(true)
-    try {
-      handleOpen(await window.gitgrove.openRepo(missingRepo.path))
-    } catch (e) {
-      fail(e)
-    } finally {
-      setRecovering(false)
-    }
-  }, [missingRepo, handleOpen, fail])
-
-  const recoverLocate = useCallback(async () => {
-    if (!missingRepo) return
-    const stalePath = missingRepo.path
-    try {
-      const res = await window.gitgrove.pickRepo()
-      if (!res) return
-      // Opened a folder elsewhere — forget the dead path so it stops haunting
-      // the recents (the newly-opened one was just remembered under its path).
-      if (res.ok) await window.gitgrove.removeRecent(stalePath)
-      handleOpen(res)
-    } catch (e) {
-      fail(e)
-    }
-  }, [missingRepo, handleOpen, fail])
-
-  const recoverRemove = useCallback(async () => {
-    if (!missingRepo) return
-    await window.gitgrove.removeRecent(missingRepo.path).catch(() => {})
-    setMissingRepo(null)
-  }, [missingRepo])
-
-  const recoverCloneAgain = useCallback(() => {
-    if (!missingRepo?.remoteUrl) return
-    // Clone back into the same parent folder; the dialog composes the leaf from
-    // the repo name and a successful clone replaces the missing recent in place.
-    const trimmed = missingRepo.path.replace(/[\\/]+$/, '')
-    const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
-    const baseDir = cut > 0 ? trimmed.slice(0, cut) : trimmed
-    setModal({ kind: 'clone', initial: { url: missingRepo.remoteUrl, baseDir } })
-  }, [missingRepo])
+  // Missing-repo recovery (Locate / Clone Again / Remove / Check again) — see
+  // useRepoRecovery.
+  const { recovering, recoverCheckAgain, recoverLocate, recoverRemove, recoverCloneAgain } =
+    useRepoRecovery({ missingRepo, setMissingRepo, handleOpen, fail, openModal: setModal })
 
   /** The switch itself: checkout, refresh, and narrate where the changes went. */
   const performCheckout = useCallback(
