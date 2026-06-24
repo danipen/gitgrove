@@ -8,7 +8,6 @@ import type {
   IdentityScope,
   MergeKind,
   MergeOutcome,
-  ProgressOpKind,
   RepoHostInfo,
   RepoOpenResult,
   RepoSnapshot,
@@ -34,6 +33,7 @@ import { Welcome } from './components/app/Welcome'
 import { ChangesView } from './components/changes/ChangesView'
 import type { ComposerDraft } from './components/changes/CommitComposer'
 import { ConflictPanel } from './components/changes/ConflictPanel'
+import { useCommitSelections } from './components/changes/useCommitSelections'
 import type { ContextMenuItem } from './components/common/ContextMenu'
 import { type DiffMode, DiffViewer } from './components/common/DiffViewer'
 import { Resizer } from './components/common/Resizer'
@@ -43,22 +43,17 @@ import { CommitSummary } from './components/history/CommitSummary'
 import { commitMenuItems } from './components/history/commitMenuItems'
 import { FileHistoryOverlay, type FileHistoryTarget } from './components/history/FileHistoryOverlay'
 import { HistoryView } from './components/history/HistoryView'
+import { useCommitDetail } from './components/history/useCommitDetail'
+import { useCommitLog } from './components/history/useCommitLog'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import type { BranchAction } from './components/toolbar/BranchSwitcher'
-import type { SyncAction } from './components/toolbar/SyncButton'
 import { Toolbar } from './components/toolbar/Toolbar'
-import {
-  buildCommitSelection,
-  buildStashSelection,
-  type FileSelection
-} from './lib/commit-selection'
+import { useSyncActions } from './components/toolbar/useSyncActions'
+import { buildCommitSelection, buildStashSelection } from './lib/commit-selection'
 import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
 import { useTheme } from './lib/theme'
-import { useCommitDetail } from './lib/useCommitDetail'
-import { useCommitLog } from './lib/useCommitLog'
-import { useCommitSize } from './lib/useCommitSize'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
@@ -127,7 +122,6 @@ export function App() {
   // and a message to drop into the composer after undoing a commit.
   const [undo, setUndo] = useState<UndoSnapshot | null>(null)
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null)
-  const [syncRunning, setSyncRunning] = useState<SyncAction | null>(null)
   // Branch a checkout is switching to, for the switcher's progress display.
   const [checkingOut, setCheckingOut] = useState<string | null>(null)
   const [modal, setModal] = useState<Modal | null>(null)
@@ -175,11 +169,6 @@ export function App() {
   // otherwise stack three status passes on big repos).
   const refreshInFlight = useRef(false)
   const refreshQueued = useRef(false)
-  // The commit selection: checkboxes are pure renderer state — every changed
-  // file defaults to included; toggling never touches git. Missing key =
-  // 'all'; 'none' = excluded; a Map = selected hunk indexes with their
-  // commit patches.
-  const [selections, setSelections] = useState<Map<string, FileSelection>>(new Map())
 
   const fail = useCallback((e: unknown) => {
     const message = e instanceof Error ? e.message : String(e)
@@ -534,6 +523,31 @@ export function App() {
     },
     [fail]
   )
+  const runOpRef = useRef(runOp)
+  runOpRef.current = runOp
+
+  // The commit selection (pure renderer state, zero git): the checkbox map plus
+  // the file/master/hunk toggles, discard-hunk, and the next commit's on-disk
+  // size — see useCommitSelections.
+  const {
+    selections,
+    setSelections,
+    toggleFileIncluded,
+    setAllIncluded,
+    setHunkSelection,
+    discardHunk,
+    commitSize
+  } = useCommitSelections({ changes, changesRef, getRepoPath, runOpRef })
+
+  // The sync slice: fetch/pull/push runner, the running-button flag, and its
+  // determinate fill — see useSyncActions.
+  const { doSync, syncRunning, syncProgress } = useSyncActions({
+    getRepoPath,
+    runOp,
+    syncRef,
+    branchRef,
+    opProgress
+  })
 
   /**
    * Undo the last history-changing operation. Like runOp (serialized behind
@@ -631,7 +645,8 @@ export function App() {
       resetGithub,
       resetLog,
       clearLogSearch,
-      resetDetail
+      resetDetail,
+      setSelections
     ]
   )
 
@@ -734,7 +749,7 @@ export function App() {
         setCheckingOut(null)
       }
     },
-    [loadSnapshot, loadLog, autoSelect, clearDiff, fail, resetLog, resetDetail]
+    [loadSnapshot, loadLog, autoSelect, clearDiff, fail, resetLog, resetDetail, setSelections]
   )
 
   /**
@@ -826,7 +841,7 @@ export function App() {
       if (ok) setSelections(new Map())
       return ok
     },
-    [runOp, selections]
+    [runOp, selections, setSelections]
   )
   const doCommitRef = useRef(doCommit)
   doCommitRef.current = doCommit
@@ -886,102 +901,8 @@ export function App() {
       if (ok) setSelections(new Map())
       return ok
     },
-    [runOp, selections]
+    [runOp, selections, setSelections]
   )
-
-  // ── Commit selection (pure renderer state, zero git) ──────────────────────
-  /** Toggle a file's checkbox: indeterminate/unchecked → included, checked → excluded. */
-  const toggleFileIncluded = useCallback((path: string) => {
-    setSelections((prev) => {
-      const next = new Map(prev)
-      const cur = prev.get(path) ?? 'all'
-      if (cur === 'all') next.set(path, 'none')
-      else next.delete(path) // 'none' or partial → fully included
-      return next
-    })
-  }, [])
-
-  /** Master checkbox: include/exclude every file, or just `paths` when filtering. */
-  const setAllIncluded = useCallback((included: boolean, paths?: string[]) => {
-    if (!paths) {
-      setSelections(
-        included
-          ? new Map()
-          : new Map(changesRef.current.map((f) => [f.path, 'none' as FileSelection]))
-      )
-      return
-    }
-    setSelections((prev) => {
-      const next = new Map(prev)
-      for (const p of paths) {
-        if (included) next.delete(p)
-        else next.set(p, 'none')
-      }
-      return next
-    })
-  }, [])
-
-  // On-disk size of the files included in the next commit — see useCommitSize.
-  const commitSize = useCommitSize(getRepoPath, changes, selections)
-
-  /** Replace one file's hunk selection (from the diff's checkbox bars). */
-  const setHunkSelection = useCallback(
-    (path: string, selected: Map<number, string>, totalHunks: number) => {
-      setSelections((prev) => {
-        const next = new Map(prev)
-        if (selected.size === totalHunks) next.delete(path)
-        else if (selected.size === 0) next.set(path, 'none')
-        else next.set(path, selected)
-        return next
-      })
-    },
-    []
-  )
-
-  /** Discard a hunk in the working tree (reverse-apply its display patch). */
-  const discardHunk = useCallback((patch: string) => {
-    const repoPath = repoRef.current?.path
-    if (!repoPath) return
-    runOpRef.current(() => window.gitgrove.applyPatch(repoPath, patch, { reverse: true }))
-  }, [])
-
-  const doSync = useCallback(
-    async (action: SyncAction) => {
-      const repoPath = repoRef.current?.path
-      if (!repoPath) return
-      setSyncRunning(action)
-      try {
-        await runOp(() => {
-          const gg = window.gitgrove
-          switch (action) {
-            case 'fetch':
-              return gg.fetch(repoPath)
-            case 'pull':
-              return gg.pull(repoPath)
-            case 'pull-rebase':
-              return gg.pull(repoPath, { rebase: true })
-            case 'push':
-              return gg.push(repoPath)
-            case 'force-push':
-              return gg.push(repoPath, { forceWithLease: true })
-            case 'publish': {
-              const remotes = syncRef.current?.remotes ?? []
-              const remote = remotes.includes('origin') ? 'origin' : remotes[0]
-              const current = branchRef.current?.current
-              if (!remote || !current) throw new Error('No remote to publish to.')
-              return gg.push(repoPath, { setUpstream: { remote, branch: current } })
-            }
-          }
-        })
-      } finally {
-        setSyncRunning(null)
-      }
-    },
-    [runOp]
-  )
-
-  const runOpRef = useRef(runOp)
-  runOpRef.current = runOp
 
   /**
    * Run the chosen merge strategy and narrate the outcome: completed and
@@ -1223,18 +1144,8 @@ export function App() {
     setNotice
   )
 
-  // What the toolbar shows of the running op: the sync button's fill (only
-  // when the progress kind matches the running action) and the branch
-  // switcher's "switching to X" fill.
-  const syncKind: ProgressOpKind | null =
-    syncRunning === null
-      ? null
-      : syncRunning === 'fetch'
-        ? 'fetch'
-        : syncRunning.startsWith('pull')
-          ? 'pull'
-          : 'push'
-  const syncProgress = opProgress && opProgress.kind === syncKind ? opProgress.percent : null
+  // The branch switcher's "switching to X" fill (the sync button's fill lives
+  // in useSyncActions; this one keys off the checkout the branch-op path owns).
   const switching = checkingOut
     ? {
         name: checkingOut,

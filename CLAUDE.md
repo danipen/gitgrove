@@ -53,13 +53,16 @@ before adding git calls — its conventions are load-bearing:
 **App shell (`src/main/`)** — `index.ts` (lifecycle + window), `ipc.ts` (registers the
 handlers), `menu.ts`, `watcher.ts` (pushes `repo:changed`), `updater.ts`, `store.ts`.
 
-**Renderer (`src/renderer/src/`)** — `App.tsx` (state and the two tabs); `components/`
-(one per file, UI only) grouped by feature: `changes/`, `history/`, `toolbar/`, `app/`
-(shell screens + app-level dialogs) and `common/` (shared widgets and primitives — same-
-folder imports stay relative, cross-folder go through `@/`); `lib/` (pure logic + hooks —
-`lib/staging.ts` is the **heart of hunk-level staging**: checkboxes are pure renderer
-state, git touched only at commit time; the change block is rendered to a unified patch
-and `git apply --cached`'d); `styles/` (two themes, one layout — see **CSS** below).
+**Renderer (`src/renderer/src/`)** — `App.tsx` (shared state + the cross-feature
+orchestration spine that wires the two tabs together); `components/` (one component — or
+the hook that drives just that feature — per file) grouped by feature: `changes/`,
+`history/`, `toolbar/`, `app/` (shell screens + app-level dialogs) and `common/` (shared
+widgets and primitives — same-folder imports stay relative, cross-folder go through `@/`);
+`lib/` (the **shared tier**: pure logic + hooks reused by 2+ features — a hook used by
+exactly one feature lives in that feature's folder, not here. `lib/staging.ts` is the
+**heart of hunk-level staging**: checkboxes are pure renderer state, git touched only at
+commit time; the change block is rendered to a unified patch and `git apply --cached`'d);
+`styles/` (two themes, one layout — see **CSS** below).
 
 ## Commands
 
