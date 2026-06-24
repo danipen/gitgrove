@@ -8,7 +8,6 @@ import type {
   IdentityScope,
   MergeKind,
   MergeOutcome,
-  ProgressOpKind,
   RepoHostInfo,
   RepoOpenResult,
   RepoSnapshot,
@@ -46,8 +45,8 @@ import { FileHistoryOverlay, type FileHistoryTarget } from './components/history
 import { HistoryView } from './components/history/HistoryView'
 import { SettingsDialog } from './components/settings/SettingsDialog'
 import type { BranchAction } from './components/toolbar/BranchSwitcher'
-import type { SyncAction } from './components/toolbar/SyncButton'
 import { Toolbar } from './components/toolbar/Toolbar'
+import { useSyncActions } from './components/toolbar/useSyncActions'
 import { buildCommitSelection, buildStashSelection } from './lib/commit-selection'
 import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
@@ -123,7 +122,6 @@ export function App() {
   // and a message to drop into the composer after undoing a commit.
   const [undo, setUndo] = useState<UndoSnapshot | null>(null)
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null)
-  const [syncRunning, setSyncRunning] = useState<SyncAction | null>(null)
   // Branch a checkout is switching to, for the switcher's progress display.
   const [checkingOut, setCheckingOut] = useState<string | null>(null)
   const [modal, setModal] = useState<Modal | null>(null)
@@ -541,6 +539,16 @@ export function App() {
     commitSize
   } = useCommitSelections({ changes, changesRef, getRepoPath, runOpRef })
 
+  // The sync slice: fetch/pull/push runner, the running-button flag, and its
+  // determinate fill — see useSyncActions.
+  const { doSync, syncRunning, syncProgress } = useSyncActions({
+    getRepoPath,
+    runOp,
+    syncRef,
+    branchRef,
+    opProgress
+  })
+
   /**
    * Undo the last history-changing operation. Like runOp (serialized behind
    * `busy`, refreshed on completion, errors → toast) but it keeps the result so
@@ -896,41 +904,6 @@ export function App() {
     [runOp, selections, setSelections]
   )
 
-  const doSync = useCallback(
-    async (action: SyncAction) => {
-      const repoPath = repoRef.current?.path
-      if (!repoPath) return
-      setSyncRunning(action)
-      try {
-        await runOp(() => {
-          const gg = window.gitgrove
-          switch (action) {
-            case 'fetch':
-              return gg.fetch(repoPath)
-            case 'pull':
-              return gg.pull(repoPath)
-            case 'pull-rebase':
-              return gg.pull(repoPath, { rebase: true })
-            case 'push':
-              return gg.push(repoPath)
-            case 'force-push':
-              return gg.push(repoPath, { forceWithLease: true })
-            case 'publish': {
-              const remotes = syncRef.current?.remotes ?? []
-              const remote = remotes.includes('origin') ? 'origin' : remotes[0]
-              const current = branchRef.current?.current
-              if (!remote || !current) throw new Error('No remote to publish to.')
-              return gg.push(repoPath, { setUpstream: { remote, branch: current } })
-            }
-          }
-        })
-      } finally {
-        setSyncRunning(null)
-      }
-    },
-    [runOp]
-  )
-
   /**
    * Run the chosen merge strategy and narrate the outcome: completed and
    * already-up-to-date get a friendly notice, so a merge never ends in
@@ -1171,18 +1144,8 @@ export function App() {
     setNotice
   )
 
-  // What the toolbar shows of the running op: the sync button's fill (only
-  // when the progress kind matches the running action) and the branch
-  // switcher's "switching to X" fill.
-  const syncKind: ProgressOpKind | null =
-    syncRunning === null
-      ? null
-      : syncRunning === 'fetch'
-        ? 'fetch'
-        : syncRunning.startsWith('pull')
-          ? 'pull'
-          : 'push'
-  const syncProgress = opProgress && opProgress.kind === syncKind ? opProgress.percent : null
+  // The branch switcher's "switching to X" fill (the sync button's fill lives
+  // in useSyncActions; this one keys off the checkout the branch-op path owns).
   const switching = checkingOut
     ? {
         name: checkingOut,
