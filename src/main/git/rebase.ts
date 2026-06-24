@@ -6,7 +6,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { RebaseTodoItem } from '@shared/types'
-import { run } from './exec'
+import { runOnceWithRetry } from './exec'
+import { withUndo } from './undo'
 
 /**
  * The message-editor invocations git will make for a todo list, in order:
@@ -90,12 +91,23 @@ export async function rebaseInteractive(
       'utf8'
     )
 
-    await run(repoPath, ['-c', 'rebase.autoSquash=false', 'rebase', '-i', base], {
-      env: {
-        GIT_SEQUENCE_EDITOR: `sh "${posixDir}/seq-editor.sh"`,
-        GIT_EDITOR: `sh "${posixDir}/msg-editor.sh"`
-      }
-    })
+    // Wrapped so a completed interactive rebase can be undone in one step. A
+    // rebase that stops on conflicts throws (run rejects), so withUndo records
+    // nothing for it — its abort lives in the in-progress conflict banner.
+    await withUndo(
+      repoPath,
+      {
+        kind: 'rebase-interactive',
+        label: ({ currentBranch }) => `Rewrote ${currentBranch ?? 'HEAD'} history`
+      },
+      () =>
+        runOnceWithRetry(repoPath, ['-c', 'rebase.autoSquash=false', 'rebase', '-i', base], {
+          env: {
+            GIT_SEQUENCE_EDITOR: `sh "${posixDir}/seq-editor.sh"`,
+            GIT_EDITOR: `sh "${posixDir}/msg-editor.sh"`
+          }
+        })
+    )
   } finally {
     // A stopped (conflicted) rebase no longer needs the scripts — git only
     // reads the sequence/message editors while the command itself runs; on

@@ -80,6 +80,7 @@ const api: GitGroveApi = {
   cherryPick: (repoPath, hash) => ipcRenderer.invoke(IPC.cherryPick, repoPath, hash),
   revertCommit: (repoPath, hash) => ipcRenderer.invoke(IPC.revertCommit, repoPath, hash),
   reset: (repoPath, hash, mode) => ipcRenderer.invoke(IPC.reset, repoPath, hash, mode),
+  undo: (repoPath) => ipcRenderer.invoke(IPC.undo, repoPath),
   continueOp: (repoPath, op) => ipcRenderer.invoke(IPC.continueOp, repoPath, op),
   abortOp: (repoPath, op) => ipcRenderer.invoke(IPC.abortOp, repoPath, op),
   skipRebaseCommit: (repoPath) => ipcRenderer.invoke(IPC.skipRebaseCommit, repoPath),

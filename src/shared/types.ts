@@ -72,11 +72,87 @@ export interface RepoSnapshot {
   state: RepoState
   stashes: StashEntry[]
   /**
+   * The one-step undo offered for the last history-changing operation, or null
+   * when there's nothing to undo. Derived fresh from the recorded undo point
+   * (see UndoSnapshot) on every snapshot, so the banner appears and disappears
+   * on its own as HEAD moves — no renderer bookkeeping.
+   */
+  undo: UndoSnapshot | null
+  /**
    * How long the underlying `git status` took (ms). Persistently high values
    * mean git's large-repo features (fsmonitor, untracked cache, index v4) are
    * off — the renderer offers to enable them.
    */
   statusMs: number
+}
+
+/**
+ * A history-changing operation GitGrove can undo in a single step. Each of
+ * these moves the current branch's tip; undo restores it to where it was,
+ * without ever losing uncommitted work (see main/git/undo.ts).
+ */
+export type UndoableKind =
+  | 'commit'
+  | 'amend'
+  | 'merge'
+  | 'rebase'
+  | 'rebase-interactive'
+  | 'cherry-pick'
+  | 'revert'
+  | 'reset'
+
+/**
+ * The undo point GitGrove records before each history-changing operation,
+ * persisted in `<git-dir>/gitgrove/undo.json`. Single-level (each new operation
+ * overwrites it) and self-cleaning: it's only honoured while the branch tip is
+ * still exactly where the operation left it (`postSha`). Persisting it to the
+ * git dir means an undo survives an app restart — but the staleness check keeps
+ * it honest. The pre-op tip typically equals git's own ORIG_HEAD/HEAD@{1} for
+ * the rewrite ops; we keep our own record because it also carries the kind, a
+ * human label, and the undone commit's message.
+ */
+export interface UndoRecord {
+  kind: UndoableKind
+  /** Branch the operation ran on, or null when detached (informational). */
+  branch: string | null
+  /** Tip before the operation. Null when HEAD was unborn → undoing a first commit. */
+  preSha: string | null
+  /** Tip the operation produced — the staleness anchor for offering the undo. */
+  postSha: string
+  /** Human label for the banner, e.g. "Merged feature/x into main". */
+  label: string
+  /** Full message (%B) of the undone commit, to refill the composer (commit/amend). */
+  message?: string
+  /** ISO timestamp the operation completed, for the banner's relative time. */
+  at: string
+}
+
+/**
+ * The undo affordance the renderer shows, derived from the recorded UndoRecord
+ * in every snapshot — present only while that record is still valid. The
+ * renderer stays dumb: it renders the banner when this is set and calls `undo`
+ * when the button is hit.
+ */
+export interface UndoSnapshot {
+  kind: UndoableKind
+  label: string
+  /** Relative time since the operation, e.g. "2 minutes ago". */
+  relativeTime: string
+  /**
+   * True when the undone history was already pushed to the upstream — undoing it
+   * locally will make the branch diverge from the remote, so the UI confirms
+   * once before proceeding.
+   */
+  pushed: boolean
+}
+
+/** What `undo` hands back, so the renderer can refill the composer and narrate. */
+export interface UndoResult {
+  kind: UndoableKind
+  /** Commit message to restore into the composer (commit/amend undo only). */
+  message?: string
+  /** A calm one-liner for the success toast, e.g. "Commit undone." */
+  notice: string
 }
 
 /** Upstream-tracking summary that drives the toolbar sync button. */
