@@ -1,8 +1,8 @@
 // The stash entry point in the composer's header row: a chip with the stash
 // count that opens a filterable popover (arrows + Enter navigate), where each
 // stash can be reviewed (diff dialog), applied, popped or dropped. Renders
-// nothing when the repo has no stashes. ChangesView owns the row (.composer-head)
-// and places this chip on the right, opposite the undo chip.
+// nothing when the repo has no stashes. ChangesView owns the row
+// (.composer-head, right-aligned).
 
 import type { StashEntry } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
