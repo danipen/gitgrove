@@ -21,7 +21,8 @@ import type {
   RepoState,
   RepoSummary,
   StashEntry,
-  SyncStatus
+  SyncStatus,
+  UndoSnapshot
 } from '@shared/types'
 import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AboutDialog } from './components/app/AboutDialog'
@@ -37,6 +38,7 @@ import { TrustDialog } from './components/app/TrustDialog'
 import { UpdateBanner } from './components/app/UpdateBanner'
 import { Welcome } from './components/app/Welcome'
 import { ChangesView } from './components/changes/ChangesView'
+import type { ComposerDraft } from './components/changes/CommitComposer'
 import { ConflictPanel } from './components/changes/ConflictPanel'
 import type { ContextMenuItem } from './components/common/ContextMenu'
 import { type DiffMode, DiffViewer } from './components/common/DiffViewer'
@@ -135,6 +137,10 @@ export function App() {
   const [repoState, setRepoState] = useState<RepoState | null>(null)
   const [sync, setSync] = useState<SyncStatus | null>(null)
   const [stashes, setStashes] = useState<StashEntry[]>([])
+  // The one-step undo for the last operation (drives the Changes undo banner),
+  // and a message to drop into the composer after undoing a commit.
+  const [undo, setUndo] = useState<UndoSnapshot | null>(null)
+  const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null)
   const [syncRunning, setSyncRunning] = useState<SyncAction | null>(null)
   // Determinate progress of the op this window started (checkout/fetch/pull/
   // push), already mapped onto one 0–100 scale; null while idle or before git
@@ -248,6 +254,10 @@ export function App() {
   syncRef.current = sync
   const busyRef = useRef(busy)
   busyRef.current = busy
+  // Lets the menu's "Undo Last Action" no-op silently when there's nothing to
+  // undo (the banner button only shows when there is).
+  const undoRef = useRef<UndoSnapshot | null>(undo)
+  undoRef.current = undo
   const branchesLoadingRef = useRef(false)
   // Refresh coalescing: one in flight at a time; triggers that arrive while it
   // runs collapse into a single trailing run (watcher + focus + post-op can
@@ -307,6 +317,7 @@ export function App() {
       remotes: snap.remotes
     })
     setStashes(snap.stashes)
+    setUndo(snap.undo)
     // Keep the displayed branch fresh without enumerating all branches — the
     // full list is loaded lazily when the switcher opens.
     setBranch((prev) =>
@@ -730,6 +741,38 @@ export function App() {
     [fail]
   )
 
+  /**
+   * Undo the last history-changing operation. Like runOp (serialized behind
+   * `busy`, refreshed on completion, errors → toast) but it keeps the result so
+   * an undone commit's message can flow back into the composer. No-ops when
+   * there's nothing to undo, so the menu item is harmless when the banner is hidden.
+   */
+  const doUndo = useCallback(async () => {
+    const repoPath = repoRef.current?.path
+    if (!repoPath || busyRef.current || !undoRef.current) return
+    setBusy(true)
+    try {
+      const result = await window.gitgrove.undo(repoPath)
+      await refreshRef.current()
+      if (result.message !== undefined) {
+        const [first, ...rest] = result.message.split('\n')
+        setComposerDraft({
+          summary: first ?? '',
+          description: rest.join('\n').replace(/^\n+/, ''),
+          nonce: Date.now()
+        })
+      }
+      setNotice(result.notice)
+    } catch (e) {
+      fail(e)
+      await refreshRef.current().catch(() => {})
+    } finally {
+      setBusy(false)
+    }
+  }, [fail])
+  const doUndoRef = useRef(doUndo)
+  doUndoRef.current = doUndo
+
   // ── Repository lifecycle ───────────────────────────────────────────────────
   const applyRepo = useCallback(
     async (summary: RepoSummary) => {
@@ -768,6 +811,8 @@ export function App() {
       setRepoState(null)
       setSync(null)
       setStashes([])
+      setUndo(null)
+      setComposerDraft(null)
       setModal(null)
       setFileHistory(null)
       // A repo switch abandons any commit waiting on the identity dialog; its
@@ -1487,6 +1532,9 @@ export function App() {
               setModal({ kind: 'new-branch' })
             }
             break
+          case 'undo':
+            if (hasRepo) doUndoRef.current()
+            break
           case 'stash':
             if (hasRepo) setModal({ kind: 'stash' })
             break
@@ -1931,6 +1979,9 @@ export function App() {
                 repoState={repoState}
                 stashes={stashes}
                 createPrUrl={createPrUrl}
+                undo={undo}
+                onUndo={doUndo}
+                composerDraft={composerDraft}
                 selectedPath={changeSel}
                 onSelectFile={(path) => selectWorkingFile(path)}
                 onFileSelectionChange={setChangeSelCount}

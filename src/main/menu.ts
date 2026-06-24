@@ -127,6 +127,14 @@ export function buildMenu(ctx: MenuContext): void {
           click: () => sendCommand('stash')
         },
         { type: 'separator' },
+        // No accelerator: a global Cmd/Ctrl+Z here would hijack text undo in
+        // the commit composer. The Changes banner is the primary affordance.
+        {
+          label: 'Undo Last Action',
+          enabled: !!repoPath,
+          click: () => sendCommand('undo')
+        },
+        { type: 'separator' },
         {
           label: 'Speed Up Large Repository',
           enabled: !!repoPath,

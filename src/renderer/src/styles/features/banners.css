@@ -135,8 +135,54 @@
 .op-banner__actions .btn-primary--sm,
 .op-banner__actions .btn-ghost--sm,
 .stash-reminder__actions .btn-primary--sm,
-.stash-reminder__actions .btn-ghost--sm {
+.stash-reminder__actions .btn-ghost--sm,
+.undo-banner__actions .btn-ghost--sm {
   padding: 4px 10px;
+}
+/* ── Undo banner (the last operation can be taken back) ───────────────────── */
+/* Neutral and calm — undoing what you just did is a correction, not a warning,
+   and visually distinct from the op banner (modified/added tints) and the stash
+   reminder (accent). Same single-row layout (icon · message · one button) per
+   the sidebar-banner rule.
+   styles: UndoBanner.tsx */
+.undo-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 3px 0 0 var(--fg-faint);
+  background: var(--bg-active);
+}
+.undo-banner__icon {
+  display: flex;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--fg-faint);
+}
+.undo-banner__text {
+  flex: 1;
+  min-width: 150px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+.undo-banner__text strong {
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.undo-banner__text span {
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+.undo-banner__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  /* Centered against the text block, like the other banners' actions. */
+  align-self: center;
 }
 /* ── Welcome-back stash reminder (changes left behind while branching) ───── */
 /* Same calm banner shape as .op-banner, accent-tinted: returning to changes

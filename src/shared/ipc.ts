@@ -193,6 +193,7 @@ export type MenuCommand =
   | 'pull'
   | 'push'
   | 'new-branch'
+  | 'undo'
   | 'stash'
   | 'worktrees'
   | 'submodules'

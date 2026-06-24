@@ -21,6 +21,17 @@ import { isCmdOrCtrl, modKeyLabel } from '@/lib/platform'
 
 export type CommitMode = 'commit' | 'amend' | 'stash'
 
+/**
+ * A commit message to drop into the composer from outside (e.g. after undoing a
+ * commit restores its message). `nonce` changes each time so re-injecting the
+ * same text still applies.
+ */
+export interface ComposerDraft {
+  summary: string
+  description: string
+  nonce: number
+}
+
 /** What blocks the composer during each non-merge op, for the tooltip. */
 const OP_NOUN: Record<Exclude<RepoOpKind, 'merging'>, string> = {
   rebasing: 'rebase',
@@ -51,6 +62,8 @@ interface Props {
   descriptionHeight: number
   /** Receives the description textarea node, for live splitter previews. */
   descriptionRef?: (el: HTMLTextAreaElement | null) => void
+  /** A message to load into the fields from outside (e.g. after undoing a commit). */
+  injectedDraft?: ComposerDraft | null
   /** Receives the mode button node — the mode popover anchors to it. */
   modeMenuRef: (el: HTMLButtonElement | null) => void
   /** Open the mode popover (Commit / Amend / Stash), owned by ChangesView. */
@@ -72,6 +85,7 @@ export function CommitComposer({
   mergeSource,
   descriptionHeight,
   descriptionRef,
+  injectedDraft,
   modeMenuRef,
   onOpenModeMenu,
   onCommit,
@@ -119,6 +133,17 @@ export function CommitComposer({
       draftRef.current = null
     }
   }, [mode])
+
+  // Load a draft pushed from outside (e.g. an undone commit's message). Keyed on
+  // the nonce so re-injecting identical text still applies; clears the saved
+  // amend draft so the restored message is what a later mode flip restores.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the nonce should trigger this
+  useEffect(() => {
+    if (!injectedDraft) return
+    setSummary(injectedDraft.summary)
+    setDescription(injectedDraft.description)
+    draftRef.current = null
+  }, [injectedDraft?.nonce])
 
   const amend = mode === 'amend'
   const stash = mode === 'stash'
