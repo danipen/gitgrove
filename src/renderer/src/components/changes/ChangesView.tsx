@@ -654,6 +654,16 @@ export function ChangesView({
         }}
         onCommit={setDescHeight}
       />
+      {/* The undo is its own quiet section at the top of the footer zone, with a
+          divider below it. Ambient state, never a banner; hidden mid-op. */}
+      {undo && !op && (
+        <div className="undo-section">
+          <UndoRow undo={undo} busy={busy} onUndo={onUndo} />
+        </div>
+      )}
+
+      {/* The stash chip sits flush on the composer (one group) — it's about the
+          work you're about to commit. */}
       {stashes.length > 0 && (
         <div className="composer-head">
           <StashPanel
@@ -663,15 +673,6 @@ export function ChangesView({
             theme={theme}
             runOp={runOp}
           />
-        </div>
-      )}
-
-      {/* The undo sits directly above the composer — it's about the commit you
-          just made. Its own quiet section, divided from the stash row above.
-          Ambient state, never a banner; hidden mid-op. */}
-      {undo && !op && (
-        <div className="undo-section">
-          <UndoRow undo={undo} busy={busy} onUndo={onUndo} />
         </div>
       )}
 

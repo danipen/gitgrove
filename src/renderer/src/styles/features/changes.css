@@ -1,12 +1,20 @@
-/* ── Composer footer sections: the stash chip, then undo, then composer ───── */
-/* These blocks stack above the bottom of the panel. Each carries a top border
-   (a single hairline; adjacency rules drop duplicates so no line doubles). The
-   5px resizer strip sits above them; the top border of the first block is the
-   visible split line. The undo sits closest to the composer — it's about the
-   commit you just made — divided from the stash row above it.
+/* ── Composer footer sections: undo, then the stash chip + composer ───────── */
+/* The undo is its own section at the top of the footer zone with a divider
+   below; the stash chip then sits flush on the composer as one group. The 5px
+   resizer strip sits above; the top border of the first block is the visible
+   split line. Adjacency rules drop duplicate borders so no line ever doubles.
    styles: UndoRow.tsx, StashPanel.tsx */
 
-/* The stash chip row, right-aligned. */
+/* The undo section — split line above (when it's first), divider below.
+   Tight vertical padding so its two lines don't outweigh the stash row. */
+.undo-section {
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+/* The stash chip row, right-aligned, flush on the composer below it. */
 .composer-head {
   display: flex;
   justify-content: flex-end;
@@ -17,12 +25,10 @@
   background: var(--bg-panel);
 }
 
-/* The undo section — divided from the stash above (its own top border) and
-   grouped with the composer below (which drops its top border). */
-.undo-section {
-  padding: 7px 10px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-panel);
+/* After the undo section, its border-bottom is the divider — the next block
+   drops its own top border so the line never doubles. */
+.undo-section + .composer-head {
+  border-top: none;
 }
 .undo-section + .composer {
   border-top: none;
