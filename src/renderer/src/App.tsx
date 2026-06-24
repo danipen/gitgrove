@@ -1,4 +1,3 @@
-import type { MenuCommand } from '@shared/ipc'
 import type {
   AppInfo,
   BranchChangesAction,
@@ -65,14 +64,12 @@ import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
 import { useLfs } from './lib/useLfs'
 import { useOpProgress } from './lib/useOpProgress'
+import { useOsIntegration } from './lib/useOsIntegration'
 import { usePullRequests } from './lib/usePullRequests'
 import { type MissingRepoInfo, useRepoRecovery } from './lib/useRepoRecovery'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history'
-
-/** Background fetch cadence (ms) — quiet, skipped while an op runs. */
-const AUTO_FETCH_INTERVAL = 10 * 60 * 1000
 
 export function App() {
   const [repo, setRepo] = useState<RepoSummary | null>(null)
@@ -1180,93 +1177,21 @@ export function App() {
   )
 
   // ── OS integration: menu commands + filesystem change notifications ────────
-  useEffect(() => window.gitgrove.onMenuOpenRepo(() => pickRepo()), [pickRepo])
-
-  useEffect(
-    () =>
-      window.gitgrove.onMenuCommand((command: MenuCommand) => {
-        const hasRepo = !!repoRef.current
-        switch (command) {
-          case 'settings':
-            setModal({ kind: 'settings' })
-            break
-          case 'clone':
-            setModal({ kind: 'clone' })
-            break
-          case 'fetch':
-          case 'pull':
-          case 'push':
-            if (hasRepo) doSync(command)
-            break
-          case 'new-branch':
-            if (hasRepo) {
-              // Fresh enumeration for the dialog's default-branch option.
-              reloadBranches()
-              setModal({ kind: 'new-branch' })
-            }
-            break
-          case 'undo':
-            if (hasRepo) doUndoRef.current()
-            break
-          case 'stash':
-            if (hasRepo) setModal({ kind: 'stash' })
-            break
-          case 'worktrees':
-            if (hasRepo) setModal({ kind: 'worktrees' })
-            break
-          case 'submodules':
-            if (hasRepo) setModal({ kind: 'submodules' })
-            break
-          case 'optimize':
-            if (hasRepo) {
-              const repoPath = repoRef.current?.path
-              if (repoPath) runOpRef.current(() => window.gitgrove.optimizeRepo(repoPath))
-            }
-            break
-        }
-      }),
-    [doSync, reloadBranches]
-  )
-
-  useEffect(() => {
-    return window.gitgrove.onRepoChanged((changedPath) => {
-      // Skip watcher-driven refreshes while one of our own ops runs — runOp
-      // refreshes once on completion, with the final state.
-      if (repoRef.current && changedPath === repoRef.current.path && !busyRef.current) {
-        refreshRef.current()
-      }
-    })
-  }, [])
-
-  // Refresh when the window regains focus — the moment external edits (your
-  // editor, the terminal) become relevant. Throttled so rapid focus flips
-  // don't stack status runs.
-  useEffect(() => {
-    let last = 0
-    const onFocus = () => {
-      const now = Date.now()
-      if (now - last < 1000) return
-      last = now
-      if (repoRef.current && !busyRef.current) refreshRef.current()
-    }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [])
-
-  // Quiet background fetch so ahead/behind stays honest without manual checks.
-  useEffect(() => {
-    if (!repo) return
-    const t = setInterval(() => {
-      const repoPath = repoRef.current?.path
-      if (!repoPath || busyRef.current || syncRef.current?.remotes.length === 0) return
-      // `quiet`: a background fetch must never pop the credential dialog.
-      window.gitgrove
-        .fetch(repoPath, undefined, { quiet: true })
-        .then(() => refreshRef.current())
-        .catch(() => {})
-    }, AUTO_FETCH_INTERVAL)
-    return () => clearInterval(t)
-  }, [repo])
+  // Native menu commands, the watcher refresh, the focus refresh and the quiet
+  // background fetch — see useOsIntegration.
+  useOsIntegration({
+    repo,
+    repoRef,
+    busyRef,
+    syncRef,
+    refreshRef,
+    doUndoRef,
+    runOpRef,
+    pickRepo,
+    doSync,
+    reloadBranches,
+    openModal: setModal
+  })
 
   // ── About dialog + auto-update ─────────────────────────────────────────────
   useEffect(() => {
