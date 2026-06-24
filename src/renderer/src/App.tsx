@@ -57,6 +57,7 @@ import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
 import { useTheme } from './lib/theme'
+import { useCommitDetail } from './lib/useCommitDetail'
 import { useCommitLog } from './lib/useCommitLog'
 import { useCommitSize } from './lib/useCommitSize'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
@@ -142,17 +143,6 @@ export function App() {
   // useCredentialPrompts.
   const { credentialPrompts, respondCredential } = useCredentialPrompts()
 
-  const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null)
-  const [commitFiles, setCommitFiles] = useState<ChangedFile[]>([])
-  const [commitFilesLoading, setCommitFilesLoading] = useState(false)
-  const [commitSelPath, setCommitSelPath] = useState<string | null>(null)
-  const [commitSelCount, setCommitSelCount] = useState(1)
-
-  // Commit-selection request token: selecting a commit fires an async
-  // `commitFiles` fetch, and a slow one can resolve after the user has already
-  // picked another commit. This token lets a superseded selection bail out.
-  const commitReq = useRef(0)
-
   const [sidebarWidth, setSidebarWidth] = usePersistentState('gg.sidebarWidth', 340)
   const bodyRef = useRef<HTMLDivElement>(null)
   const [diffMode, setDiffMode] = usePersistentState<DiffMode>('gg.diffMode', 'split')
@@ -171,15 +161,6 @@ export function App() {
   changeSelRef.current = changeSel
   const changesRef = useRef<ChangedFile[]>(changes)
   changesRef.current = changes
-  // Refs for the re-select guards: clicking the already-focused file/commit
-  // must be a no-op instead of refetching (and flashing) an identical diff.
-  const commitSelPathRef = useRef<string | null>(commitSelPath)
-  commitSelPathRef.current = commitSelPath
-  const selectedCommitRef = useRef<Commit | null>(selectedCommit)
-  selectedCommitRef.current = selectedCommit
-  // Hash whose file list is loaded (or loading); null after a failed fetch so
-  // re-clicking the commit retries.
-  const commitFilesHashRef = useRef<string | null>(null)
   const branchRef = useRef<BranchInfo | null>(branch)
   branchRef.current = branch
   // Ref so doCommit can route a mid-merge commit without re-creating on every
@@ -375,65 +356,18 @@ export function App() {
     [selectWorkingFile, clearDiff]
   )
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: diffRef is read for its live value, not as a trigger — depending on it would churn this handler on every diff load.
-  const selectCommitFile = useCallback(
-    (path: string, hash: string, list?: ChangedFile[], opts?: { force?: boolean }) => {
-      const file = (list ?? commitFiles).find((f) => f.path === path)
-      if (!file) return
-      // Commit diffs are immutable — re-clicking the focused file would only
-      // reload the identical payload and flash the pane. `force` bypasses this
-      // for tab switches (the pane may hold a working diff for the same path)
-      // and for cross-commit auto-selects of the same path.
-      if (!opts?.force && path === commitSelPathRef.current && diffRef.current?.path === path) {
-        return
-      }
-      setCommitSelPath(path)
-      loadCommitDiff(hash, file)
-    },
-    [commitFiles, loadCommitDiff]
-  )
-
-  const selectCommit = useCallback(
-    async (commit: Commit) => {
-      const repoPath = repoRef.current?.path
-      if (!repoPath) return
-      // Re-selecting the selected commit (click or right-click) is a no-op —
-      // its file list and diff are immutable and already loaded (or loading).
-      // Still adopt the new object: a refreshed log may carry updated refs.
-      if (
-        commit.hash === selectedCommitRef.current?.hash &&
-        commitFilesHashRef.current === commit.hash
-      ) {
-        setSelectedCommit(commit)
-        return
-      }
-      const id = ++commitReq.current
-      commitFilesHashRef.current = commit.hash
-      setSelectedCommit(commit)
-      setCommitSelPath(null)
-      setCommitFiles([])
-      setCommitFilesLoading(true)
-      try {
-        const files = await window.gitgrove.commitFiles(repoPath, commit.hash)
-        // A newer commit was selected while this one was loading — drop the
-        // stale result so it can't overwrite the current commit's state.
-        if (id !== commitReq.current) return
-        setCommitFiles(files)
-        // Force: the previous commit may have focused the same path, whose
-        // (different) diff must not be kept.
-        if (files.length > 0) selectCommitFile(files[0].path, commit.hash, files, { force: true })
-        else clearDiff()
-      } catch (e) {
-        if (id === commitReq.current) {
-          commitFilesHashRef.current = null
-          fail(e)
-        }
-      } finally {
-        if (id === commitReq.current) setCommitFilesLoading(false)
-      }
-    },
-    [fail, selectCommitFile, clearDiff]
-  )
+  // The selected History commit and its file list — see useCommitDetail.
+  const {
+    selectedCommit,
+    commitFiles,
+    commitFilesLoading,
+    commitSelPath,
+    commitSelCount,
+    setCommitSelCount,
+    selectCommit,
+    selectCommitFile,
+    resetDetail
+  } = useCommitDetail({ getRepoPath, fail, loadCommitDiff, diffRef, clearDiff })
 
   /**
    * Reveal a commit in the History tab from elsewhere (the blame gutter's commit
@@ -663,9 +597,7 @@ export function App() {
       setChanges([])
       resetLog()
       clearLogSearch()
-      setSelectedCommit(null)
-      setCommitFiles([])
-      setCommitSelPath(null)
+      resetDetail()
       setChangeSel(null)
       setSelections(new Map())
       clearDiff()
@@ -704,7 +636,8 @@ export function App() {
       loadGithubData,
       resetGithub,
       resetLog,
-      clearLogSearch
+      clearLogSearch,
+      resetDetail
     ]
   )
 
@@ -817,9 +750,7 @@ export function App() {
           changes ? { changes } : undefined
         )
         setBranch(result.branch)
-        setSelectedCommit(null)
-        setCommitFiles([])
-        setCommitSelPath(null)
+        resetDetail()
         setChangeSel(null)
         setSelections(new Map())
         resetLog()
@@ -848,7 +779,7 @@ export function App() {
         setCheckingOut(null)
       }
     },
-    [loadSnapshot, loadLog, autoSelect, clearDiff, fail, resetLog]
+    [loadSnapshot, loadLog, autoSelect, clearDiff, fail, resetLog, resetDetail]
   )
 
   /**
