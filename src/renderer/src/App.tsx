@@ -7,7 +7,6 @@ import type {
   ChangedFile,
   CheckoutOutcome,
   Commit,
-  CredentialPromptRequest,
   IdentityScope,
   LfsHealth,
   MergeKind,
@@ -62,6 +61,7 @@ import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
 import { overallPercent } from './lib/progress'
 import { useTheme } from './lib/theme'
+import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
 import { useUpdateBanner } from './lib/useUpdateBanner'
@@ -157,13 +157,9 @@ export function App() {
   const [modal, setModal] = useState<Modal | null>(null)
   const [modalBusy, setModalBusy] = useState(false)
 
-  // Credential prompts pushed from main while a network op waits on auth.
-  // A queue because git asks in steps (username, then password) and parallel
-  // ops can overlap — the dialog shows them one at a time, oldest first.
-  // `oauth` marks prompts whose host supports one-click browser sign-in.
-  const [credentialPrompts, setCredentialPrompts] = useState<
-    Array<CredentialPromptRequest & { oauth: boolean }>
-  >([])
+  // Credential prompts pushed from main while a network op waits on auth — see
+  // useCredentialPrompts.
+  const { credentialPrompts, respondCredential } = useCredentialPrompts()
 
   const [commits, setCommits] = useState<Commit[]>([])
   const [commitsLoading, setCommitsLoading] = useState(false)
@@ -1566,42 +1562,6 @@ export function App() {
       }),
     []
   )
-
-  // Credential prompts: queue arrivals, drop expirations, answer via IPC.
-  useEffect(
-    () =>
-      window.gitgrove.onCredentialPrompt((request) => {
-        // Queue in arrival order immediately — the OAuth probe is async, and
-        // awaiting it before enqueuing could reorder two prompts racing in.
-        // Reaching here means no connected account answered silently; resolve
-        // whether the host supports one-click browser sign-in and flip the flag
-        // on the queued prompt when it does (it both rescues this prompt and
-        // connects the account for every future operation).
-        setCredentialPrompts((prev) => [...prev, { ...request, oauth: false }])
-        if (!request.host) return
-        window.gitgrove
-          .hasOAuthClient(request.host)
-          .then((oauth) => {
-            if (!oauth) return
-            setCredentialPrompts((prev) =>
-              prev.map((p) => (p.requestId === request.requestId ? { ...p, oauth: true } : p))
-            )
-          })
-          .catch(() => {})
-      }),
-    []
-  )
-  useEffect(
-    () =>
-      window.gitgrove.onCredentialDismiss((requestId) =>
-        setCredentialPrompts((prev) => prev.filter((p) => p.requestId !== requestId))
-      ),
-    []
-  )
-  const respondCredential = useCallback((requestId: string, value: string | null) => {
-    setCredentialPrompts((prev) => prev.filter((p) => p.requestId !== requestId))
-    window.gitgrove.respondCredential(requestId, value).catch(() => {})
-  }, [])
 
   useEffect(() => {
     return window.gitgrove.onRepoChanged((changedPath) => {
