@@ -1,4 +1,3 @@
-import { compareUrl } from '@shared/git-host-urls'
 import type { MenuCommand } from '@shared/ipc'
 import type {
   AppInfo,
@@ -11,7 +10,6 @@ import type {
   MergeKind,
   MergeOutcome,
   ProgressOpKind,
-  PullRequestInfo,
   RepoHostInfo,
   RepoOpenResult,
   RepoSnapshot,
@@ -21,7 +19,7 @@ import type {
   SyncStatus,
   UndoSnapshot
 } from '@shared/types'
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { AboutDialog } from './components/app/AboutDialog'
 import { AppModals, type Modal } from './components/app/AppModals'
 import { CloneDialog } from './components/app/CloneDialog'
@@ -65,6 +63,7 @@ import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
 import { useLfs } from './lib/useLfs'
 import { useOpProgress } from './lib/useOpProgress'
+import { usePullRequests } from './lib/usePullRequests'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history'
@@ -77,14 +76,6 @@ export function App() {
   const [repo, setRepo] = useState<RepoSummary | null>(null)
   // The repo's web URL + whether its host is GitHub, for view-on-web / PR links.
   const [hostInfo, setHostInfo] = useState<RepoHostInfo | null>(null)
-  // Full SHAs of commits not yet on any remote: their host commit page 404s, so
-  // "View on GitHub" is grayed out for them. Loaded only for GitHub hosts.
-  const [unpushed, setUnpushed] = useState<Set<string>>(new Set())
-  // Open pull requests on the GitHub remote, matched to branches by head ref.
-  const [pullRequests, setPullRequests] = useState<PullRequestInfo[]>([])
-  // False until the first PR fetch for the current repo resolves, so the
-  // "Create Pull Request" banner never flashes before we know the branch's PRs.
-  const [prsLoaded, setPrsLoaded] = useState(false)
   const [branch, setBranch] = useState<BranchInfo | null>(null)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -190,8 +181,6 @@ export function App() {
   repoRef.current = repo
   const hostInfoRef = useRef<RepoHostInfo | null>(null)
   hostInfoRef.current = hostInfo
-  const unpushedRef = useRef<Set<string>>(unpushed)
-  unpushedRef.current = unpushed
   // Refs so the filesystem-driven refresh can read the latest view without
   // being re-created (which would re-subscribe the watcher).
   const tabRef = useRef<Tab>(tab)
@@ -289,6 +278,16 @@ export function App() {
 
   // Determinate progress of the op this window started — see useOpProgress.
   const opProgress = useOpProgress(busy, busyRef, getRepoPath)
+
+  // The GitHub slice: unpushed set, PR badges, the create-PR banner — see
+  // usePullRequests.
+  const { unpushedRef, prByBranch, createPrUrl, loadGithubData, resetGithub } = usePullRequests({
+    getRepoPath,
+    repo,
+    hostInfo,
+    branch,
+    sync
+  })
 
   // ── Data loaders ─────────────────────────────────────────────────────────
   // One IPC round-trip refreshes everything the sidebar shows: files, current
@@ -638,23 +637,6 @@ export function App() {
     ]
   )
 
-  // Load the GitHub-derived data for a repo: the "not pushed yet" SHA set (grays
-  // out "View on GitHub") and the open pull requests (branch badges). Callers
-  // gate this to GitHub hosts, so neither request runs where it isn't used. A
-  // transient failure keeps the previous values rather than clearing the UI.
-  const loadGithubData = useCallback(async (repoPath: string) => {
-    const [shas, prs] = await Promise.all([
-      window.gitgrove.unpushedCommits(repoPath).catch(() => null),
-      window.gitgrove.pullRequests(repoPath).catch(() => null)
-    ])
-    if (repoRef.current?.path !== repoPath) return
-    if (shas) setUnpushed(new Set(shas))
-    if (prs) {
-      setPullRequests(prs)
-      setPrsLoaded(true)
-    }
-  }, [])
-
   // ── Refresh: pulls every panel up to date (watcher + post-op) ─────────────
   const refresh = useCallback(async () => {
     const repoPath = repoRef.current?.path
@@ -773,9 +755,7 @@ export function App() {
       // cheap and independent, so it fills in on its own without gating the UI.
       // On a GitHub host, also load the unpushed set and open PRs.
       setHostInfo(null)
-      setUnpushed(new Set())
-      setPullRequests([])
-      setPrsLoaded(false)
+      resetGithub()
       window.gitgrove
         .repoHostInfo(summary.path)
         .then((info) => {
@@ -821,7 +801,16 @@ export function App() {
         setChangesLoading(false)
       }
     },
-    [loadSnapshot, loadBranches, autoSelect, clearDiff, fail, failOrRecover, loadGithubData]
+    [
+      loadSnapshot,
+      loadBranches,
+      autoSelect,
+      clearDiff,
+      fail,
+      failOrRecover,
+      loadGithubData,
+      resetGithub
+    ]
   )
 
   // Route an open outcome: success applies the repo, an untrusted folder opens
@@ -1318,60 +1307,8 @@ export function App() {
     [reloadBranches]
   )
 
-  // Map a branch name to its most recent PR of any state (PRs arrive
-  // newest-activity first, so the first match wins). Same-repo PRs only: a fork
-  // PR's head ref names a branch in another repo, so matching by name alone
-  // would be wrong. The badge uses only the open ones; the menu links to this.
-  const prByBranch = useMemo(() => {
-    const map = new Map<string, PullRequestInfo>()
-    for (const pr of pullRequests) {
-      if (!pr.isCrossRepo && !map.has(pr.headBranch)) map.set(pr.headBranch, pr)
-    }
-    return map
-  }, [pullRequests])
-
-  // The compare URL for the "Create Pull Request" banner, or null when it
-  // shouldn't show: only on a GitHub host, for a published branch (has an
-  // upstream) that isn't the default branch and has no PR at all yet.
-  const createPrUrl = useMemo(() => {
-    // Wait until PRs have loaded — otherwise the banner flashes on every repo
-    // open before we know whether the branch already has a PR.
-    if (!prsLoaded) return null
-    if (hostInfo?.provider !== 'github' || !hostInfo.webUrl) return null
-    if (!branch || branch.detached || !branch.defaultBranch) return null
-    const current = branch.current
-    if (!current || current === branch.defaultBranch) return null
-    // Any PR — open, merged or closed — means the branch's PR story is already
-    // told (the menu's "Open Pull Request #N" reaches it), so don't nag to
-    // create another. In particular, a just-merged branch must not reopen this.
-    if (!sync?.upstream || prByBranch.has(current)) return null
-    return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
-  }, [hostInfo, branch, sync, prByBranch, prsLoaded])
-
-  // Refresh PRs + CI when the window regains focus — the cheap way to catch a
-  // build that finished while the user was away, without background polling.
-  useEffect(() => {
-    if (hostInfo?.provider !== 'github' || !repo) return
-    const repoPath = repo.path
-    const onFocus = () => loadGithubData(repoPath)
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [hostInfo, repo, loadGithubData])
-
-  // While the window is focused AND a check is still running, poll every 30s so
-  // a pending dot turns green/red on its own. The moment nothing is pending the
-  // effect re-runs with no timer, so it's silent whenever CI is settled.
-  useEffect(() => {
-    if (hostInfo?.provider !== 'github' || !repo) return
-    if (!pullRequests.some((pr) => pr.checks === 'pending')) return
-    const repoPath = repo.path
-    const timer = setInterval(() => {
-      if (document.hasFocus()) loadGithubData(repoPath)
-    }, 30_000)
-    return () => clearInterval(timer)
-  }, [hostInfo, repo, pullRequests, loadGithubData])
-
   /** Right-click menu for a history commit. */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unpushedRef is a ref read for its live value (the unpushed-commit set), not a trigger.
   const commitMenuFor = useCallback(
     (commit: Commit): ContextMenuItem[] => {
       const repoPath = repoRef.current?.path
