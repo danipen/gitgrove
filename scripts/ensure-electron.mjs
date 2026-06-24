@@ -24,9 +24,16 @@
 // re-signed. GitHub Desktop never hits this because it never launches Electron
 // in CI; our E2E smoke does, so we fix it up here (best-effort) — which also
 // gives local macOS dev a launchable binary from a plain `bun install`.
+//
+// extract-zip twist: on the macos-26 GitHub runner, electron/install.js's
+// extractor (extract-zip) *silently reports success while unpacking nothing* —
+// no error, no files, no path.txt. @electron/get still downloads and
+// checksum-validates the release zip into its cache reliably (that step is
+// never the failure), so when install.js leaves dist/ empty we unpack that same
+// cached zip ourselves with the OS-native tool. See extractCachedZip below.
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -81,6 +88,70 @@ function sleep(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
+/** electron's pinned version (e.g. "42.3.2") — names the cached release zip. */
+const { version: electronVersion } = require(join(electronDir, 'package.json'))
+
+/**
+ * Relative path of the executable inside dist/ — the exact string electron's
+ * own install.js writes to path.txt (forward slashes, even on Windows).
+ */
+function relativeExePath() {
+  switch (process.platform) {
+    case 'darwin':
+      return 'Electron.app/Contents/MacOS/Electron'
+    case 'win32':
+      return 'electron.exe'
+    default:
+      return 'electron'
+  }
+}
+
+/**
+ * The validated release zip @electron/get downloaded, located in its on-disk
+ * cache (laid out as <cacheDir>/<sha256>/electron-v<ver>-<plat>-<arch>.zip), or
+ * null if it isn't there.
+ */
+function cachedZipPath() {
+  const name = `electron-v${electronVersion}-${process.platform}-${process.arch}.zip`
+  for (const root of cacheDirs) {
+    if (!existsSync(root)) continue
+    for (const sub of readdirSync(root)) {
+      const zip = join(root, sub, name)
+      if (existsSync(zip)) return zip
+    }
+  }
+  return null
+}
+
+/**
+ * Fallback for when install.js's extract-zip silently unpacks nothing (the
+ * macos-26 runner): unpack the cached, already-validated zip into dist/ with
+ * the OS-native tool and write path.txt. `ditto` preserves the macOS .app
+ * bundle's symlinks and permissions; `tar` reads zips on Windows 10+; `unzip`
+ * elsewhere. No-op when the zip isn't cached or extraction fails — install.js's
+ * own result then stands and the caller's retry/best-effort logic takes over.
+ */
+function extractCachedZip() {
+  const zip = cachedZipPath()
+  if (!zip) return
+  const dist = join(electronDir, 'dist')
+  rmSync(dist, { recursive: true, force: true })
+  mkdirSync(dist, { recursive: true })
+  const [cmd, args] =
+    process.platform === 'darwin'
+      ? ['ditto', ['-x', '-k', zip, dist]]
+      : process.platform === 'win32'
+        ? ['tar', ['-xf', zip, '-C', dist]]
+        : ['unzip', ['-q', '-o', zip, '-d', dist]]
+  console.log(`Extracting Electron with ${cmd} (install.js left dist/ empty)…`)
+  const result = spawnSync(cmd, args, { stdio: 'inherit' })
+  if (result.error || result.status !== 0) {
+    console.warn(`Native extraction with ${cmd} failed; keeping install.js's result.`)
+    return
+  }
+  writeFileSync(join(electronDir, 'path.txt'), relativeExePath())
+}
+
 /**
  * Run electron/install.js directly. `freshDownload` forces a genuine
  * re-download: `force_no_cache` alone is not honored by @electron/get here, so
@@ -103,6 +174,9 @@ function reinstall(freshDownload) {
   })
   if (result.error) console.warn(`install.js could not run: ${result.error.message}`)
   else if (result.status !== 0) console.warn(`install.js exited with status ${result.status}`)
+  // extract-zip can report success while unpacking nothing (macos-26 runner);
+  // the download still cached a validated zip, so extract it ourselves.
+  if (!binaryPath()) extractCachedZip()
 }
 
 // Already extracted (warm machine / repeat install): just keep it launchable.
