@@ -8,7 +8,6 @@ import type {
   CheckoutOutcome,
   Commit,
   CredentialPromptRequest,
-  GitAvailability,
   IdentityScope,
   LfsHealth,
   MergeKind,
@@ -64,6 +63,7 @@ import { usePersistentState } from './lib/persist'
 import { overallPercent } from './lib/progress'
 import { useTheme } from './lib/theme'
 import { useDiffLoader } from './lib/useDiffLoader'
+import { useGitAvailability } from './lib/useGitAvailability'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history'
@@ -95,9 +95,8 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null)
 
   // Git availability gates the whole UI: null = checking, then a setup screen
-  // when git is missing (see the render gate below).
-  const [git, setGit] = useState<GitAvailability | null>(null)
-  const [gitChecking, setGitChecking] = useState(false)
+  // when git is missing (see the render gate below and useGitAvailability).
+  const { git, gitChecking, recheckGit } = useGitAvailability()
 
   // Path of a folder git flagged as untrusted ("dubious ownership"); set to show
   // the trust prompt, with `trusting` true while persisting the exception.
@@ -1492,23 +1491,6 @@ export function App() {
     },
     [loadLog, fail]
   )
-
-  // ── Git availability: probe on launch, re-probe on demand ──────────────────
-  useEffect(() => {
-    window.gitgrove
-      .checkGit()
-      .then(setGit)
-      .catch(() => setGit({ available: false, platform: 'win32' }))
-  }, [])
-
-  const recheckGit = useCallback(async () => {
-    setGitChecking(true)
-    try {
-      setGit(await window.gitgrove.checkGit(true))
-    } finally {
-      setGitChecking(false)
-    }
-  }, [])
 
   // ── OS integration: menu commands + filesystem change notifications ────────
   useEffect(() => window.gitgrove.onMenuOpenRepo(() => pickRepo()), [pickRepo])
