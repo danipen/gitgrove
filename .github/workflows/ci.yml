@@ -75,49 +75,12 @@ jobs:
       - uses: ./.github/actions/install
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      # Electron's postinstall fetches the binary during `bun install`, but bun
-      # doesn't propagate a failed *root* postinstall as a non-zero exit — so a
-      # flaky download (or a corrupt cached zip that @electron/get accepts as a
-      # cache hit) leaves node_modules/electron with no binary, or a truncated
-      # one, while the install step still passes; Playwright then ENOENTs or
-      # crashes on launch. This smoke is the only job that launches Electron, so
-      # verify the binary is actually *runnable* here — failing loudly instead
-      # of mid-test. Re-reading the same cached zip never fixes a corrupt one,
-      # so from the second attempt we distrust the cache and force a clean
-      # re-download. DEBUG surfaces @electron/get's cache/URL decisions, so a
-      # future flake is diagnosable from the run log instead of silent.
-      - name: Ensure the Electron binary is installed and runnable
-        shell: bash
-        env:
-          DEBUG: '@electron/get:*'
-        run: |
-          # Resolve and launch the binary through Node (execFileSync), not the
-          # shell — `require('electron')` throws if path.txt is missing, and
-          # spawning by path sidesteps Windows backslash quoting under Git Bash.
-          binary_ok() {
-            node -e 'require("child_process").execFileSync(require("electron"), ["--version"], { stdio: "ignore" })' 2>/dev/null
-          }
-          for attempt in 1 2 3 4; do
-            if binary_ok; then
-              echo "Electron binary present and runnable."
-              exit 0
-            fi
-            echo "::warning::Electron binary missing or broken (attempt ${attempt}/4); reinstalling"
-            rm -rf node_modules/electron/dist node_modules/electron/path.txt
-            # Attempt 1 trusts the (cheap) cache; later attempts force a fresh
-            # download and re-fetch checksums so a poisoned cache can't persist.
-            if [ "$attempt" -ge 2 ]; then
-              export force_no_cache=true electron_use_remote_checksums=1
-            fi
-            node node_modules/electron/install.js || echo "::warning::install.js exited non-zero"
-            sleep $((attempt * 5))
-          done
-          if binary_ok; then
-            echo "Electron binary present and runnable."
-            exit 0
-          fi
-          echo "::error::Electron binary failed to install after 4 attempts"
-          exit 1
+      # The postinstall (scripts/ensure-electron.mjs) is best-effort so it never
+      # breaks `bun install`; here — the only job that actually launches Electron
+      # — require the binary, so a failed install fails loudly instead of
+      # mid-smoke. Idempotent (a warm binary is a no-op); handles the download
+      # retry + the macOS Gatekeeper resign in one place — see the script.
+      - run: node scripts/ensure-electron.mjs --require
       - run: bun run build
       # The smoke opens this repo and asserts the working-tree file tree renders,
       # so it needs at least one change. A fresh checkout is clean, so drop an
