@@ -104,10 +104,15 @@ jobs:
             fi
             echo "::warning::Electron binary missing or broken (attempt ${attempt}/4); reinstalling"
             rm -rf node_modules/electron/dist node_modules/electron/path.txt
-            # Attempt 1 trusts the (cheap) cache; later attempts force a fresh
-            # download and re-fetch checksums so a poisoned cache can't persist.
+            # Attempt 1 trusts the (cheap) cache; from attempt 2 force a genuine
+            # re-download. `force_no_cache` alone is NOT honored by @electron/get
+            # here (the run log still shows a "Cache hit" on every retry), so
+            # also delete its on-disk download cache — otherwise each attempt
+            # just re-extracts the same cached zip and all four fail identically.
+            # These mirror the cache dirs warmed by .github/actions/install.
             if [ "$attempt" -ge 2 ]; then
               export force_no_cache=true electron_use_remote_checksums=1
+              rm -rf ~/.cache/electron ~/Library/Caches/electron ~/AppData/Local/electron/Cache
             fi
             node node_modules/electron/install.js || echo "::warning::install.js exited non-zero"
             sleep $((attempt * 5))
