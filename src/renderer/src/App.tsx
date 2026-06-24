@@ -57,6 +57,7 @@ import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
 import { useTheme } from './lib/theme'
+import { useCommitLog } from './lib/useCommitLog'
 import { useCommitSize } from './lib/useCommitSize'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
@@ -68,7 +69,6 @@ import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history'
 
-const LOG_LIMIT = 300
 /** Background fetch cadence (ms) — quiet, skipped while an op runs. */
 const AUTO_FETCH_INTERVAL = 10 * 60 * 1000
 
@@ -142,29 +142,11 @@ export function App() {
   // useCredentialPrompts.
   const { credentialPrompts, respondCredential } = useCredentialPrompts()
 
-  const [commits, setCommits] = useState<Commit[]>([])
-  const [commitsLoading, setCommitsLoading] = useState(false)
-  // Infinite scroll: whether older commits may exist past what's loaded, and
-  // whether a "load more" page is currently in flight (bottom spinner).
-  const [logHasMore, setLogHasMore] = useState(false)
-  const [commitsLoadingMore, setCommitsLoadingMore] = useState(false)
-  const [logLoaded, setLogLoaded] = useState(false)
   const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null)
   const [commitFiles, setCommitFiles] = useState<ChangedFile[]>([])
   const [commitFilesLoading, setCommitFilesLoading] = useState(false)
   const [commitSelPath, setCommitSelPath] = useState<string | null>(null)
   const [commitSelCount, setCommitSelCount] = useState(1)
-  // Hash being revealed from the blame gutter when it sits past the loaded
-  // window: paging the log deep enough to reach a super-old commit can take a
-  // moment, so HistoryView shows a blocking overlay for it. Null otherwise.
-  const [revealingCommit, setRevealingCommit] = useState<string | null>(null)
-  // Free-text History filter. Applied server-side (`git log --grep`) so it
-  // searches the whole history, not just the loaded page; a short debounce keeps
-  // typing from re-running the log on every keystroke.
-  const [logSearch, setLogSearch] = useState('')
-  // True from the keystroke until the grep's results land (covers the debounce
-  // too) so the filter bar can show a spinner — the grep is slow on big repos.
-  const [logSearching, setLogSearching] = useState(false)
 
   // Commit-selection request token: selecting a commit fires an async
   // `commitFiles` fetch, and a slow one can resolve after the user has already
@@ -198,26 +180,6 @@ export function App() {
   // Hash whose file list is loaded (or loading); null after a failed fetch so
   // re-clicking the commit retries.
   const commitFilesHashRef = useRef<string | null>(null)
-  const logLoadedRef = useRef(logLoaded)
-  logLoadedRef.current = logLoaded
-  // Mirrors for the pager: read the latest list/`hasMore` without re-creating
-  // `loadMoreLog` (its identity stays stable across appends).
-  const commitsRef = useRef<Commit[]>(commits)
-  commitsRef.current = commits
-  const logHasMoreRef = useRef(logHasMore)
-  logHasMoreRef.current = logHasMore
-  // Re-entrancy guard for the pager + a token so a full log reload (branch
-  // switch, refresh) invalidates any in-flight "load more" page: appending a
-  // stale page from another branch would corrupt the list.
-  const loadingMoreRef = useRef(false)
-  const logReq = useRef(0)
-  // Current History filter, read by loadLog/loadMoreLog so every refresh and
-  // paged fetch honours it without depending on the search's identity.
-  const logSearchRef = useRef(logSearch)
-  logSearchRef.current = logSearch
-  // Debounce handle for the search-triggered reload (cleared on a fresh keystroke
-  // and when a commit is revealed, which clears the filter outright).
-  const logSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const branchRef = useRef<BranchInfo | null>(branch)
   branchRef.current = branch
   // Ref so doCommit can route a mid-merge commit without re-creating on every
@@ -348,100 +310,29 @@ export function App() {
     if (repoPath) loadBranches(repoPath)?.catch(() => {})
   }, [loadBranches])
 
-  const loadLog = useCallback(
-    async (repoPath: string, ref?: string, opts?: { keepCount?: boolean; minCount?: number }) => {
-      // `keepCount` (watcher/post-op refresh): re-fetch everything the user has
-      // already paged in, so the list never shrinks back to the first page and
-      // yanks their scroll position. `minCount` (reveal-a-commit): page deep
-      // enough to include a specific commit. Fresh loads reset to one page.
-      const limit = Math.max(
-        LOG_LIMIT,
-        opts?.keepCount ? commitsRef.current.length : 0,
-        opts?.minCount ?? 0
-      )
-      const id = ++logReq.current
-      setCommitsLoading(true)
-      try {
-        const log = await window.gitgrove.log(repoPath, {
-          limit,
-          ref,
-          search: logSearchRef.current
-        })
-        if (id === logReq.current) {
-          setCommits(log)
-          // A short page means we hit the root commit — nothing left to page in.
-          setLogHasMore(log.length >= limit)
-          setLogLoaded(true)
-        }
-        return log
-      } finally {
-        if (id === logReq.current) {
-          setCommitsLoading(false)
-          // The freshest load has landed — drop the filter spinner (any load
-          // settles it; only a search keystroke ever raises it).
-          setLogSearching(false)
-        }
-      }
-    },
-    []
-  )
-
-  /** Appends the next page of history when the list scrolls near the bottom. */
-  const loadMoreLog = useCallback(async () => {
-    const repoPath = repoRef.current?.path
-    if (!repoPath || loadingMoreRef.current || !logHasMoreRef.current) return
-    loadingMoreRef.current = true
-    const id = logReq.current
-    setCommitsLoadingMore(true)
-    try {
-      const page = await window.gitgrove.log(repoPath, {
-        limit: LOG_LIMIT,
-        skip: commitsRef.current.length,
-        search: logSearchRef.current
-      })
-      // A reload (branch switch / refresh) raced us: drop this stale page.
-      if (id !== logReq.current) return
-      setLogHasMore(page.length >= LOG_LIMIT)
-      if (page.length > 0) {
-        setCommits((prev) => {
-          // `--skip` is offset-based, so a commit landing upstream mid-scroll
-          // shifts the window and can hand us rows we already have — dedupe to
-          // keep React keys (and the list) clean.
-          const seen = new Set(prev.map((c) => c.hash))
-          const fresh = page.filter((c) => !seen.has(c.hash))
-          return fresh.length > 0 ? [...prev, ...fresh] : prev
-        })
-      }
-    } catch (e) {
-      fail(e)
-    } finally {
-      loadingMoreRef.current = false
-      setCommitsLoadingMore(false)
-    }
-  }, [fail])
-
-  /**
-   * Drive the History filter: keep the input responsive (state updates at once)
-   * while debouncing the `git log --grep` reload that re-fetches the first page
-   * for the new query. `logSearchRef` is set synchronously so the reload — and
-   * any refresh racing it — reads the latest term.
-   */
-  const onLogSearchChange = useCallback(
-    (query: string) => {
-      setLogSearch(query)
-      logSearchRef.current = query
-      // Feedback starts now (through the debounce + grep), cleared when loadLog
-      // settles. Stays false for an unchanged query so clearing it is silent.
-      setLogSearching(true)
-      if (logSearchTimer.current) clearTimeout(logSearchTimer.current)
-      logSearchTimer.current = setTimeout(() => {
-        logSearchTimer.current = null
-        const repoPath = repoRef.current?.path
-        if (repoPath) loadLog(repoPath).catch(fail)
-      }, 200)
-    },
-    [loadLog, fail]
-  )
+  // The History tab's commit log — paged fetch, infinite-scroll paging, and the
+  // debounced server-side filter — see useCommitLog. The orchestrators below
+  // drive it through loadLog / resetLog / markLogStale / clearLogSearch.
+  const {
+    commits,
+    commitsLoading,
+    logHasMore,
+    commitsLoadingMore,
+    logLoaded,
+    logSearch,
+    logSearching,
+    revealingCommit,
+    logLoadedRef,
+    commitsRef,
+    logSearchRef,
+    loadLog,
+    loadMoreLog,
+    onLogSearchChange,
+    clearLogSearch,
+    markLogStale,
+    resetLog,
+    setRevealingCommit
+  } = useCommitLog(getRepoPath, fail)
 
   // ── Selection handlers ─────────────────────────────────────────────────────
   // biome-ignore lint/correctness/useExhaustiveDependencies: diffRef is read for its live value, not as a trigger — depending on it would churn this handler on every diff load.
@@ -552,6 +443,7 @@ export function App() {
    * then scrolls the selected commit into view. A no-op for commits that aren't
    * on HEAD's history (nothing to select).
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logSearchRef/logLoadedRef/commitsRef are refs read for their live values, not triggers.
   const revealCommit = useCallback(
     async (hash: string) => {
       const repoPath = repoRef.current?.path
@@ -563,13 +455,8 @@ export function App() {
       // before paging. While a filter was set the loaded list is the *filtered*
       // one, so the loaded-list fast paths below can't be trusted — force a fresh
       // unfiltered load instead.
-      if (logSearchTimer.current) {
-        clearTimeout(logSearchTimer.current)
-        logSearchTimer.current = null
-      }
       const wasFiltered = logSearchRef.current.trim() !== ''
-      setLogSearch('')
-      logSearchRef.current = ''
+      clearLogSearch()
       // Fast path: already paged in (and unfiltered) — select it straight away.
       const loaded =
         !wasFiltered && logLoadedRef.current
@@ -600,7 +487,7 @@ export function App() {
         setRevealingCommit(null)
       }
     },
-    [loadLog, selectCommit]
+    [loadLog, selectCommit, clearLogSearch, setRevealingCommit]
   )
 
   // ── Tab switching keeps the right pane in sync with the active selection ───
@@ -638,6 +525,7 @@ export function App() {
   )
 
   // ── Refresh: pulls every panel up to date (watcher + post-op) ─────────────
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logLoadedRef is a ref read for its live value, not a trigger.
   const refresh = useCallback(async () => {
     const repoPath = repoRef.current?.path
     if (!repoPath) return
@@ -652,7 +540,7 @@ export function App() {
       // mark it stale so the next visit refetches. Branch enumeration is NOT
       // part of a refresh — the switcher reloads it lazily when opened.
       const refreshLog = logLoadedRef.current && tabRef.current === 'history'
-      if (logLoadedRef.current && !refreshLog) setLogLoaded(false)
+      if (logLoadedRef.current && !refreshLog) markLogStale()
       const [files] = await Promise.all([
         loadSnapshot(repoPath),
         refreshLog ? loadLog(repoPath, undefined, { keepCount: true }) : Promise.resolve(null),
@@ -680,7 +568,15 @@ export function App() {
         refreshRef.current()
       }
     }
-  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, failOrRecover, loadGithubData])
+  }, [
+    loadSnapshot,
+    loadLog,
+    loadWorkingDiff,
+    autoSelect,
+    failOrRecover,
+    loadGithubData,
+    markLogStale
+  ])
 
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
@@ -765,11 +661,8 @@ export function App() {
         .catch(() => setHostInfo(null))
       setBranch(summary.branch)
       setChanges([])
-      setCommits([])
-      setLogHasMore(false)
-      setLogLoaded(false)
-      setLogSearch('')
-      logSearchRef.current = ''
+      resetLog()
+      clearLogSearch()
       setSelectedCommit(null)
       setCommitFiles([])
       setCommitSelPath(null)
@@ -809,7 +702,9 @@ export function App() {
       fail,
       failOrRecover,
       loadGithubData,
-      resetGithub
+      resetGithub,
+      resetLog,
+      clearLogSearch
     ]
   )
 
@@ -927,9 +822,7 @@ export function App() {
         setCommitSelPath(null)
         setChangeSel(null)
         setSelections(new Map())
-        setCommits([])
-        setLogHasMore(false)
-        setLogLoaded(false)
+        resetLog()
         clearDiff()
         // The new branch invalidates the log; reload it now only if History is
         // showing, otherwise leave it for the next time the tab is opened.
@@ -955,7 +848,7 @@ export function App() {
         setCheckingOut(null)
       }
     },
-    [loadSnapshot, loadLog, autoSelect, clearDiff, fail]
+    [loadSnapshot, loadLog, autoSelect, clearDiff, fail, resetLog]
   )
 
   /**
@@ -1259,7 +1152,7 @@ export function App() {
         })
         if (!ok) return
         if (request.checkout) {
-          setLogLoaded(false)
+          markLogStale()
           if (tabRef.current === 'history') loadLog(repoPath).catch(fail)
         }
         if (outcome === 'conflicts') {
@@ -1277,7 +1170,7 @@ export function App() {
         setModal(null)
       }
     },
-    [loadLog, fail]
+    [loadLog, fail, markLogStale]
   )
 
   const onBranchAction = useCallback(
@@ -1390,11 +1283,11 @@ export function App() {
       // Detaching HEAD invalidates the log; reload it now only if History is
       // showing, otherwise leave it for the next time the tab is opened.
       if (ok) {
-        setLogLoaded(false)
+        markLogStale()
         if (tabRef.current === 'history') loadLog(repoPath).catch(fail)
       }
     },
-    [loadLog, fail]
+    [loadLog, fail, markLogStale]
   )
 
   // ── OS integration: menu commands + filesystem change notifications ────────
