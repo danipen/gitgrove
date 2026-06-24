@@ -59,11 +59,11 @@ import {
 import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
-import { overallPercent } from './lib/progress'
 import { useTheme } from './lib/theme'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
+import { useOpProgress } from './lib/useOpProgress'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history'
@@ -141,12 +141,6 @@ export function App() {
   const [undo, setUndo] = useState<UndoSnapshot | null>(null)
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null)
   const [syncRunning, setSyncRunning] = useState<SyncAction | null>(null)
-  // Determinate progress of the op this window started (checkout/fetch/pull/
-  // push), already mapped onto one 0–100 scale; null while idle or before git
-  // reports anything.
-  const [opProgress, setOpProgress] = useState<{ kind: ProgressOpKind; percent: number } | null>(
-    null
-  )
   // Branch a checkout is switching to, for the switcher's progress display.
   const [checkingOut, setCheckingOut] = useState<string | null>(null)
   // Git LFS health of the open repo (null = not probed / not applicable) and
@@ -296,6 +290,9 @@ export function App() {
     getRepoPath,
     fail
   )
+
+  // Determinate progress of the op this window started — see useOpProgress.
+  const opProgress = useOpProgress(busy, busyRef, getRepoPath)
 
   // ── Data loaders ─────────────────────────────────────────────────────────
   // One IPC round-trip refreshes everything the sidebar shows: files, current
@@ -1535,32 +1532,6 @@ export function App() {
         }
       }),
     [doSync, reloadBranches]
-  )
-
-  // Every op that reports progress runs under `busy`; when it ends, so does
-  // the fill — one clearing point instead of one per operation.
-  useEffect(() => {
-    if (!busy) setOpProgress(null)
-  }, [busy])
-
-  // Determinate progress pushes for checkout/fetch/pull/push/discard. Only
-  // ops this window started count (`busy` is set around them) — the quiet
-  // background auto-fetch reports too and must never flash the buttons.
-  useEffect(
-    () =>
-      window.gitgrove.onOpProgress((p) => {
-        if (!busyRef.current || p.repoPath !== repoRef.current?.path) return
-        const percent = overallPercent(p.kind, p.phase, p.percent)
-        if (percent === null) return
-        // Phases overlap on the wire (local and remote report concurrently) —
-        // never let the fill move backwards.
-        setOpProgress((prev) =>
-          prev && prev.kind === p.kind
-            ? { kind: p.kind, percent: Math.max(prev.percent, percent) }
-            : { kind: p.kind, percent }
-        )
-      }),
-    []
   )
 
   useEffect(() => {
