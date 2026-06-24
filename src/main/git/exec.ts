@@ -79,19 +79,31 @@ export async function run(
   args: string[],
   opts: RunOptions = {}
 ): Promise<string> {
-  return enqueue(repoPath, async () => {
-    let lastError: Error | null = null
-    for (let attempt = 0; attempt <= LOCK_RETRY_DELAYS.length; attempt++) {
-      try {
-        return await runOnce(repoPath, args, opts)
-      } catch (e) {
-        lastError = e instanceof Error ? e : new Error(String(e))
-        if (!isLockError(lastError.message) || attempt === LOCK_RETRY_DELAYS.length) throw lastError
-        await sleep(LOCK_RETRY_DELAYS[attempt])
-      }
+  return enqueue(repoPath, () => runOnceWithRetry(repoPath, args, opts))
+}
+
+/**
+ * Run one mutating git command with the lock-retry ladder but WITHOUT taking
+ * the write queue — for callers composing an atomic multi-step write who
+ * already hold the queue (via `enqueue`) and still want a single command to
+ * ride out an external process briefly holding the index lock.
+ */
+export async function runOnceWithRetry(
+  repoPath: string,
+  args: string[],
+  opts: RunOptions = {}
+): Promise<string> {
+  let lastError: Error | null = null
+  for (let attempt = 0; attempt <= LOCK_RETRY_DELAYS.length; attempt++) {
+    try {
+      return await runOnce(repoPath, args, opts)
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e))
+      if (!isLockError(lastError.message) || attempt === LOCK_RETRY_DELAYS.length) throw lastError
+      await sleep(LOCK_RETRY_DELAYS[attempt])
     }
-    throw lastError ?? new Error('git command failed')
-  })
+  }
+  throw lastError ?? new Error('git command failed')
 }
 
 /**

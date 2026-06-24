@@ -17,6 +17,7 @@ import { isAbsolute, join } from 'node:path'
 import type { ChangedFile, FileStatus, RepoOpKind, RepoSnapshot, RepoState } from '@shared/types'
 import { PERF } from './perf'
 import { runGit } from './read'
+import { readUndoSnapshot } from './undo'
 import { listStashes } from './write'
 
 /** Parsed `# branch.*` headers from porcelain v2. */
@@ -219,6 +220,10 @@ export async function getRepoSnapshot(repoPath: string): Promise<RepoSnapshot> {
     )
   }
   const state = await readRepoState(repoPath, conflictedCount)
+  // The one-step undo for the last operation, validated against the live HEAD
+  // (cheap: a small file read, plus one ancestor probe only when an undo point
+  // sits on an upstream branch).
+  const undo = await readUndoSnapshot(repoPath, headers.oid, headers.upstream)
   // Sort here, once, with a plain byte comparator — the renderer treats the
   // list as display-ready and never re-sorts (locale-aware sorting is not
   // worth seconds of work on 90k paths).
@@ -237,6 +242,7 @@ export async function getRepoSnapshot(repoPath: string): Promise<RepoSnapshot> {
       .filter(Boolean),
     state,
     stashes,
+    undo,
     statusMs: Math.round(tGit - t0)
   }
 }

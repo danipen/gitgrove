@@ -20,8 +20,17 @@ import type {
   SubmoduleInfo,
   WorktreeInfo
 } from '@shared/types'
-import { enqueue, type ProgressHandler, type RunOptions, run, runOnce, runRead } from './exec'
+import {
+  enqueue,
+  type ProgressHandler,
+  type RunOptions,
+  run,
+  runOnce,
+  runOnceWithRetry,
+  runRead
+} from './exec'
 import { openLfsProgressChannel } from './lfs-progress'
+import { withUndo } from './undo'
 
 /** Files restored per checkout-index spawn during a discard — small enough
  *  that each batch completes quickly (a progress report), large enough to
@@ -239,9 +248,17 @@ export interface CommitSelectionPayload {
   patches: string[]
 }
 
+/** Banner label for an undoable commit/amend, naming its summary. */
+function commitUndoLabel(amend: boolean, message: string): string {
+  const summary = message.split('\n')[0].trim()
+  const short = summary.length > 50 ? `${summary.slice(0, 49)}…` : summary || 'commit'
+  return amend ? `Amended “${short}”` : `Committed “${short}”`
+}
+
 /**
  * The checkbox commit model: checkboxes never touch git — this one call
- * does, at commit time, as a single atomic step on the write queue:
+ * does, at commit time, as a single atomic step on the write queue (wrapped so
+ * the commit can be undone — see git/undo.ts):
  *
  *   1. reset the index to HEAD (the index is scratch space in this model);
  *   2. `git add -A` the fully included paths (NUL pathspecs over stdin, so a
@@ -255,28 +272,39 @@ export async function commitSelection(
   message: string,
   sel: CommitSelectionPayload
 ): Promise<void> {
-  await enqueue(repoPath, async () => {
-    try {
-      await runOnce(repoPath, ['reset', '-q'])
-    } catch (e) {
-      if (!isUnbornHead(e)) throw e
+  const amend = sel.amend === true
+  await withUndo(
+    repoPath,
+    // Plain commit: capture the new message so undo refills the composer. Amend:
+    // undo restores the original commit intact, so no message capture is needed.
+    {
+      kind: amend ? 'amend' : 'commit',
+      label: commitUndoLabel(amend, message),
+      captureMessage: !amend
+    },
+    async () => {
+      try {
+        await runOnce(repoPath, ['reset', '-q'])
+      } catch (e) {
+        if (!isUnbornHead(e)) throw e
+      }
+      if (sel.all) {
+        await runOnce(repoPath, ['add', '-A'])
+      } else if (sel.paths.length > 0) {
+        await runOnce(repoPath, ['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], {
+          input: sel.paths.join('\0')
+        })
+      }
+      for (const patch of sel.patches) {
+        await runOnce(repoPath, ['apply', '--cached', '--whitespace=nowarn', '-'], {
+          input: patch.endsWith('\n') ? patch : `${patch}\n`
+        })
+      }
+      const args = ['commit', '-F', '-']
+      if (amend) args.push('--amend')
+      await runOnce(repoPath, args, { input: message })
     }
-    if (sel.all) {
-      await runOnce(repoPath, ['add', '-A'])
-    } else if (sel.paths.length > 0) {
-      await runOnce(repoPath, ['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], {
-        input: sel.paths.join('\0')
-      })
-    }
-    for (const patch of sel.patches) {
-      await runOnce(repoPath, ['apply', '--cached', '--whitespace=nowarn', '-'], {
-        input: patch.endsWith('\n') ? patch : `${patch}\n`
-      })
-    }
-    const args = ['commit', '-F', '-']
-    if (sel.amend) args.push('--amend')
-    await runOnce(repoPath, args, { input: message })
-  })
+  )
 }
 
 /** Full message (%B) of HEAD, used to pre-fill the composer when amending. */
@@ -480,32 +508,66 @@ export async function merge(
   // would otherwise have to string-match (and it's localized).
   if (await isAncestor(repoPath, branch, 'HEAD')) return 'up-to-date'
   const args = opts.squash ? ['merge', '--squash', branch] : ['merge', '--no-edit', branch]
-  try {
-    await run(repoPath, ['-c', 'core.editor=true', ...args])
-    return 'completed'
-  } catch (e) {
-    if (await hasUnmergedEntries(repoPath)) return 'conflicts'
-    throw e
-  }
+  // A squash merge or a conflict stop never moves HEAD, so withUndo records
+  // nothing for them (correct: squash just stages, a conflict is aborted, not
+  // undone). Only a real merge commit / fast-forward leaves an undo point.
+  let outcome: MergeOutcome = 'completed'
+  await withUndo(
+    repoPath,
+    {
+      kind: 'merge',
+      label: ({ currentBranch }) => `Merged ${branch} into ${currentBranch ?? 'HEAD'}`
+    },
+    async () => {
+      try {
+        await runOnceWithRetry(repoPath, ['-c', 'core.editor=true', ...args])
+      } catch (e) {
+        if (await hasUnmergedEntries(repoPath)) {
+          outcome = 'conflicts'
+          return
+        }
+        throw e
+      }
+    }
+  )
+  return outcome
 }
 
 /** Rebase HEAD onto `onto`. Same conflicts-as-data contract as `merge`. */
 export async function rebase(repoPath: string, onto: string): Promise<MergeOutcome> {
   if (await isAncestor(repoPath, onto, 'HEAD')) return 'up-to-date'
-  try {
-    await run(repoPath, ['-c', 'core.editor=true', 'rebase', onto])
-    return 'completed'
-  } catch (e) {
-    if (await hasUnmergedEntries(repoPath)) return 'conflicts'
-    // A rebase can also stop without unmerged entries (e.g. dirty tree
-    // pre-checks abort before starting) — only an in-flight rebase counts.
-    try {
-      await runRead(repoPath, ['rev-parse', '-q', '--verify', 'REBASE_HEAD'])
-      return 'conflicts'
-    } catch {
-      throw e
+  // A rebase that stops on conflicts may have applied some commits before
+  // stopping, so withUndo can record a partial undo point — harmless: it stays
+  // hidden behind the in-progress conflict banner and self-cleans once the
+  // rebase is continued or aborted (HEAD then no longer matches it).
+  let outcome: MergeOutcome = 'completed'
+  await withUndo(
+    repoPath,
+    {
+      kind: 'rebase',
+      label: ({ currentBranch }) => `Rebased ${currentBranch ?? 'HEAD'} onto ${onto}`
+    },
+    async () => {
+      try {
+        await runOnceWithRetry(repoPath, ['-c', 'core.editor=true', 'rebase', onto])
+      } catch (e) {
+        if (await hasUnmergedEntries(repoPath)) {
+          outcome = 'conflicts'
+          return
+        }
+        // A rebase can also stop without unmerged entries (e.g. dirty tree
+        // pre-checks abort before starting) — only an in-flight rebase counts.
+        try {
+          await runRead(repoPath, ['rev-parse', '-q', '--verify', 'REBASE_HEAD'])
+          outcome = 'conflicts'
+          return
+        } catch {
+          throw e
+        }
+      }
     }
-  }
+  )
+  return outcome
 }
 
 /**
@@ -516,10 +578,17 @@ export async function rebase(repoPath: string, onto: string): Promise<MergeOutco
  * the composer instead of an editor round-trip.
  */
 export async function commitMerge(repoPath: string, message: string): Promise<void> {
-  await enqueue(repoPath, async () => {
-    await runOnce(repoPath, ['add', '-A'])
-    await runOnce(repoPath, ['commit', '-F', '-'], { input: message })
-  })
+  await withUndo(
+    repoPath,
+    {
+      kind: 'merge',
+      label: ({ currentBranch }) => `Completed merge on ${currentBranch ?? 'HEAD'}`
+    },
+    async () => {
+      await runOnce(repoPath, ['add', '-A'])
+      await runOnce(repoPath, ['commit', '-F', '-'], { input: message })
+    }
+  )
 }
 
 /**
@@ -552,15 +621,27 @@ export async function openMergeTool(repoPath: string, path: string): Promise<voi
 }
 
 export async function cherryPick(repoPath: string, hash: string): Promise<void> {
-  await run(repoPath, ['cherry-pick', hash])
+  // A cherry-pick that stops on conflicts doesn't move HEAD, so no undo point is
+  // recorded for it (its abort lives in the conflict banner).
+  await withUndo(
+    repoPath,
+    { kind: 'cherry-pick', label: `Cherry-picked ${hash.slice(0, 7)}` },
+    () => runOnceWithRetry(repoPath, ['cherry-pick', hash])
+  )
 }
 
 export async function revertCommit(repoPath: string, hash: string): Promise<void> {
-  await run(repoPath, ['revert', '--no-edit', hash])
+  await withUndo(repoPath, { kind: 'revert', label: `Reverted ${hash.slice(0, 7)}` }, () =>
+    runOnceWithRetry(repoPath, ['revert', '--no-edit', hash])
+  )
 }
 
 export async function reset(repoPath: string, hash: string, mode: ResetMode): Promise<void> {
-  await run(repoPath, ['reset', `--${mode}`, hash])
+  await withUndo(
+    repoPath,
+    { kind: 'reset', label: ({ currentBranch }) => `Reset ${currentBranch ?? 'HEAD'}` },
+    () => runOnceWithRetry(repoPath, ['reset', `--${mode}`, hash])
+  )
 }
 
 /**

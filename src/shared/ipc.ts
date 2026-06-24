@@ -43,6 +43,7 @@ import type {
   ResetMode,
   StashEntry,
   SubmoduleInfo,
+  UndoResult,
   UpdateStatus,
   WorktreeInfo
 } from './types'
@@ -111,6 +112,7 @@ export const IPC = {
   cherryPick: 'repo:cherry-pick',
   revertCommit: 'repo:revert',
   reset: 'repo:reset',
+  undo: 'repo:undo',
   continueOp: 'repo:op:continue',
   abortOp: 'repo:op:abort',
   skipRebaseCommit: 'repo:op:skip',
@@ -191,6 +193,7 @@ export type MenuCommand =
   | 'pull'
   | 'push'
   | 'new-branch'
+  | 'undo'
   | 'stash'
   | 'worktrees'
   | 'submodules'
@@ -369,6 +372,15 @@ export interface GitGroveApi {
   cherryPick(repoPath: string, hash: string): Promise<void>
   revertCommit(repoPath: string, hash: string): Promise<void>
   reset(repoPath: string, hash: string, mode: ResetMode): Promise<void>
+  /**
+   * Undo the last history-changing operation (commit, amend, merge, rebase,
+   * cherry-pick, revert, reset), restoring the branch to where it was without
+   * losing uncommitted work — see main/git/undo.ts. Resolves with the message
+   * to restore into the composer (commit/amend) and a toast line; rejects with
+   * a friendly message when there's nothing to undo or local changes are in the
+   * way.
+   */
+  undo(repoPath: string): Promise<UndoResult>
   continueOp(repoPath: string, op: RepoOpKind): Promise<void>
   abortOp(repoPath: string, op: RepoOpKind): Promise<void>
   skipRebaseCommit(repoPath: string): Promise<void>

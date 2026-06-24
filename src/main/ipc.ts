@@ -57,6 +57,7 @@ import {
 import { rebaseInteractive } from './git/rebase'
 import { getRepoSnapshot } from './git/status'
 import * as gitSync from './git/sync'
+import { undo as undoLastOperation } from './git/undo'
 import * as gitWrite from './git/write'
 import { getRepoHostInfo } from './github/host'
 import { listPullRequests } from './github/pulls'
@@ -394,6 +395,7 @@ export function registerIpc(ctx: IpcContext): void {
   ipcMain.handle(IPC.reset, (_e, repoPath: string, hash: string, mode: ResetMode) =>
     gitWrite.reset(repoPath, hash, mode)
   )
+  ipcMain.handle(IPC.undo, (_e, repoPath: string) => undoLastOperation(repoPath))
   ipcMain.handle(IPC.continueOp, (_e, repoPath: string, op: RepoOpKind) =>
     gitWrite.continueOp(repoPath, op)
   )

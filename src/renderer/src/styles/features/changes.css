@@ -1,14 +1,38 @@
-/* ── Stash row + popover list ────────────────────────────────────────────── */
-/* The composer's optional header row — just the stash chip, shown only when
-   stashes exist. The 5px resizer strip sits above the composer block; the
-   top border of whichever element comes first is the visible split line. */
+/* ── Composer footer sections: undo, then the stash chip + composer ───────── */
+/* The undo is its own section at the top of the footer zone with a divider
+   below; the stash chip then sits flush on the composer as one group. The 5px
+   resizer strip sits above; the top border of the first block is the visible
+   split line. Adjacency rules drop duplicate borders so no line ever doubles.
+   styles: UndoRow.tsx, StashPanel.tsx */
+
+/* The undo section — split line above (when it's first), divider below.
+   Tight vertical padding so its two lines don't outweigh the stash row. */
+.undo-section {
+  padding: 5px 10px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+/* The stash chip row, right-aligned, flush on the composer below it. */
 .composer-head {
   display: flex;
+  justify-content: flex-end;
   align-items: center;
   gap: 6px;
   padding: 6px 10px 2px;
   border-top: 1px solid var(--border);
   background: var(--bg-panel);
+}
+
+/* After the undo section, its border-bottom is the divider — the next block
+   drops its own top border so the line never doubles. */
+.undo-section + .composer-head {
+  border-top: none;
+}
+.undo-section + .composer {
+  border-top: none;
+  padding-top: 4px;
 }
 .stash-chip {
   display: inline-flex;
@@ -103,9 +127,6 @@
   min-height: 30px;
   line-height: 1.45;
 }
-.changes__stash-spacer {
-  flex: 1;
-}
 /* One split button: the wide action half + a caret half that opens the
    Commit / Amend / Stash popover. They read as a single accent control — the
    action half rounds its left, the caret half its right, joined by a hairline.
@@ -159,6 +180,59 @@
 }
 .composer__mode-btn svg {
   opacity: 0.85;
+}
+/* ── Undo row (in the composer header area, stacked with the stash chip) ───── */
+/* A quiet, informational row: what the last operation was and when, plus a
+   small Undo. Default typography throughout — it's ambient state, not a call
+   to action — and reads as "your last commit" even on a fresh repo open.
+   styles: UndoRow.tsx */
+.undo-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.undo-row__icon {
+  display: flex;
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+.undo-row__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.undo-row__label {
+  font-size: 12px;
+  color: var(--fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.undo-row__time {
+  font-size: 10.5px;
+  color: var(--fg-faint);
+}
+/* Default weight, quiet pill — no louder than the stash chip beside it. */
+.undo-row__btn {
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.undo-row__btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.undo-row__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 /* ── Discard confirmation file list ──────────────────────────────────────── */
 /* Shows exactly what a (bulk) discard will touch, GH-Desktop style: a capped,

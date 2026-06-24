@@ -5,7 +5,7 @@
 // touched at commit time. Destructive actions still go through `runOp`
 // (serialized, auto-refresh, errors → toast).
 
-import type { ChangedFile, FileStatus, RepoState, StashEntry } from '@shared/types'
+import type { ChangedFile, FileStatus, RepoState, StashEntry, UndoSnapshot } from '@shared/types'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ContextMenuItem } from '@/components/common/ContextMenu'
 import { copyPathItems } from '@/components/common/copyPathItems'
@@ -22,10 +22,11 @@ import { ignoreOptionsFor, ignoreSelectionOption } from '@/lib/ignore'
 import { conflictActionLabels, mergeSourceFromDetail } from '@/lib/merge'
 import { usePersistentState } from '@/lib/persist'
 import type { ResolvedTheme } from '@/lib/theme'
-import { CommitComposer, type CommitMode } from './CommitComposer'
+import { CommitComposer, type CommitMode, type ComposerDraft } from './CommitComposer'
 import { PublishedBranchBanner } from './PublishedBranchBanner'
 import { StashPanel } from './StashPanel'
 import { StashReminder } from './StashReminder'
+import { UndoRow } from './UndoRow'
 
 interface Props {
   repoPath: string
@@ -38,6 +39,12 @@ interface Props {
   /** Host compare URL when the published branch has no PR yet, else null — shows
    *  the "Create Pull Request" banner. */
   createPrUrl: string | null
+  /** The one-step undo for the last operation, or null — shows the undo banner. */
+  undo: UndoSnapshot | null
+  /** Run the undo (serialized + refreshed, message restored to the composer). */
+  onUndo: () => void
+  /** A commit message to drop into the composer (e.g. after undoing a commit). */
+  composerDraft: ComposerDraft | null
   selectedPath: string | null
   /** Focus change; null when the list selection was emptied. */
   onSelectFile: (path: string | null) => void
@@ -140,6 +147,9 @@ export function ChangesView({
   repoState,
   stashes,
   createPrUrl,
+  undo,
+  onUndo,
+  composerDraft,
   selectedPath,
   onSelectFile,
   onFileSelectionChange,
@@ -253,6 +263,13 @@ export function ChangesView({
   useEffect(() => {
     if (op) setMode('commit')
   }, [op])
+
+  // A restored draft (e.g. after undoing a commit) lands in commit mode, so the
+  // returned message shows as a pending commit ready to recommit.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only the draft nonce should trigger this
+  useEffect(() => {
+    if (composerDraft) setMode('commit')
+  }, [composerDraft?.nonce])
 
   const modeMeta = {
     commit: { label: 'Commit', sub: `Create a new commit on ${branch}`, MIcon: Icon.Check },
@@ -637,7 +654,27 @@ export function ChangesView({
         }}
         onCommit={setDescHeight}
       />
-      <StashPanel repoPath={repoPath} stashes={stashes} busy={busy} theme={theme} runOp={runOp} />
+      {/* The undo is its own quiet section at the top of the footer zone, with a
+          divider below it. Ambient state, never a banner; hidden mid-op. */}
+      {undo && !op && (
+        <div className="undo-section">
+          <UndoRow undo={undo} busy={busy} onUndo={onUndo} />
+        </div>
+      )}
+
+      {/* The stash chip sits flush on the composer (one group) — it's about the
+          work you're about to commit. */}
+      {stashes.length > 0 && (
+        <div className="composer-head">
+          <StashPanel
+            repoPath={repoPath}
+            stashes={stashes}
+            busy={busy}
+            theme={theme}
+            runOp={runOp}
+          />
+        </div>
+      )}
 
       <Popover
         anchor={modeAnchor.current}
@@ -690,6 +727,7 @@ export function ChangesView({
         descriptionRef={(el) => {
           descEl.current = el
         }}
+        injectedDraft={composerDraft}
         modeMenuRef={(el) => {
           modeAnchor.current = el
         }}
