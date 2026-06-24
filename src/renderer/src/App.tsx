@@ -8,7 +8,6 @@ import type {
   CheckoutOutcome,
   Commit,
   IdentityScope,
-  LfsHealth,
   MergeKind,
   MergeOutcome,
   ProgressOpKind,
@@ -64,6 +63,7 @@ import { useCommitSize } from './lib/useCommitSize'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
+import { useLfs } from './lib/useLfs'
 import { useOpProgress } from './lib/useOpProgress'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
@@ -144,11 +144,6 @@ export function App() {
   const [syncRunning, setSyncRunning] = useState<SyncAction | null>(null)
   // Branch a checkout is switching to, for the switcher's progress display.
   const [checkingOut, setCheckingOut] = useState<string | null>(null)
-  // Git LFS health of the open repo (null = not probed / not applicable) and
-  // whether the user waved the banner away for this repo session.
-  const [lfsHealth, setLfsHealth] = useState<LfsHealth | null>(null)
-  const [lfsDismissed, setLfsDismissed] = useState(false)
-  const [lfsEnabling, setLfsEnabling] = useState(false)
   const [modal, setModal] = useState<Modal | null>(null)
   const [modalBusy, setModalBusy] = useState(false)
 
@@ -1576,43 +1571,13 @@ export function App() {
       .catch(() => {})
   }, [openRepoByPath])
 
-  // Probe LFS health once per repo open — cheap (a handful of config reads)
-  // and silent for the overwhelming majority of repos that don't use LFS.
-  const probeLfsHealth = useCallback((path: string) => {
-    let stale = false
-    window.gitgrove
-      .lfsHealth(path)
-      .then((health) => {
-        if (!stale) setLfsHealth(health)
-      })
-      .catch(() => {})
-    return () => {
-      stale = true
-    }
-  }, [])
-
-  const lfsRepoPath = repo?.path
-  useEffect(() => {
-    setLfsHealth(null)
-    setLfsDismissed(false)
-    if (!lfsRepoPath) return
-    return probeLfsHealth(lfsRepoPath)
-  }, [lfsRepoPath, probeLfsHealth])
-
-  const enableLfs = useCallback(async () => {
-    const path = repoRef.current?.path
-    if (!path) return
-    setLfsEnabling(true)
-    try {
-      await window.gitgrove.lfsEnable(path)
-      setLfsHealth(await window.gitgrove.lfsHealth(path))
-      setNotice('Git LFS is set up — large files now download and upload correctly.')
-    } catch (e) {
-      fail(e)
-    } finally {
-      setLfsEnabling(false)
-    }
-  }, [fail])
+  // Git LFS health of the open repo + the one-click enable — see useLfs.
+  const { lfsHealth, lfsDismissed, dismissLfs, lfsEnabling, enableLfs, probeLfsHealth } = useLfs(
+    repo?.path,
+    getRepoPath,
+    fail,
+    setNotice
+  )
 
   // What the toolbar shows of the running op: the sync button's fill (only
   // when the progress kind matches the running action) and the branch
@@ -1686,7 +1651,7 @@ export function App() {
             enabling={lfsEnabling}
             onEnable={enableLfs}
             onRecheck={() => probeLfsHealth(repoPath)}
-            onDismiss={() => setLfsDismissed(true)}
+            onDismiss={dismissLfs}
           />
         )}
       {trustPath && (
