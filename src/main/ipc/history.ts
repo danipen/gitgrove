@@ -1,0 +1,37 @@
+// History reads: the commit log and a commit's position in it, single-file
+// history, blame, a commit's changed files, and the working/commit diffs.
+
+import { IPC } from '@shared/ipc'
+import type { ChangedFile, DiffArea, LogOptions } from '@shared/types'
+import { ipcMain } from 'electron'
+import {
+  getBlame,
+  getCommitDiff,
+  getCommitFiles,
+  getCommitIndex,
+  getFileHistory,
+  getLog,
+  getWorkingDiff
+} from '../git/read'
+
+export function registerHistoryHandlers(): void {
+  ipcMain.handle(IPC.log, (_e, repoPath: string, options?: LogOptions) => getLog(repoPath, options))
+  ipcMain.handle(IPC.commitIndex, (_e, repoPath: string, hash: string) =>
+    getCommitIndex(repoPath, hash)
+  )
+  ipcMain.handle(IPC.fileHistory, (_e, repoPath: string, path: string, ref?: string) =>
+    getFileHistory(repoPath, path, ref)
+  )
+  ipcMain.handle(IPC.blame, (_e, repoPath: string, path: string, ref?: string) =>
+    getBlame(repoPath, path, ref)
+  )
+  ipcMain.handle(IPC.commitFiles, (_e, repoPath: string, hash: string) =>
+    getCommitFiles(repoPath, hash)
+  )
+  ipcMain.handle(IPC.workingDiff, (_e, repoPath: string, file: ChangedFile, area?: DiffArea) =>
+    getWorkingDiff(repoPath, file, area)
+  )
+  ipcMain.handle(IPC.commitDiff, (_e, repoPath: string, hash: string, file: ChangedFile) =>
+    getCommitDiff(repoPath, hash, file)
+  )
+}

@@ -204,7 +204,7 @@
   line-height: 1.3;
 }
 .undo-row__label {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--fg-muted);
   white-space: nowrap;
   overflow: hidden;

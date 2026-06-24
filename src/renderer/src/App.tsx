@@ -1,5 +1,3 @@
-import { compareUrl } from '@shared/git-host-urls'
-import type { MenuCommand } from '@shared/ipc'
 import type {
   AppInfo,
   BranchChangesAction,
@@ -7,14 +5,10 @@ import type {
   ChangedFile,
   CheckoutOutcome,
   Commit,
-  CredentialPromptRequest,
-  GitAvailability,
   IdentityScope,
-  LfsHealth,
   MergeKind,
   MergeOutcome,
   ProgressOpKind,
-  PullRequestInfo,
   RepoHostInfo,
   RepoOpenResult,
   RepoSnapshot,
@@ -24,7 +18,7 @@ import type {
   SyncStatus,
   UndoSnapshot
 } from '@shared/types'
-import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
 import { AboutDialog } from './components/app/AboutDialog'
 import { AppModals, type Modal } from './components/app/AppModals'
 import { CloneDialog } from './components/app/CloneDialog'
@@ -61,29 +55,26 @@ import {
 import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
-import { overallPercent } from './lib/progress'
 import { useTheme } from './lib/theme'
+import { useCommitDetail } from './lib/useCommitDetail'
+import { useCommitLog } from './lib/useCommitLog'
+import { useCommitSize } from './lib/useCommitSize'
+import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
+import { useGitAvailability } from './lib/useGitAvailability'
+import { useLfs } from './lib/useLfs'
+import { useOpProgress } from './lib/useOpProgress'
+import { useOsIntegration } from './lib/useOsIntegration'
+import { usePullRequests } from './lib/usePullRequests'
+import { type MissingRepoInfo, useRepoRecovery } from './lib/useRepoRecovery'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history'
-
-const LOG_LIMIT = 300
-/** Background fetch cadence (ms) — quiet, skipped while an op runs. */
-const AUTO_FETCH_INTERVAL = 10 * 60 * 1000
 
 export function App() {
   const [repo, setRepo] = useState<RepoSummary | null>(null)
   // The repo's web URL + whether its host is GitHub, for view-on-web / PR links.
   const [hostInfo, setHostInfo] = useState<RepoHostInfo | null>(null)
-  // Full SHAs of commits not yet on any remote: their host commit page 404s, so
-  // "View on GitHub" is grayed out for them. Loaded only for GitHub hosts.
-  const [unpushed, setUnpushed] = useState<Set<string>>(new Set())
-  // Open pull requests on the GitHub remote, matched to branches by head ref.
-  const [pullRequests, setPullRequests] = useState<PullRequestInfo[]>([])
-  // False until the first PR fetch for the current repo resolves, so the
-  // "Create Pull Request" banner never flashes before we know the branch's PRs.
-  const [prsLoaded, setPrsLoaded] = useState(false)
   const [branch, setBranch] = useState<BranchInfo | null>(null)
   const [branchesLoading, setBranchesLoading] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -95,9 +86,8 @@ export function App() {
   const [notice, setNotice] = useState<string | null>(null)
 
   // Git availability gates the whole UI: null = checking, then a setup screen
-  // when git is missing (see the render gate below).
-  const [git, setGit] = useState<GitAvailability | null>(null)
-  const [gitChecking, setGitChecking] = useState(false)
+  // when git is missing (see the render gate below and useGitAvailability).
+  const { git, gitChecking, recheckGit } = useGitAvailability()
 
   // Path of a folder git flagged as untrusted ("dubious ownership"); set to show
   // the trust prompt, with `trusting` true while persisting the exception.
@@ -105,13 +95,9 @@ export function App() {
   const [trusting, setTrusting] = useState(false)
 
   // A repo whose folder is gone — set to swap the workspace for the recovery
-  // screen (Locate / Clone Again / Remove). `recovering` drives "Check again".
-  const [missingRepo, setMissingRepo] = useState<{
-    path: string
-    name: string
-    remoteUrl: string | null
-  } | null>(null)
-  const [recovering, setRecovering] = useState(false)
+  // screen (Locate / Clone Again / Remove). The recovery actions + the
+  // "Check again" busy flag live in useRepoRecovery (wired up below).
+  const [missingRepo, setMissingRepo] = useState<MissingRepoInfo | null>(null)
 
   const [appInfo, setAppInfo] = useState<AppInfo | null>(null)
   const [aboutOpen, setAboutOpen] = useState(false)
@@ -142,58 +128,14 @@ export function App() {
   const [undo, setUndo] = useState<UndoSnapshot | null>(null)
   const [composerDraft, setComposerDraft] = useState<ComposerDraft | null>(null)
   const [syncRunning, setSyncRunning] = useState<SyncAction | null>(null)
-  // Determinate progress of the op this window started (checkout/fetch/pull/
-  // push), already mapped onto one 0–100 scale; null while idle or before git
-  // reports anything.
-  const [opProgress, setOpProgress] = useState<{ kind: ProgressOpKind; percent: number } | null>(
-    null
-  )
   // Branch a checkout is switching to, for the switcher's progress display.
   const [checkingOut, setCheckingOut] = useState<string | null>(null)
-  // Git LFS health of the open repo (null = not probed / not applicable) and
-  // whether the user waved the banner away for this repo session.
-  const [lfsHealth, setLfsHealth] = useState<LfsHealth | null>(null)
-  const [lfsDismissed, setLfsDismissed] = useState(false)
-  const [lfsEnabling, setLfsEnabling] = useState(false)
   const [modal, setModal] = useState<Modal | null>(null)
   const [modalBusy, setModalBusy] = useState(false)
 
-  // Credential prompts pushed from main while a network op waits on auth.
-  // A queue because git asks in steps (username, then password) and parallel
-  // ops can overlap — the dialog shows them one at a time, oldest first.
-  // `oauth` marks prompts whose host supports one-click browser sign-in.
-  const [credentialPrompts, setCredentialPrompts] = useState<
-    Array<CredentialPromptRequest & { oauth: boolean }>
-  >([])
-
-  const [commits, setCommits] = useState<Commit[]>([])
-  const [commitsLoading, setCommitsLoading] = useState(false)
-  // Infinite scroll: whether older commits may exist past what's loaded, and
-  // whether a "load more" page is currently in flight (bottom spinner).
-  const [logHasMore, setLogHasMore] = useState(false)
-  const [commitsLoadingMore, setCommitsLoadingMore] = useState(false)
-  const [logLoaded, setLogLoaded] = useState(false)
-  const [selectedCommit, setSelectedCommit] = useState<Commit | null>(null)
-  const [commitFiles, setCommitFiles] = useState<ChangedFile[]>([])
-  const [commitFilesLoading, setCommitFilesLoading] = useState(false)
-  const [commitSelPath, setCommitSelPath] = useState<string | null>(null)
-  const [commitSelCount, setCommitSelCount] = useState(1)
-  // Hash being revealed from the blame gutter when it sits past the loaded
-  // window: paging the log deep enough to reach a super-old commit can take a
-  // moment, so HistoryView shows a blocking overlay for it. Null otherwise.
-  const [revealingCommit, setRevealingCommit] = useState<string | null>(null)
-  // Free-text History filter. Applied server-side (`git log --grep`) so it
-  // searches the whole history, not just the loaded page; a short debounce keeps
-  // typing from re-running the log on every keystroke.
-  const [logSearch, setLogSearch] = useState('')
-  // True from the keystroke until the grep's results land (covers the debounce
-  // too) so the filter bar can show a spinner — the grep is slow on big repos.
-  const [logSearching, setLogSearching] = useState(false)
-
-  // Commit-selection request token: selecting a commit fires an async
-  // `commitFiles` fetch, and a slow one can resolve after the user has already
-  // picked another commit. This token lets a superseded selection bail out.
-  const commitReq = useRef(0)
+  // Credential prompts pushed from main while a network op waits on auth — see
+  // useCredentialPrompts.
+  const { credentialPrompts, respondCredential } = useCredentialPrompts()
 
   const [sidebarWidth, setSidebarWidth] = usePersistentState('gg.sidebarWidth', 340)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -205,8 +147,6 @@ export function App() {
   repoRef.current = repo
   const hostInfoRef = useRef<RepoHostInfo | null>(null)
   hostInfoRef.current = hostInfo
-  const unpushedRef = useRef<Set<string>>(unpushed)
-  unpushedRef.current = unpushed
   // Refs so the filesystem-driven refresh can read the latest view without
   // being re-created (which would re-subscribe the watcher).
   const tabRef = useRef<Tab>(tab)
@@ -215,35 +155,6 @@ export function App() {
   changeSelRef.current = changeSel
   const changesRef = useRef<ChangedFile[]>(changes)
   changesRef.current = changes
-  // Refs for the re-select guards: clicking the already-focused file/commit
-  // must be a no-op instead of refetching (and flashing) an identical diff.
-  const commitSelPathRef = useRef<string | null>(commitSelPath)
-  commitSelPathRef.current = commitSelPath
-  const selectedCommitRef = useRef<Commit | null>(selectedCommit)
-  selectedCommitRef.current = selectedCommit
-  // Hash whose file list is loaded (or loading); null after a failed fetch so
-  // re-clicking the commit retries.
-  const commitFilesHashRef = useRef<string | null>(null)
-  const logLoadedRef = useRef(logLoaded)
-  logLoadedRef.current = logLoaded
-  // Mirrors for the pager: read the latest list/`hasMore` without re-creating
-  // `loadMoreLog` (its identity stays stable across appends).
-  const commitsRef = useRef<Commit[]>(commits)
-  commitsRef.current = commits
-  const logHasMoreRef = useRef(logHasMore)
-  logHasMoreRef.current = logHasMore
-  // Re-entrancy guard for the pager + a token so a full log reload (branch
-  // switch, refresh) invalidates any in-flight "load more" page: appending a
-  // stale page from another branch would corrupt the list.
-  const loadingMoreRef = useRef(false)
-  const logReq = useRef(0)
-  // Current History filter, read by loadLog/loadMoreLog so every refresh and
-  // paged fetch honours it without depending on the search's identity.
-  const logSearchRef = useRef(logSearch)
-  logSearchRef.current = logSearch
-  // Debounce handle for the search-triggered reload (cleared on a fresh keystroke
-  // and when a commit is revealed, which clears the filter outright).
-  const logSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const branchRef = useRef<BranchInfo | null>(branch)
   branchRef.current = branch
   // Ref so doCommit can route a mid-merge commit without re-creating on every
@@ -301,6 +212,19 @@ export function App() {
     getRepoPath,
     fail
   )
+
+  // Determinate progress of the op this window started — see useOpProgress.
+  const opProgress = useOpProgress(busy, busyRef, getRepoPath)
+
+  // The GitHub slice: unpushed set, PR badges, the create-PR banner — see
+  // usePullRequests.
+  const { unpushedRef, prByBranch, createPrUrl, loadGithubData, resetGithub } = usePullRequests({
+    getRepoPath,
+    repo,
+    hostInfo,
+    branch,
+    sync
+  })
 
   // ── Data loaders ─────────────────────────────────────────────────────────
   // One IPC round-trip refreshes everything the sidebar shows: files, current
@@ -361,100 +285,29 @@ export function App() {
     if (repoPath) loadBranches(repoPath)?.catch(() => {})
   }, [loadBranches])
 
-  const loadLog = useCallback(
-    async (repoPath: string, ref?: string, opts?: { keepCount?: boolean; minCount?: number }) => {
-      // `keepCount` (watcher/post-op refresh): re-fetch everything the user has
-      // already paged in, so the list never shrinks back to the first page and
-      // yanks their scroll position. `minCount` (reveal-a-commit): page deep
-      // enough to include a specific commit. Fresh loads reset to one page.
-      const limit = Math.max(
-        LOG_LIMIT,
-        opts?.keepCount ? commitsRef.current.length : 0,
-        opts?.minCount ?? 0
-      )
-      const id = ++logReq.current
-      setCommitsLoading(true)
-      try {
-        const log = await window.gitgrove.log(repoPath, {
-          limit,
-          ref,
-          search: logSearchRef.current
-        })
-        if (id === logReq.current) {
-          setCommits(log)
-          // A short page means we hit the root commit — nothing left to page in.
-          setLogHasMore(log.length >= limit)
-          setLogLoaded(true)
-        }
-        return log
-      } finally {
-        if (id === logReq.current) {
-          setCommitsLoading(false)
-          // The freshest load has landed — drop the filter spinner (any load
-          // settles it; only a search keystroke ever raises it).
-          setLogSearching(false)
-        }
-      }
-    },
-    []
-  )
-
-  /** Appends the next page of history when the list scrolls near the bottom. */
-  const loadMoreLog = useCallback(async () => {
-    const repoPath = repoRef.current?.path
-    if (!repoPath || loadingMoreRef.current || !logHasMoreRef.current) return
-    loadingMoreRef.current = true
-    const id = logReq.current
-    setCommitsLoadingMore(true)
-    try {
-      const page = await window.gitgrove.log(repoPath, {
-        limit: LOG_LIMIT,
-        skip: commitsRef.current.length,
-        search: logSearchRef.current
-      })
-      // A reload (branch switch / refresh) raced us: drop this stale page.
-      if (id !== logReq.current) return
-      setLogHasMore(page.length >= LOG_LIMIT)
-      if (page.length > 0) {
-        setCommits((prev) => {
-          // `--skip` is offset-based, so a commit landing upstream mid-scroll
-          // shifts the window and can hand us rows we already have — dedupe to
-          // keep React keys (and the list) clean.
-          const seen = new Set(prev.map((c) => c.hash))
-          const fresh = page.filter((c) => !seen.has(c.hash))
-          return fresh.length > 0 ? [...prev, ...fresh] : prev
-        })
-      }
-    } catch (e) {
-      fail(e)
-    } finally {
-      loadingMoreRef.current = false
-      setCommitsLoadingMore(false)
-    }
-  }, [fail])
-
-  /**
-   * Drive the History filter: keep the input responsive (state updates at once)
-   * while debouncing the `git log --grep` reload that re-fetches the first page
-   * for the new query. `logSearchRef` is set synchronously so the reload — and
-   * any refresh racing it — reads the latest term.
-   */
-  const onLogSearchChange = useCallback(
-    (query: string) => {
-      setLogSearch(query)
-      logSearchRef.current = query
-      // Feedback starts now (through the debounce + grep), cleared when loadLog
-      // settles. Stays false for an unchanged query so clearing it is silent.
-      setLogSearching(true)
-      if (logSearchTimer.current) clearTimeout(logSearchTimer.current)
-      logSearchTimer.current = setTimeout(() => {
-        logSearchTimer.current = null
-        const repoPath = repoRef.current?.path
-        if (repoPath) loadLog(repoPath).catch(fail)
-      }, 200)
-    },
-    [loadLog, fail]
-  )
+  // The History tab's commit log — paged fetch, infinite-scroll paging, and the
+  // debounced server-side filter — see useCommitLog. The orchestrators below
+  // drive it through loadLog / resetLog / markLogStale / clearLogSearch.
+  const {
+    commits,
+    commitsLoading,
+    logHasMore,
+    commitsLoadingMore,
+    logLoaded,
+    logSearch,
+    logSearching,
+    revealingCommit,
+    logLoadedRef,
+    commitsRef,
+    logSearchRef,
+    loadLog,
+    loadMoreLog,
+    onLogSearchChange,
+    clearLogSearch,
+    markLogStale,
+    resetLog,
+    setRevealingCommit
+  } = useCommitLog(getRepoPath, fail)
 
   // ── Selection handlers ─────────────────────────────────────────────────────
   // biome-ignore lint/correctness/useExhaustiveDependencies: diffRef is read for its live value, not as a trigger — depending on it would churn this handler on every diff load.
@@ -497,65 +350,18 @@ export function App() {
     [selectWorkingFile, clearDiff]
   )
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: diffRef is read for its live value, not as a trigger — depending on it would churn this handler on every diff load.
-  const selectCommitFile = useCallback(
-    (path: string, hash: string, list?: ChangedFile[], opts?: { force?: boolean }) => {
-      const file = (list ?? commitFiles).find((f) => f.path === path)
-      if (!file) return
-      // Commit diffs are immutable — re-clicking the focused file would only
-      // reload the identical payload and flash the pane. `force` bypasses this
-      // for tab switches (the pane may hold a working diff for the same path)
-      // and for cross-commit auto-selects of the same path.
-      if (!opts?.force && path === commitSelPathRef.current && diffRef.current?.path === path) {
-        return
-      }
-      setCommitSelPath(path)
-      loadCommitDiff(hash, file)
-    },
-    [commitFiles, loadCommitDiff]
-  )
-
-  const selectCommit = useCallback(
-    async (commit: Commit) => {
-      const repoPath = repoRef.current?.path
-      if (!repoPath) return
-      // Re-selecting the selected commit (click or right-click) is a no-op —
-      // its file list and diff are immutable and already loaded (or loading).
-      // Still adopt the new object: a refreshed log may carry updated refs.
-      if (
-        commit.hash === selectedCommitRef.current?.hash &&
-        commitFilesHashRef.current === commit.hash
-      ) {
-        setSelectedCommit(commit)
-        return
-      }
-      const id = ++commitReq.current
-      commitFilesHashRef.current = commit.hash
-      setSelectedCommit(commit)
-      setCommitSelPath(null)
-      setCommitFiles([])
-      setCommitFilesLoading(true)
-      try {
-        const files = await window.gitgrove.commitFiles(repoPath, commit.hash)
-        // A newer commit was selected while this one was loading — drop the
-        // stale result so it can't overwrite the current commit's state.
-        if (id !== commitReq.current) return
-        setCommitFiles(files)
-        // Force: the previous commit may have focused the same path, whose
-        // (different) diff must not be kept.
-        if (files.length > 0) selectCommitFile(files[0].path, commit.hash, files, { force: true })
-        else clearDiff()
-      } catch (e) {
-        if (id === commitReq.current) {
-          commitFilesHashRef.current = null
-          fail(e)
-        }
-      } finally {
-        if (id === commitReq.current) setCommitFilesLoading(false)
-      }
-    },
-    [fail, selectCommitFile, clearDiff]
-  )
+  // The selected History commit and its file list — see useCommitDetail.
+  const {
+    selectedCommit,
+    commitFiles,
+    commitFilesLoading,
+    commitSelPath,
+    commitSelCount,
+    setCommitSelCount,
+    selectCommit,
+    selectCommitFile,
+    resetDetail
+  } = useCommitDetail({ getRepoPath, fail, loadCommitDiff, diffRef, clearDiff })
 
   /**
    * Reveal a commit in the History tab from elsewhere (the blame gutter's commit
@@ -565,6 +371,7 @@ export function App() {
    * then scrolls the selected commit into view. A no-op for commits that aren't
    * on HEAD's history (nothing to select).
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logSearchRef/logLoadedRef/commitsRef are refs read for their live values, not triggers.
   const revealCommit = useCallback(
     async (hash: string) => {
       const repoPath = repoRef.current?.path
@@ -576,13 +383,8 @@ export function App() {
       // before paging. While a filter was set the loaded list is the *filtered*
       // one, so the loaded-list fast paths below can't be trusted — force a fresh
       // unfiltered load instead.
-      if (logSearchTimer.current) {
-        clearTimeout(logSearchTimer.current)
-        logSearchTimer.current = null
-      }
       const wasFiltered = logSearchRef.current.trim() !== ''
-      setLogSearch('')
-      logSearchRef.current = ''
+      clearLogSearch()
       // Fast path: already paged in (and unfiltered) — select it straight away.
       const loaded =
         !wasFiltered && logLoadedRef.current
@@ -613,7 +415,7 @@ export function App() {
         setRevealingCommit(null)
       }
     },
-    [loadLog, selectCommit]
+    [loadLog, selectCommit, clearLogSearch, setRevealingCommit]
   )
 
   // ── Tab switching keeps the right pane in sync with the active selection ───
@@ -650,24 +452,8 @@ export function App() {
     ]
   )
 
-  // Load the GitHub-derived data for a repo: the "not pushed yet" SHA set (grays
-  // out "View on GitHub") and the open pull requests (branch badges). Callers
-  // gate this to GitHub hosts, so neither request runs where it isn't used. A
-  // transient failure keeps the previous values rather than clearing the UI.
-  const loadGithubData = useCallback(async (repoPath: string) => {
-    const [shas, prs] = await Promise.all([
-      window.gitgrove.unpushedCommits(repoPath).catch(() => null),
-      window.gitgrove.pullRequests(repoPath).catch(() => null)
-    ])
-    if (repoRef.current?.path !== repoPath) return
-    if (shas) setUnpushed(new Set(shas))
-    if (prs) {
-      setPullRequests(prs)
-      setPrsLoaded(true)
-    }
-  }, [])
-
   // ── Refresh: pulls every panel up to date (watcher + post-op) ─────────────
+  // biome-ignore lint/correctness/useExhaustiveDependencies: logLoadedRef is a ref read for its live value, not a trigger.
   const refresh = useCallback(async () => {
     const repoPath = repoRef.current?.path
     if (!repoPath) return
@@ -682,7 +468,7 @@ export function App() {
       // mark it stale so the next visit refetches. Branch enumeration is NOT
       // part of a refresh — the switcher reloads it lazily when opened.
       const refreshLog = logLoadedRef.current && tabRef.current === 'history'
-      if (logLoadedRef.current && !refreshLog) setLogLoaded(false)
+      if (logLoadedRef.current && !refreshLog) markLogStale()
       const [files] = await Promise.all([
         loadSnapshot(repoPath),
         refreshLog ? loadLog(repoPath, undefined, { keepCount: true }) : Promise.resolve(null),
@@ -710,7 +496,15 @@ export function App() {
         refreshRef.current()
       }
     }
-  }, [loadSnapshot, loadLog, loadWorkingDiff, autoSelect, failOrRecover, loadGithubData])
+  }, [
+    loadSnapshot,
+    loadLog,
+    loadWorkingDiff,
+    autoSelect,
+    failOrRecover,
+    loadGithubData,
+    markLogStale
+  ])
 
   const refreshRef = useRef(refresh)
   refreshRef.current = refresh
@@ -785,9 +579,7 @@ export function App() {
       // cheap and independent, so it fills in on its own without gating the UI.
       // On a GitHub host, also load the unpushed set and open PRs.
       setHostInfo(null)
-      setUnpushed(new Set())
-      setPullRequests([])
-      setPrsLoaded(false)
+      resetGithub()
       window.gitgrove
         .repoHostInfo(summary.path)
         .then((info) => {
@@ -797,14 +589,9 @@ export function App() {
         .catch(() => setHostInfo(null))
       setBranch(summary.branch)
       setChanges([])
-      setCommits([])
-      setLogHasMore(false)
-      setLogLoaded(false)
-      setLogSearch('')
-      logSearchRef.current = ''
-      setSelectedCommit(null)
-      setCommitFiles([])
-      setCommitSelPath(null)
+      resetLog()
+      clearLogSearch()
+      resetDetail()
       setChangeSel(null)
       setSelections(new Map())
       clearDiff()
@@ -833,7 +620,19 @@ export function App() {
         setChangesLoading(false)
       }
     },
-    [loadSnapshot, loadBranches, autoSelect, clearDiff, fail, failOrRecover, loadGithubData]
+    [
+      loadSnapshot,
+      loadBranches,
+      autoSelect,
+      clearDiff,
+      fail,
+      failOrRecover,
+      loadGithubData,
+      resetGithub,
+      resetLog,
+      clearLogSearch,
+      resetDetail
+    ]
   )
 
   // Route an open outcome: success applies the repo, an untrusted folder opens
@@ -886,49 +685,10 @@ export function App() {
     }
   }, [trustPath, handleOpen, fail])
 
-  // ── Missing-repo recovery (Locate / Clone Again / Remove / Check again) ────
-  const recoverCheckAgain = useCallback(async () => {
-    if (!missingRepo) return
-    setRecovering(true)
-    try {
-      handleOpen(await window.gitgrove.openRepo(missingRepo.path))
-    } catch (e) {
-      fail(e)
-    } finally {
-      setRecovering(false)
-    }
-  }, [missingRepo, handleOpen, fail])
-
-  const recoverLocate = useCallback(async () => {
-    if (!missingRepo) return
-    const stalePath = missingRepo.path
-    try {
-      const res = await window.gitgrove.pickRepo()
-      if (!res) return
-      // Opened a folder elsewhere — forget the dead path so it stops haunting
-      // the recents (the newly-opened one was just remembered under its path).
-      if (res.ok) await window.gitgrove.removeRecent(stalePath)
-      handleOpen(res)
-    } catch (e) {
-      fail(e)
-    }
-  }, [missingRepo, handleOpen, fail])
-
-  const recoverRemove = useCallback(async () => {
-    if (!missingRepo) return
-    await window.gitgrove.removeRecent(missingRepo.path).catch(() => {})
-    setMissingRepo(null)
-  }, [missingRepo])
-
-  const recoverCloneAgain = useCallback(() => {
-    if (!missingRepo?.remoteUrl) return
-    // Clone back into the same parent folder; the dialog composes the leaf from
-    // the repo name and a successful clone replaces the missing recent in place.
-    const trimmed = missingRepo.path.replace(/[\\/]+$/, '')
-    const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'))
-    const baseDir = cut > 0 ? trimmed.slice(0, cut) : trimmed
-    setModal({ kind: 'clone', initial: { url: missingRepo.remoteUrl, baseDir } })
-  }, [missingRepo])
+  // Missing-repo recovery (Locate / Clone Again / Remove / Check again) — see
+  // useRepoRecovery.
+  const { recovering, recoverCheckAgain, recoverLocate, recoverRemove, recoverCloneAgain } =
+    useRepoRecovery({ missingRepo, setMissingRepo, handleOpen, fail, openModal: setModal })
 
   /** The switch itself: checkout, refresh, and narrate where the changes went. */
   const performCheckout = useCallback(
@@ -945,14 +705,10 @@ export function App() {
           changes ? { changes } : undefined
         )
         setBranch(result.branch)
-        setSelectedCommit(null)
-        setCommitFiles([])
-        setCommitSelPath(null)
+        resetDetail()
         setChangeSel(null)
         setSelections(new Map())
-        setCommits([])
-        setLogHasMore(false)
-        setLogLoaded(false)
+        resetLog()
         clearDiff()
         // The new branch invalidates the log; reload it now only if History is
         // showing, otherwise leave it for the next time the tab is opened.
@@ -978,7 +734,7 @@ export function App() {
         setCheckingOut(null)
       }
     },
-    [loadSnapshot, loadLog, autoSelect, clearDiff, fail]
+    [loadSnapshot, loadLog, autoSelect, clearDiff, fail, resetLog, resetDetail]
   )
 
   /**
@@ -1165,29 +921,8 @@ export function App() {
     })
   }, [])
 
-  // On-disk size of the included files — debounced; skipped on gigantic
-  // selections so the stat pass stays trivial.
-  const [commitSize, setCommitSize] = useState<number | null>(null)
-  useEffect(() => {
-    const repoPath = repoRef.current?.path
-    if (!repoPath) return
-    const t = setTimeout(() => {
-      const paths: string[] = []
-      for (const f of changes) {
-        if (f.status === 'conflicted' || f.status === 'deleted') continue
-        if ((selections.get(f.path) ?? 'all') !== 'none') paths.push(f.path)
-      }
-      if (paths.length === 0 || paths.length > 20000) {
-        setCommitSize(paths.length === 0 ? 0 : null)
-        return
-      }
-      window.gitgrove
-        .selectionSize(repoPath, paths)
-        .then(setCommitSize)
-        .catch(() => setCommitSize(null))
-    }, 400)
-    return () => clearTimeout(t)
-  }, [changes, selections])
+  // On-disk size of the files included in the next commit — see useCommitSize.
+  const commitSize = useCommitSize(getRepoPath, changes, selections)
 
   /** Replace one file's hunk selection (from the diff's checkbox bars). */
   const setHunkSelection = useCallback(
@@ -1303,7 +1038,7 @@ export function App() {
         })
         if (!ok) return
         if (request.checkout) {
-          setLogLoaded(false)
+          markLogStale()
           if (tabRef.current === 'history') loadLog(repoPath).catch(fail)
         }
         if (outcome === 'conflicts') {
@@ -1321,7 +1056,7 @@ export function App() {
         setModal(null)
       }
     },
-    [loadLog, fail]
+    [loadLog, fail, markLogStale]
   )
 
   const onBranchAction = useCallback(
@@ -1351,60 +1086,8 @@ export function App() {
     [reloadBranches]
   )
 
-  // Map a branch name to its most recent PR of any state (PRs arrive
-  // newest-activity first, so the first match wins). Same-repo PRs only: a fork
-  // PR's head ref names a branch in another repo, so matching by name alone
-  // would be wrong. The badge uses only the open ones; the menu links to this.
-  const prByBranch = useMemo(() => {
-    const map = new Map<string, PullRequestInfo>()
-    for (const pr of pullRequests) {
-      if (!pr.isCrossRepo && !map.has(pr.headBranch)) map.set(pr.headBranch, pr)
-    }
-    return map
-  }, [pullRequests])
-
-  // The compare URL for the "Create Pull Request" banner, or null when it
-  // shouldn't show: only on a GitHub host, for a published branch (has an
-  // upstream) that isn't the default branch and has no PR at all yet.
-  const createPrUrl = useMemo(() => {
-    // Wait until PRs have loaded — otherwise the banner flashes on every repo
-    // open before we know whether the branch already has a PR.
-    if (!prsLoaded) return null
-    if (hostInfo?.provider !== 'github' || !hostInfo.webUrl) return null
-    if (!branch || branch.detached || !branch.defaultBranch) return null
-    const current = branch.current
-    if (!current || current === branch.defaultBranch) return null
-    // Any PR — open, merged or closed — means the branch's PR story is already
-    // told (the menu's "Open Pull Request #N" reaches it), so don't nag to
-    // create another. In particular, a just-merged branch must not reopen this.
-    if (!sync?.upstream || prByBranch.has(current)) return null
-    return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
-  }, [hostInfo, branch, sync, prByBranch, prsLoaded])
-
-  // Refresh PRs + CI when the window regains focus — the cheap way to catch a
-  // build that finished while the user was away, without background polling.
-  useEffect(() => {
-    if (hostInfo?.provider !== 'github' || !repo) return
-    const repoPath = repo.path
-    const onFocus = () => loadGithubData(repoPath)
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [hostInfo, repo, loadGithubData])
-
-  // While the window is focused AND a check is still running, poll every 30s so
-  // a pending dot turns green/red on its own. The moment nothing is pending the
-  // effect re-runs with no timer, so it's silent whenever CI is settled.
-  useEffect(() => {
-    if (hostInfo?.provider !== 'github' || !repo) return
-    if (!pullRequests.some((pr) => pr.checks === 'pending')) return
-    const repoPath = repo.path
-    const timer = setInterval(() => {
-      if (document.hasFocus()) loadGithubData(repoPath)
-    }, 30_000)
-    return () => clearInterval(timer)
-  }, [hostInfo, repo, pullRequests, loadGithubData])
-
   /** Right-click menu for a history commit. */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: unpushedRef is a ref read for its live value (the unpushed-commit set), not a trigger.
   const commitMenuFor = useCallback(
     (commit: Commit): ContextMenuItem[] => {
       const repoPath = repoRef.current?.path
@@ -1486,180 +1169,29 @@ export function App() {
       // Detaching HEAD invalidates the log; reload it now only if History is
       // showing, otherwise leave it for the next time the tab is opened.
       if (ok) {
-        setLogLoaded(false)
+        markLogStale()
         if (tabRef.current === 'history') loadLog(repoPath).catch(fail)
       }
     },
-    [loadLog, fail]
+    [loadLog, fail, markLogStale]
   )
-
-  // ── Git availability: probe on launch, re-probe on demand ──────────────────
-  useEffect(() => {
-    window.gitgrove
-      .checkGit()
-      .then(setGit)
-      .catch(() => setGit({ available: false, platform: 'win32' }))
-  }, [])
-
-  const recheckGit = useCallback(async () => {
-    setGitChecking(true)
-    try {
-      setGit(await window.gitgrove.checkGit(true))
-    } finally {
-      setGitChecking(false)
-    }
-  }, [])
 
   // ── OS integration: menu commands + filesystem change notifications ────────
-  useEffect(() => window.gitgrove.onMenuOpenRepo(() => pickRepo()), [pickRepo])
-
-  useEffect(
-    () =>
-      window.gitgrove.onMenuCommand((command: MenuCommand) => {
-        const hasRepo = !!repoRef.current
-        switch (command) {
-          case 'settings':
-            setModal({ kind: 'settings' })
-            break
-          case 'clone':
-            setModal({ kind: 'clone' })
-            break
-          case 'fetch':
-          case 'pull':
-          case 'push':
-            if (hasRepo) doSync(command)
-            break
-          case 'new-branch':
-            if (hasRepo) {
-              // Fresh enumeration for the dialog's default-branch option.
-              reloadBranches()
-              setModal({ kind: 'new-branch' })
-            }
-            break
-          case 'undo':
-            if (hasRepo) doUndoRef.current()
-            break
-          case 'stash':
-            if (hasRepo) setModal({ kind: 'stash' })
-            break
-          case 'worktrees':
-            if (hasRepo) setModal({ kind: 'worktrees' })
-            break
-          case 'submodules':
-            if (hasRepo) setModal({ kind: 'submodules' })
-            break
-          case 'optimize':
-            if (hasRepo) {
-              const repoPath = repoRef.current?.path
-              if (repoPath) runOpRef.current(() => window.gitgrove.optimizeRepo(repoPath))
-            }
-            break
-        }
-      }),
-    [doSync, reloadBranches]
-  )
-
-  // Every op that reports progress runs under `busy`; when it ends, so does
-  // the fill — one clearing point instead of one per operation.
-  useEffect(() => {
-    if (!busy) setOpProgress(null)
-  }, [busy])
-
-  // Determinate progress pushes for checkout/fetch/pull/push/discard. Only
-  // ops this window started count (`busy` is set around them) — the quiet
-  // background auto-fetch reports too and must never flash the buttons.
-  useEffect(
-    () =>
-      window.gitgrove.onOpProgress((p) => {
-        if (!busyRef.current || p.repoPath !== repoRef.current?.path) return
-        const percent = overallPercent(p.kind, p.phase, p.percent)
-        if (percent === null) return
-        // Phases overlap on the wire (local and remote report concurrently) —
-        // never let the fill move backwards.
-        setOpProgress((prev) =>
-          prev && prev.kind === p.kind
-            ? { kind: p.kind, percent: Math.max(prev.percent, percent) }
-            : { kind: p.kind, percent }
-        )
-      }),
-    []
-  )
-
-  // Credential prompts: queue arrivals, drop expirations, answer via IPC.
-  useEffect(
-    () =>
-      window.gitgrove.onCredentialPrompt((request) => {
-        // Queue in arrival order immediately — the OAuth probe is async, and
-        // awaiting it before enqueuing could reorder two prompts racing in.
-        // Reaching here means no connected account answered silently; resolve
-        // whether the host supports one-click browser sign-in and flip the flag
-        // on the queued prompt when it does (it both rescues this prompt and
-        // connects the account for every future operation).
-        setCredentialPrompts((prev) => [...prev, { ...request, oauth: false }])
-        if (!request.host) return
-        window.gitgrove
-          .hasOAuthClient(request.host)
-          .then((oauth) => {
-            if (!oauth) return
-            setCredentialPrompts((prev) =>
-              prev.map((p) => (p.requestId === request.requestId ? { ...p, oauth: true } : p))
-            )
-          })
-          .catch(() => {})
-      }),
-    []
-  )
-  useEffect(
-    () =>
-      window.gitgrove.onCredentialDismiss((requestId) =>
-        setCredentialPrompts((prev) => prev.filter((p) => p.requestId !== requestId))
-      ),
-    []
-  )
-  const respondCredential = useCallback((requestId: string, value: string | null) => {
-    setCredentialPrompts((prev) => prev.filter((p) => p.requestId !== requestId))
-    window.gitgrove.respondCredential(requestId, value).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    return window.gitgrove.onRepoChanged((changedPath) => {
-      // Skip watcher-driven refreshes while one of our own ops runs — runOp
-      // refreshes once on completion, with the final state.
-      if (repoRef.current && changedPath === repoRef.current.path && !busyRef.current) {
-        refreshRef.current()
-      }
-    })
-  }, [])
-
-  // Refresh when the window regains focus — the moment external edits (your
-  // editor, the terminal) become relevant. Throttled so rapid focus flips
-  // don't stack status runs.
-  useEffect(() => {
-    let last = 0
-    const onFocus = () => {
-      const now = Date.now()
-      if (now - last < 1000) return
-      last = now
-      if (repoRef.current && !busyRef.current) refreshRef.current()
-    }
-    window.addEventListener('focus', onFocus)
-    return () => window.removeEventListener('focus', onFocus)
-  }, [])
-
-  // Quiet background fetch so ahead/behind stays honest without manual checks.
-  useEffect(() => {
-    if (!repo) return
-    const t = setInterval(() => {
-      const repoPath = repoRef.current?.path
-      if (!repoPath || busyRef.current || syncRef.current?.remotes.length === 0) return
-      // `quiet`: a background fetch must never pop the credential dialog.
-      window.gitgrove
-        .fetch(repoPath, undefined, { quiet: true })
-        .then(() => refreshRef.current())
-        .catch(() => {})
-    }, AUTO_FETCH_INTERVAL)
-    return () => clearInterval(t)
-  }, [repo])
+  // Native menu commands, the watcher refresh, the focus refresh and the quiet
+  // background fetch — see useOsIntegration.
+  useOsIntegration({
+    repo,
+    repoRef,
+    busyRef,
+    syncRef,
+    refreshRef,
+    doUndoRef,
+    runOpRef,
+    pickRepo,
+    doSync,
+    reloadBranches,
+    openModal: setModal
+  })
 
   // ── About dialog + auto-update ─────────────────────────────────────────────
   useEffect(() => {
@@ -1683,43 +1215,13 @@ export function App() {
       .catch(() => {})
   }, [openRepoByPath])
 
-  // Probe LFS health once per repo open — cheap (a handful of config reads)
-  // and silent for the overwhelming majority of repos that don't use LFS.
-  const probeLfsHealth = useCallback((path: string) => {
-    let stale = false
-    window.gitgrove
-      .lfsHealth(path)
-      .then((health) => {
-        if (!stale) setLfsHealth(health)
-      })
-      .catch(() => {})
-    return () => {
-      stale = true
-    }
-  }, [])
-
-  const lfsRepoPath = repo?.path
-  useEffect(() => {
-    setLfsHealth(null)
-    setLfsDismissed(false)
-    if (!lfsRepoPath) return
-    return probeLfsHealth(lfsRepoPath)
-  }, [lfsRepoPath, probeLfsHealth])
-
-  const enableLfs = useCallback(async () => {
-    const path = repoRef.current?.path
-    if (!path) return
-    setLfsEnabling(true)
-    try {
-      await window.gitgrove.lfsEnable(path)
-      setLfsHealth(await window.gitgrove.lfsHealth(path))
-      setNotice('Git LFS is set up — large files now download and upload correctly.')
-    } catch (e) {
-      fail(e)
-    } finally {
-      setLfsEnabling(false)
-    }
-  }, [fail])
+  // Git LFS health of the open repo + the one-click enable — see useLfs.
+  const { lfsHealth, lfsDismissed, dismissLfs, lfsEnabling, enableLfs, probeLfsHealth } = useLfs(
+    repo?.path,
+    getRepoPath,
+    fail,
+    setNotice
+  )
 
   // What the toolbar shows of the running op: the sync button's fill (only
   // when the progress kind matches the running action) and the branch
@@ -1793,7 +1295,7 @@ export function App() {
             enabling={lfsEnabling}
             onEnable={enableLfs}
             onRecheck={() => probeLfsHealth(repoPath)}
-            onDismiss={() => setLfsDismissed(true)}
+            onDismiss={dismissLfs}
           />
         )}
       {trustPath && (
