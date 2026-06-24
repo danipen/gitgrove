@@ -4,7 +4,8 @@
 // only ever asks to "check" or "install".
 //
 // Behaviour:
-//  - On launch we run one silent background check (errors stay quiet).
+//  - On launch we run one silent background check (errors stay quiet), then a
+//    silent re-check every hour so long-running sessions still notice releases.
 //  - The Help ▸ "Check for Updates…" menu item and the About dialog run a
 //    *manual* check, which also surfaces the "you're up to date" result.
 //  - Updates download automatically; when ready the renderer shows a banner
@@ -38,6 +39,12 @@ import { describeUpdateError } from './update-error'
 const { autoUpdater } = electronUpdater
 
 const execFileAsync = promisify(execFile)
+
+// Delay before the first launch check, so we don't compete with first paint.
+const INITIAL_CHECK_DELAY_MS = 4000
+// How often to silently re-check while the app stays open. Hourly is frequent
+// enough to catch same-day releases without hammering GitHub on idle sessions.
+const PERIODIC_CHECK_INTERVAL_MS = 60 * 60 * 1000
 
 const version = app.getVersion()
 let manualCheck = false
@@ -203,7 +210,12 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
       autoUpdater.autoDownload = false
       autoUpdater.autoInstallOnAppQuit = false
     }
-    setTimeout(() => void checkForUpdates(getWindow, false), 4000)
+    setTimeout(() => {
+      void checkForUpdates(getWindow, false)
+      // Keep checking while the app is open; unref so a pending timer never
+      // holds the process alive past quit.
+      setInterval(() => void checkForUpdates(getWindow, false), PERIODIC_CHECK_INTERVAL_MS).unref()
+    }, INITIAL_CHECK_DELAY_MS)
   })
 }
 
