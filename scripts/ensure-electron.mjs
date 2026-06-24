@@ -11,6 +11,11 @@
 // --version` without a display/libs, and they don't need to. Whether it
 // actually launches is the E2E smoke's job.
 //
+// By default this is best-effort: if the binary can't be installed (a flaky
+// download, or a platform with no prebuilt — e.g. win32-arm64), it warns and
+// exits 0 so `bun install` still succeeds for anyone who only lints/tests. Pass
+// `--require` (the E2E job does) to fail hard when the binary is missing.
+//
 // macOS twist: a freshly extracted Electron.app is rejected by Gatekeeper
 // ("Killed: 9") until its quarantine attribute is cleared and it's ad-hoc
 // re-signed. GitHub Desktop never hits this because it never launches Electron
@@ -24,6 +29,9 @@ import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
 const require = createRequire(import.meta.url)
+
+// Best-effort by default; `--require` (the E2E job) fails hard on a missing binary.
+const required = process.argv.includes('--require')
 
 /** Absolute path to the Electron executable, or null when it isn't installed. */
 function electronBinary() {
@@ -104,7 +112,14 @@ for (let attempt = 1; attempt <= 4; attempt++) {
   sleep(attempt * 1000)
 }
 
-console.error('\nElectron binary could not be installed after 4 attempts.')
-console.error(`  platform: ${process.platform} ${process.arch}`)
-console.error(`  resolved path: ${electronBinary() ?? '(path.txt missing)'}`)
-process.exit(1)
+const detail = `${process.platform} ${process.arch} — resolved path: ${electronBinary() ?? '(path.txt missing)'}`
+if (required) {
+  console.error(`\nElectron binary could not be installed after 4 attempts (${detail}).`)
+  process.exit(1)
+}
+// Best-effort: don't break `bun install` for lint/test-only use or a platform
+// without a prebuilt binary. The app just won't launch until it's installed.
+console.warn(
+  `\nElectron binary not installed (${detail}); continuing — it's only needed to run the app.`
+)
+process.exit(0)

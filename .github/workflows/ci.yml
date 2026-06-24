@@ -75,13 +75,12 @@ jobs:
       - uses: ./.github/actions/install
         with:
           bun-version: ${{ env.BUN_VERSION }}
-      # `bun install` above already runs the postinstall (scripts/ensure-electron.mjs),
-      # but bun doesn't propagate a failed *root* postinstall as a non-zero exit —
-      # so run the same script explicitly here to guarantee a present, runnable
-      # binary before the only job that actually launches Electron. It's
-      # idempotent (a warm binary is a no-op) and handles the download retry +
-      # the macOS Gatekeeper resign in one place — see the script for why.
-      - run: node scripts/ensure-electron.mjs
+      # The postinstall (scripts/ensure-electron.mjs) is best-effort so it never
+      # breaks `bun install`; here — the only job that actually launches Electron
+      # — require the binary, so a failed install fails loudly instead of
+      # mid-smoke. Idempotent (a warm binary is a no-op); handles the download
+      # retry + the macOS Gatekeeper resign in one place — see the script.
+      - run: node scripts/ensure-electron.mjs --require
       - run: bun run build
       # The smoke opens this repo and asserts the working-tree file tree renders,
       # so it needs at least one change. A fresh checkout is clean, so drop an
