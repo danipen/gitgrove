@@ -91,13 +91,30 @@ jobs:
         env:
           DEBUG: '@electron/get:*'
         run: |
-          # Resolve and launch the binary through Node (execFileSync), not the
-          # shell — `require('electron')` throws if path.txt is missing, and
-          # spawning by path sidesteps Windows backslash quoting under Git Bash.
+          # Electron >= 42 no longer fetches its binary in its own postinstall,
+          # so `bun install` leaves node_modules/electron/dist empty until
+          # install.js runs (the eager fetch GitHub Desktop does in post-install).
+          # Resolve and launch through Node (execFileSync), not the shell —
+          # `require('electron')` throws if path.txt is missing, and spawning by
+          # path sidesteps Windows backslash quoting under Git Bash.
           binary_ok() {
             node -e 'require("child_process").execFileSync(require("electron"), ["--version"], { stdio: "ignore" })' 2>/dev/null
           }
+          # macOS: a freshly extracted Electron.app can carry a quarantine xattr
+          # or a signature Gatekeeper rejects, so the kernel kills the binary on
+          # launch ("Killed: 9") even though the downloaded zip's checksum
+          # validated. Strip the quarantine and ad-hoc re-sign so it runs. This
+          # is the one thing CI must do that GitHub Desktop avoids by never
+          # launching Electron at all. No-op off macOS / before the app exists.
+          macos_fixup() {
+            [ "$(uname)" = "Darwin" ] || return 0
+            local app=node_modules/electron/dist/Electron.app
+            [ -d "$app" ] || return 0
+            xattr -cr "$app" 2>/dev/null || true
+            codesign --force --deep --sign - "$app" 2>/dev/null || true
+          }
           for attempt in 1 2 3 4; do
+            macos_fixup
             if binary_ok; then
               echo "Electron binary present and runnable."
               exit 0
@@ -117,10 +134,22 @@ jobs:
             node node_modules/electron/install.js || echo "::warning::install.js exited non-zero"
             sleep $((attempt * 5))
           done
+          macos_fixup
           if binary_ok; then
             echo "Electron binary present and runnable."
             exit 0
           fi
+          # Still broken — surface WHY (the loop's check is silent), so the real
+          # cause lands in the log instead of being guessed at.
+          echo "::group::Electron launch diagnostics"
+          uname -a || true
+          [ "$(uname)" = "Darwin" ] && sw_vers || true
+          bin="$(node -e 'process.stdout.write(require("electron"))' 2>&1 || true)"
+          echo "resolved electron path: $bin"
+          if [ -e "$bin" ]; then ls -la "$bin"; file "$bin"; else echo "binary path missing"; fi
+          echo "--- direct launch (stderr shown) ---"
+          node -e 'require("child_process").execFileSync(require("electron"), ["--version"], { stdio: "inherit" })' || echo "launch exit: $?"
+          echo "::endgroup::"
           echo "::error::Electron binary failed to install after 4 attempts"
           exit 1
       - run: bun run build
