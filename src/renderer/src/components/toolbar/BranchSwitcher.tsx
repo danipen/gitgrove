@@ -3,7 +3,7 @@ import type { BranchInfo, PullRequestChecks, PullRequestInfo } from '@shared/typ
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ClearButton } from '@/components/common/ClearButton'
-import { ContextMenu } from '@/components/common/ContextMenu'
+import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
 import { Popover } from '@/components/common/Popover'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { type BranchRow, buildBranchRows } from '@/lib/branch-rows'
@@ -14,13 +14,6 @@ import { useListKeyNav } from '@/lib/useListKeyNav'
 
 /** Branch operations surfaced from the switcher (beyond plain checkout). */
 export type BranchAction = 'new' | 'merge' | 'rename' | 'delete'
-
-/** Tooltip wording for each CI rollup state, appended to the PR badge's tip. */
-const CHECKS_LABEL: Record<PullRequestChecks, string> = {
-  success: 'checks passing',
-  failure: 'checks failing',
-  pending: 'checks running'
-}
 
 /** The CI rollup glyph inside a PR badge: a green check when passing, a red
  *  cross when failing, or a pulsing amber dot while checks are still running.
@@ -50,40 +43,40 @@ function PrGlyph({ pr }: { pr: PullRequestInfo }) {
 const prStateText = (pr: PullRequestInfo) =>
   pr.state === 'open' ? (pr.draft ? 'draft' : 'open') : pr.state
 
-/** The `#123` pill marking a branch's PR: a state glyph + the number, tinted for
- *  merged (purple) / closed (red). `tip` adds the hover text tooltip — off when
- *  a cluster's hovercard supplies the detail instead. styles: features/toolbar.css */
-function PrBadge({ pr, tip = true }: { pr: PullRequestInfo; tip?: boolean }) {
+/** The `#123` pill marking a branch's most important PR: a state glyph + the
+ *  number, tinted for merged (purple) / closed (red). One badge per branch — the
+ *  full list (and count) lives in the hovercard. styles: features/toolbar.css */
+function PrBadge({ pr }: { pr: PullRequestInfo }) {
   const stateClass =
     pr.state === 'merged' ? ' branch-pr--merged' : pr.state === 'closed' ? ' branch-pr--closed' : ''
-  const kind = pr.draft && pr.state === 'open' ? 'Draft PR' : `${prStateText(pr)} PR`
-  const checks = pr.state === 'open' && pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
   return (
-    <span
-      className={`branch-pr${stateClass}`}
-      data-tip={tip ? `${kind} #${pr.number}: ${pr.title}${checks}` : undefined}
-    >
+    <span className={`branch-pr${stateClass}`}>
       <PrGlyph pr={pr} />#{pr.number}
     </span>
   )
 }
 
-/** A floating, read-only card listing a branch's PRs (icon, status, number,
- *  title), shown on hover of the `+N` cluster. When the branch has more PRs than
- *  were fetched (`total > prs.length`), a footer links to the full list on the
- *  host. Portal-rendered so the popover / row overflow can't clip it; positioned
- *  under the cluster, flipped above near the bottom edge.
- *  styles: features/toolbar.css (.pr-card) */
+/** A floating card listing a branch's PRs (icon, status, number, title) — shown
+ *  on hover of the badge, always (one PR or many) so the UX is uniform. Each row
+ *  is clickable to open the PR; when the branch has more PRs than were fetched
+ *  (`total > prs.length`), a footer links to the full list on the host. Stays
+ *  open while the pointer is over it (onHover*), so its rows are reachable.
+ *  Portal-rendered so the popover / row overflow can't clip it; positioned under
+ *  the badge, flipped above near the bottom edge. styles: features/toolbar.css */
 function PrHoverCard({
   anchor,
   prs,
   total,
-  githubWebUrl
+  githubWebUrl,
+  onHoverEnter,
+  onHoverLeave
 }: {
   anchor: HTMLElement | null
   prs: PullRequestInfo[]
   total: number
   githubWebUrl?: string | null
+  onHoverEnter: () => void
+  onHoverLeave: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
@@ -93,7 +86,7 @@ function PrHoverCard({
     const r = anchor.getBoundingClientRect()
     const card = ref.current.getBoundingClientRect()
     const m = 8
-    // Right-align to the cluster (it sits at the row's trailing edge), clamped.
+    // Right-align to the badge (it sits at the row's trailing edge), clamped.
     let left = Math.min(r.right - card.width, window.innerWidth - card.width - m)
     left = Math.max(m, left)
     let top = r.bottom + 6
@@ -108,21 +101,28 @@ function PrHoverCard({
       ref={ref}
       className="pr-card"
       style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: 'hidden' }}
+      onMouseEnter={onHoverEnter}
+      onMouseLeave={onHoverLeave}
     >
-      <div className="pr-card__head">{total} pull requests</div>
+      <div className="pr-card__head">
+        {total} pull request{total === 1 ? '' : 's'}
+      </div>
       {prs.map((pr) => (
-        <div key={pr.number} className="pr-card__row">
+        <button
+          key={pr.number}
+          type="button"
+          className="pr-card__row"
+          onClick={() => window.gitgrove.openExternal(pr.url)}
+        >
           <span className="pr-card__glyph">
             <PrGlyph pr={pr} />
           </span>
           <span className="pr-card__num">#{pr.number}</span>
           <span className="pr-card__title">{pr.title}</span>
           <span className="pr-card__state">{prStateText(pr)}</span>
-        </div>
+        </button>
       ))}
       {more && githubWebUrl && (
-        // pointer-events re-enabled here (the card itself is inert) so this one
-        // link is clickable; the hovercard otherwise stays read-only.
         <button
           type="button"
           className="pr-card__more"
@@ -130,7 +130,7 @@ function PrHoverCard({
             window.gitgrove.openExternal(headPullRequestsUrl(githubWebUrl, prs[0].headBranch))
           }
         >
-          Showing {prs.length} of {total} — view all on GitHub
+          View all {total} on GitHub
           <Icon.External size={12} />
         </button>
       )}
@@ -139,9 +139,10 @@ function PrHoverCard({
   )
 }
 
-/** A branch's PR badge cluster: the most important PR as a badge, a `+N` chip for
- *  the rest (N from the host's total, which can exceed what we fetched), and a
- *  hovercard listing them on hover. Renders nothing when the branch has no PR. */
+/** A branch's PR affordance: a single badge for its most important PR, with a
+ *  hovercard (always, one PR or many) listing them all — clickable, counted, and
+ *  with a "view all" link when the host has more than we fetched. Renders nothing
+ *  when the branch has no PR. */
 function BranchPrBadges({
   branchPrs,
   githubWebUrl
@@ -150,32 +151,40 @@ function BranchPrBadges({
   githubWebUrl?: string | null
 }) {
   const ref = useRef<HTMLSpanElement>(null)
-  const [hover, setHover] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [open, setOpen] = useState(false)
+  const showT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const closeT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   if (!branchPrs || branchPrs.prs.length === 0) return null
   const { prs, total } = branchPrs
-  const multiple = total > 1
+  // Open after a short hover; close on a short delay so the pointer can travel
+  // the gap into the card (which cancels the close via keepOpen).
   const show = () => {
-    timer.current = setTimeout(() => setHover(true), 120)
+    clearTimeout(closeT.current)
+    showT.current = setTimeout(() => setOpen(true), 120)
+  }
+  const keepOpen = () => {
+    clearTimeout(showT.current)
+    clearTimeout(closeT.current)
+    setOpen(true)
   }
   const hide = () => {
-    clearTimeout(timer.current)
-    setHover(false)
+    clearTimeout(showT.current)
+    closeT.current = setTimeout(() => setOpen(false), 150)
   }
   return (
-    // For a single PR the badge carries its own text tooltip; for a cluster the
-    // empty data-tip swallows the row's branch-name tip while the hovercard shows.
-    <span
-      ref={ref}
-      className="branch-prs"
-      data-tip={multiple ? '' : undefined}
-      onMouseEnter={multiple ? show : undefined}
-      onMouseLeave={multiple ? hide : undefined}
-    >
-      <PrBadge pr={prs[0]} tip={!multiple} />
-      {multiple && <span className="branch-pr branch-pr--more">+{total - 1}</span>}
-      {hover && multiple && (
-        <PrHoverCard anchor={ref.current} prs={prs} total={total} githubWebUrl={githubWebUrl} />
+    // The empty data-tip swallows the row's branch-name tip while hovering the
+    // badge, so only the rich hovercard shows.
+    <span ref={ref} className="branch-prs" data-tip="" onMouseEnter={show} onMouseLeave={hide}>
+      <PrBadge pr={prs[0]} />
+      {open && (
+        <PrHoverCard
+          anchor={ref.current}
+          prs={prs}
+          total={total}
+          githubWebUrl={githubWebUrl}
+          onHoverEnter={keepOpen}
+          onHoverLeave={hide}
+        />
       )}
     </span>
   )
@@ -211,6 +220,10 @@ interface Props {
  *  row like `origin/foo` maps to `foo` — a remote branch is exactly what a PR's
  *  head ref names, so it's matched and fetched under the bare name. */
 const headRef = (name: string, local: boolean) => (local ? name : name.slice(name.indexOf('/') + 1))
+
+/** Cap a PR title so a submenu of them doesn't grow unboundedly wide. */
+const truncate = (title: string, max = 52) =>
+  title.length > max ? `${title.slice(0, max - 1)}…` : title
 
 /** Fixed row height used by the virtualizer (must match the inline row height below). */
 const ROW_H = 32
@@ -296,29 +309,20 @@ export function BranchSwitcher({
 
   const visible = rows.slice(vs.start, vs.end)
 
-  // The default branch is where work merges *into*, never *from*, so PRs with it
-  // as their head ref are reverse "merge default into <branch>" updates — noise,
-  // not "this branch has a PR". So it gets no badge and we never fetch its PRs
-  // (the "Create Pull Request" banner skips the default branch for the same
-  // reason). `prsForRow` is how every badge site (pill + rows) honours that.
-  const defaultBranch = branch?.defaultBranch ?? null
-  const prsForRow = (name: string, local: boolean): BranchPrs | undefined => {
-    const ref = headRef(name, local)
-    return ref === defaultBranch ? undefined : prByBranch?.get(ref)
-  }
+  // A row's PRs, keyed by its head ref (remote rows map to their bare name).
+  const prsForRow = (name: string, local: boolean): BranchPrs | undefined =>
+    prByBranch?.get(headRef(name, local))
 
   // The head refs on screen (labels excluded; remote rows mapped to their bare
-  // name, the default branch dropped, deduped) — the only PRs we ask for, so a
-  // 25k-branch repo queries a viewport's worth, never the whole list.
+  // name, deduped) — the only PRs we ask for, so a 25k-branch repo queries a
+  // viewport's worth, never the whole list.
   const visibleBranches = useMemo(() => {
     const refs = new Set<string>()
     for (const row of visible) {
-      if (row.kind !== 'item') continue
-      const ref = headRef(row.name, row.local)
-      if (ref !== defaultBranch) refs.add(ref)
+      if (row.kind === 'item') refs.add(headRef(row.name, row.local))
     }
     return [...refs]
-  }, [visible, defaultBranch])
+  }, [visible])
   // Keep the fetch callback in a ref so the effects below key off the viewport
   // changing, not the (inline) callback's identity.
   const needPrsRef = useRef(onNeedPrs)
@@ -349,28 +353,44 @@ export function BranchSwitcher({
     branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
 
   /** The GitHub group for a branch's menu, under a single leading separator (or
-   *  nothing when none apply): an "Open Pull Request #N" entry per fetched PR
-   *  (importance-ordered, with a state hint for merged/closed ones), a "View all
-   *  N pull requests" entry when the branch has more than we fetched, plus "View
-   *  Branch on GitHub" when the branch is published. */
-  const githubMenuItems = (name: string) => {
-    const items = []
-    // Skip the default branch's head-ref PRs (reverse-merge noise — see prsForRow).
-    const entry = name === defaultBranch ? undefined : prByBranch?.get(name)
-    for (const pr of entry?.prs ?? []) {
+   *  nothing when none apply): one "Open Pull Request #N" entry when the branch
+   *  has a single PR, or a "Pull Requests (N)" submenu listing them (plus a "View
+   *  all on GitHub" entry when the host has more than we fetched) when it has
+   *  several — so the menu never spills 10 rows. Then "View Branch on GitHub"
+   *  when the branch is published. */
+  const githubMenuItems = (name: string): ContextMenuItem[] => {
+    const entry = prByBranch?.get(name)
+    const prs = entry?.prs ?? []
+    const total = entry?.total ?? prs.length
+    const items: ContextMenuItem[] = []
+
+    if (total === 1 && prs.length === 1) {
+      const pr = prs[0]
       items.push({
         label: `Open Pull Request #${pr.number}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       })
-    }
-    if (githubWebUrl && entry && entry.total > entry.prs.length) {
-      items.push({
-        label: `View all ${entry.total} pull requests`,
+    } else if (prs.length > 0) {
+      const submenu: ContextMenuItem[] = prs.map((pr) => ({
+        label: `#${pr.number} ${truncate(pr.title)}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
         icon: <Icon.Github size={15} />,
-        onClick: () => window.gitgrove.openExternal(headPullRequestsUrl(githubWebUrl, name))
-      })
+        onClick: () => window.gitgrove.openExternal(pr.url)
+      }))
+      if (githubWebUrl && total > prs.length) {
+        const web = githubWebUrl
+        submenu.push(
+          {},
+          {
+            label: `View all ${total} on GitHub`,
+            icon: <Icon.External size={15} />,
+            onClick: () => window.gitgrove.openExternal(headPullRequestsUrl(web, name))
+          }
+        )
+      }
+      items.push({ label: `Pull Requests (${total})`, icon: <Icon.Github size={15} />, submenu })
     }
+
     if (githubWebUrl && isPublished(name)) {
       items.push({
         label: 'View Branch on GitHub',
