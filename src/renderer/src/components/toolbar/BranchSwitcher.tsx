@@ -39,9 +39,20 @@ function PrGlyph({ pr }: { pr: PullRequestInfo }) {
   )
 }
 
-/** Wording for a PR's state, for the hovercard's trailing label / badge tip. */
-const prStateText = (pr: PullRequestInfo) =>
-  pr.state === 'open' ? (pr.draft ? 'draft' : 'open') : pr.state
+/** The hovercard's leading state glyph: GitHub's open / merged / closed pull-
+ *  request octicon, tinted by state (green / muted draft / purple / red). Unlike
+ *  the badge's CI-rollup glyph, this always shows — it's the row's only state cue
+ *  now that the text label is gone. */
+function PrStateIcon({ pr }: { pr: PullRequestInfo }) {
+  const state = pr.state === 'open' && pr.draft ? 'draft' : pr.state
+  const Glyph =
+    pr.state === 'merged' ? Icon.PrMerged : pr.state === 'closed' ? Icon.PrClosed : Icon.PrOpen
+  return (
+    <span className={`ci-status ci-status--${state}`} aria-hidden>
+      <Glyph size={13} />
+    </span>
+  )
+}
 
 /** The `#123` pill marking a branch's most important PR: a state glyph + the
  *  number, tinted for merged (purple) / closed (red). One badge per branch — the
@@ -108,27 +119,35 @@ function PrHoverCard({
         {total} pull request{total === 1 ? '' : 's'}
       </div>
       {prs.map((pr) => (
+        // stopPropagation: the card is portal-rendered but lives in the branch
+        // row's / pill's React subtree, so without it a click would also fire
+        // their onClick and switch branch / toggle the popover.
         <button
           key={pr.number}
           type="button"
           className="pr-card__row"
-          onClick={() => window.gitgrove.openExternal(pr.url)}
+          onClick={(e) => {
+            e.stopPropagation()
+            window.gitgrove.openExternal(pr.url)
+          }}
         >
           <span className="pr-card__glyph">
-            <PrGlyph pr={pr} />
+            <PrStateIcon pr={pr} />
           </span>
-          <span className="pr-card__num">#{pr.number}</span>
           <span className="pr-card__title">{pr.title}</span>
-          <span className="pr-card__state">{prStateText(pr)}</span>
+          <span className="pr-card__num">#{pr.number}</span>
+          {/* The open affordance — makes it obvious the row opens in the browser. */}
+          <Icon.External className="pr-card__open" size={12} />
         </button>
       ))}
       {more && githubWebUrl && (
         <button
           type="button"
           className="pr-card__more"
-          onClick={() =>
+          onClick={(e) => {
+            e.stopPropagation()
             window.gitgrove.openExternal(headPullRequestsUrl(githubWebUrl, prs[0].headBranch))
-          }
+          }}
         >
           View all {total} on GitHub
           <Icon.External size={12} />

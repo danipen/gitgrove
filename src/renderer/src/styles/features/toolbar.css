@@ -324,6 +324,13 @@
 .ci-status--closed {
   color: var(--st-deleted);
 }
+/* Open / draft PR octicons in the hovercard (open is green, a draft is muted). */
+.ci-status--open {
+  color: var(--st-added);
+}
+.ci-status--draft {
+  color: var(--fg-muted);
+}
 .ci-status--pending {
   width: 6px;
   height: 6px;
@@ -387,11 +394,6 @@
   width: 14px;
   flex: none;
 }
-.pr-card__num {
-  flex: none;
-  font-variant-numeric: tabular-nums;
-  color: var(--fg-muted);
-}
 .pr-card__title {
   flex: 1;
   min-width: 0;
@@ -399,20 +401,32 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.pr-card__state {
+.pr-card__num {
   flex: none;
-  font-size: 10.5px;
-  text-transform: capitalize;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
   color: var(--fg-faint);
 }
-/* Footer link shown when the branch has more PRs than the card lists. */
+/* The trailing "open in browser" glyph: faint until the row is hovered, the cue
+   that the row is a link. */
+.pr-card__open {
+  flex: none;
+  color: var(--fg-muted);
+  opacity: 0;
+}
+.pr-card__row:hover .pr-card__open {
+  opacity: 1;
+}
+/* Footer link shown when the branch has more PRs than the card lists. Content
+   centered (the link reads as a footer CTA). */
 .pr-card__more {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
   width: 100%;
-  margin-top: 2px;
-  padding: 6px;
+  margin-top: 4px;
+  padding: 8px 6px;
   border: none;
   border-top: 1px solid var(--border);
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
@@ -420,7 +434,7 @@
   color: var(--accent);
   font: inherit;
   font-size: 11.5px;
-  text-align: left;
+  line-height: 1;
   cursor: pointer;
 }
 .pr-card__more:hover {
