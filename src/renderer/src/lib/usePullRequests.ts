@@ -25,6 +25,7 @@ import type {
   SyncStatus
 } from '@shared/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { groupPrsByBranch } from './pr-order'
 
 interface Params {
   getRepoPath: () => string | undefined
@@ -45,9 +46,10 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
   // Full SHAs of commits not yet on any remote: their host commit page 404s, so
   // "View on GitHub" is grayed out for them. Loaded only for GitHub hosts.
   const [unpushed, setUnpushed] = useState<Set<string>>(new Set())
-  // Per-branch PR cache: a PullRequestInfo when the branch has one, or `null`
-  // once we've checked and found none (so we don't re-ask on every scroll).
-  const [prCache, setPrCache] = useState<Map<string, PullRequestInfo | null>>(new Map())
+  // Per-branch PR cache: a branch's PRs ordered by importance, or `[]` once we've
+  // checked and found none (so we don't re-ask on every scroll). A branch absent
+  // from the map hasn't been looked up yet.
+  const [prCache, setPrCache] = useState<Map<string, PullRequestInfo[]>>(new Map())
   // False until the current branch's first PR fetch resolves, so the "Create
   // Pull Request" banner never flashes before we know whether it has a PR.
   const [prsLoaded, setPrsLoaded] = useState(false)
@@ -63,7 +65,7 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
   const inFlightRef = useRef<Set<string>>(new Set())
 
   // Look up PRs for specific branches by head ref and fold them into the cache.
-  // Branches absent from the result are cached as `null` (checked, no PR) so we
+  // Branches absent from the result are cached as `[]` (checked, no PR) so we
   // don't keep re-asking. A failure leaves the cache untouched (badges persist).
   const fetchBranchPrs = useCallback(
     async (repoPath: string, branches: string[], opts: FetchOpts = {}) => {
@@ -82,10 +84,11 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
       for (const b of wanted) inFlightRef.current.delete(b)
       // Repo switched out from under the request — discard the stale answer.
       if (found === null || getRepoPath() !== repoPath) return
+      const grouped = groupPrsByBranch(found)
       setPrCache((prev) => {
         const next = new Map(prev)
-        for (const b of wanted) next.set(b, null)
-        for (const pr of found) next.set(pr.headBranch, pr)
+        // Every branch we asked about gets an entry — its PRs, or `[]` for none.
+        for (const b of wanted) next.set(b, grouped.get(b) ?? [])
         return next
       })
     },
@@ -118,13 +121,13 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
     inFlightRef.current.clear()
   }, [])
 
-  // Branch name → its PR, for the badge and the "Open Pull Request" menu entry.
-  // Same-repo PRs only: a fork PR's head ref names a branch in another repo, so
-  // matching by name alone would be wrong. `null` cache entries (no PR) drop out.
+  // Branch name → its PRs (importance-ordered), for the badge cluster and the
+  // "Open Pull Request" menu entries. Branches with no PR (cached `[]`) drop out,
+  // so `.has(name)` answers "does this branch have a PR?".
   const prByBranch = useMemo(() => {
-    const map = new Map<string, PullRequestInfo>()
-    for (const [name, pr] of prCache) {
-      if (pr && !pr.isCrossRepo) map.set(name, pr)
+    const map = new Map<string, PullRequestInfo[]>()
+    for (const [name, prs] of prCache) {
+      if (prs.length > 0) map.set(name, prs)
     }
     return map
   }, [prCache])
@@ -143,9 +146,9 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
     // Any PR — open, merged or closed — means the branch's PR story is already
     // told (the menu's "Open Pull Request #N" reaches it), so don't nag to
     // create another. In particular, a just-merged branch must not reopen this.
-    if (!sync?.upstream || prCache.get(current)) return null
+    if (!sync?.upstream || prByBranch.has(current)) return null
     return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
-  }, [hostInfo, branch, sync, prCache, prsLoaded])
+  }, [hostInfo, branch, sync, prByBranch, prsLoaded])
 
   // Refresh the current branch's PR + CI when the window regains focus — the
   // cheap way to catch a build that finished while the user was away.
@@ -161,7 +164,8 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
   // poll every 30s so a pending dot turns green/red on its own. The moment it
   // settles the effect re-runs with no timer, so it's silent when CI is done.
   const current = currentBranchRef.current
-  const headPending = current ? prByBranch.get(current)?.checks === 'pending' : false
+  // The pill shows the branch's top PR; poll while *that* one's checks run.
+  const headPending = current ? prByBranch.get(current)?.[0]?.checks === 'pending' : false
   useEffect(() => {
     if (hostInfo?.provider !== 'github' || !repo || !headPending) return
     const repoPath = repo.path

@@ -16,8 +16,9 @@ interface Props {
   branchesLoading: boolean
   /** The repo's GitHub web base URL, when the host supports it (else null). */
   githubWebUrl?: string | null
-  /** Open PRs keyed by head branch, for the branch switcher's PR badges. */
-  prByBranch?: Map<string, PullRequestInfo>
+  /** Each branch's PRs (importance-ordered) keyed by head branch, for the branch
+   *  switcher's PR badges. */
+  prByBranch?: Map<string, PullRequestInfo[]>
   /** Fetch PRs for the branches the switcher is showing (its viewport), so a
    *  huge repo only ever queries what's on screen — see usePullRequests. */
   onNeedPrs?: (branches: string[], opts: { revalidate: boolean }) => void

@@ -1,6 +1,7 @@
 import { branchUrl } from '@shared/git-host-urls'
 import type { BranchInfo, PullRequestChecks, PullRequestInfo } from '@shared/types'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ClearButton } from '@/components/common/ClearButton'
 import { ContextMenu } from '@/components/common/ContextMenu'
 import { Popover } from '@/components/common/Popover'
@@ -32,6 +33,116 @@ function CiStatus({ state }: { state: PullRequestChecks }) {
   )
 }
 
+/** The leading state glyph for a PR, shared by the badge and the hovercard: the
+ *  green/red/amber CI rollup for open PRs (nothing when no checks ran), or
+ *  GitHub's merged/closed octicon (no CI dot — that CI is long settled). */
+function PrGlyph({ pr }: { pr: PullRequestInfo }) {
+  if (pr.state === 'open') return pr.checks ? <CiStatus state={pr.checks} /> : null
+  return (
+    <span className={`ci-status ci-status--${pr.state}`} aria-hidden>
+      {pr.state === 'merged' ? <Icon.PrMerged size={11} /> : <Icon.PrClosed size={11} />}
+    </span>
+  )
+}
+
+/** Wording for a PR's state, for the hovercard's trailing label / badge tip. */
+const prStateText = (pr: PullRequestInfo) =>
+  pr.state === 'open' ? (pr.draft ? 'draft' : 'open') : pr.state
+
+/** The `#123` pill marking a branch's PR: a state glyph + the number, tinted for
+ *  merged (purple) / closed (red). `tip` adds the hover text tooltip — off when
+ *  a cluster's hovercard supplies the detail instead. styles: features/toolbar.css */
+function PrBadge({ pr, tip = true }: { pr: PullRequestInfo; tip?: boolean }) {
+  const stateClass =
+    pr.state === 'merged' ? ' branch-pr--merged' : pr.state === 'closed' ? ' branch-pr--closed' : ''
+  const kind = pr.draft && pr.state === 'open' ? 'Draft PR' : `${prStateText(pr)} PR`
+  const checks = pr.state === 'open' && pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
+  return (
+    <span
+      className={`branch-pr${stateClass}`}
+      data-tip={tip ? `${kind} #${pr.number}: ${pr.title}${checks}` : undefined}
+    >
+      <PrGlyph pr={pr} />#{pr.number}
+    </span>
+  )
+}
+
+/** A floating, read-only card listing every PR on a branch (icon, status, number,
+ *  title), shown on hover of the `+N` cluster. Portal-rendered so the popover /
+ *  row overflow can't clip it; positioned under the cluster, flipped above near
+ *  the bottom edge. styles: features/toolbar.css (.pr-card) */
+function PrHoverCard({ anchor, prs }: { anchor: HTMLElement | null; prs: PullRequestInfo[] }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: prs changes the measured height
+  useLayoutEffect(() => {
+    if (!anchor || !ref.current) return
+    const r = anchor.getBoundingClientRect()
+    const card = ref.current.getBoundingClientRect()
+    const m = 8
+    // Right-align to the cluster (it sits at the row's trailing edge), clamped.
+    let left = Math.min(r.right - card.width, window.innerWidth - card.width - m)
+    left = Math.max(m, left)
+    let top = r.bottom + 6
+    if (top + card.height > window.innerHeight - m) top = r.top - 6 - card.height
+    top = Math.max(m, Math.min(top, window.innerHeight - card.height - m))
+    setPos({ top, left })
+  }, [anchor, prs])
+  return createPortal(
+    <div
+      ref={ref}
+      className="pr-card"
+      style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: 'hidden' }}
+    >
+      <div className="pr-card__head">{prs.length} pull requests</div>
+      {prs.map((pr) => (
+        <div key={pr.number} className="pr-card__row">
+          <span className="pr-card__glyph">
+            <PrGlyph pr={pr} />
+          </span>
+          <span className="pr-card__num">#{pr.number}</span>
+          <span className="pr-card__title">{pr.title}</span>
+          <span className="pr-card__state">{prStateText(pr)}</span>
+        </div>
+      ))}
+    </div>,
+    document.body
+  )
+}
+
+/** A branch's PR badge cluster: the most important PR as a badge, a `+N` chip for
+ *  the rest, and a hovercard listing them all on hover. Renders nothing when the
+ *  branch has no PR. */
+function BranchPrBadges({ prs }: { prs: PullRequestInfo[] | undefined }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [hover, setHover] = useState(false)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  if (!prs || prs.length === 0) return null
+  const multiple = prs.length > 1
+  const show = () => {
+    timer.current = setTimeout(() => setHover(true), 120)
+  }
+  const hide = () => {
+    clearTimeout(timer.current)
+    setHover(false)
+  }
+  return (
+    // For a single PR the badge carries its own text tooltip; for a cluster the
+    // empty data-tip swallows the row's branch-name tip while the hovercard shows.
+    <span
+      ref={ref}
+      className="branch-prs"
+      data-tip={multiple ? '' : undefined}
+      onMouseEnter={multiple ? show : undefined}
+      onMouseLeave={multiple ? hide : undefined}
+    >
+      <PrBadge pr={prs[0]} tip={!multiple} />
+      {multiple && <span className="branch-pr branch-pr--more">+{prs.length - 1}</span>}
+      {hover && multiple && <PrHoverCard anchor={ref.current} prs={prs} />}
+    </span>
+  )
+}
+
 interface Props {
   branch: BranchInfo | null
   /** True while the full branch list is being fetched after a repo open. */
@@ -40,9 +151,10 @@ interface Props {
   /** The repo's GitHub web base URL, when the host supports it — enables
    *  "View Branch on GitHub" for branches that exist on the remote. */
   githubWebUrl?: string | null
-  /** Each branch's most recent PR (any state) keyed by head branch — drives the
-   *  `#123` badge and the "Open Pull Request" menu entry. */
-  prByBranch?: Map<string, PullRequestInfo>
+  /** Each branch's PRs (importance-ordered) keyed by head branch — drives the
+   *  `#123` badge cluster (one badge + a `+N` overflow) and the "Open Pull
+   *  Request" menu entries. */
+  prByBranch?: Map<string, PullRequestInfo[]>
   /** Ask the host for PRs of the branches currently on screen. `revalidate`
    *  re-asks even cached ones (on open); without it, scrolling only fetches
    *  rows not looked up yet. Debounced here so a fast fling fires one request. */
@@ -177,13 +289,12 @@ export function BranchSwitcher({
     branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
 
   /** The GitHub group for a branch's menu, under a single leading separator (or
-   *  nothing when none apply): "Open Pull Request #N" linking straight to the
-   *  branch's most recent PR (with a state hint for merged/closed ones), plus
+   *  nothing when none apply): an "Open Pull Request #N" entry per PR on the
+   *  branch (importance-ordered, with a state hint for merged/closed ones), plus
    *  "View Branch on GitHub" when the branch is published. */
   const githubMenuItems = (name: string) => {
     const items = []
-    const pr = prByBranch?.get(name)
-    if (pr) {
+    for (const pr of prByBranch?.get(name) ?? []) {
       items.push({
         label: `Open Pull Request #${pr.number}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
         icon: <Icon.Github size={15} />,
@@ -263,46 +374,9 @@ export function BranchSwitcher({
         : branch.current
       : '—'
 
-  // The `#123` pill marking a branch that has a PR. Open PRs carry the CI rollup
-  // glyph (green/red/amber); merged PRs go purple and closed red, each with
-  // GitHub's own PR-state octicon and no CI dot (their checks are long settled).
-  // styles: features/toolbar.css (.branch-pr)
-  const renderPrBadge = (pr: PullRequestInfo | undefined) => {
-    if (!pr) return null
-    // Number stays neutral for every state, including drafts — "Draft" lives in
-    // the tooltip/menu, not a dimmed number. Only merged/closed tint the glyph.
-    const stateClass =
-      pr.state === 'merged'
-        ? ' branch-pr--merged'
-        : pr.state === 'closed'
-          ? ' branch-pr--closed'
-          : ''
-    const kind =
-      pr.state === 'merged'
-        ? 'Merged PR'
-        : pr.state === 'closed'
-          ? 'Closed PR'
-          : pr.draft
-            ? 'Draft PR'
-            : 'PR'
-    const checks = pr.state === 'open' && pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
-    return (
-      <span
-        className={`branch-pr${stateClass}`}
-        data-tip={`${kind} #${pr.number}: ${pr.title}${checks}`}
-      >
-        {pr.state === 'open' ? (
-          pr.checks && <CiStatus state={pr.checks} />
-        ) : (
-          <span className="ci-status" aria-hidden>
-            {pr.state === 'merged' ? <Icon.PrMerged size={11} /> : <Icon.PrClosed size={11} />}
-          </span>
-        )}
-        #{pr.number}
-      </span>
-    )
-  }
-  const headPr =
+  // The current branch's PRs, for the pill's badge cluster (hidden mid-switch
+  // and on a detached HEAD, which has no branch to match).
+  const headPrs =
     !switching && !branch?.detached ? prByBranch?.get(branch?.current ?? '') : undefined
 
   return (
@@ -347,7 +421,7 @@ export function BranchSwitcher({
             {label}
           </span>
         </span>
-        {renderPrBadge(headPr)}
+        <BranchPrBadges prs={headPrs} />
         <span className={`pill__chev${loading || switching ? ' is-spinning' : ''}`}>
           {loading || switching ? <Icon.Refresh size={14} /> : <Icon.Chevron size={14} />}
         </span>
@@ -414,7 +488,7 @@ export function BranchSwitcher({
                     <span className="popover__item-main">
                       <span className="popover__item-title">{highlightMatch(row.name, query)}</span>
                     </span>
-                    {renderPrBadge(prByBranch?.get(row.name))}
+                    <BranchPrBadges prs={prByBranch?.get(row.name)} />
                     {row.current && <span className="tag tag--current">current</span>}
                   </button>
                 )

@@ -499,22 +499,29 @@ const PR_FIELDS = `number state title url isDraft headRefName baseRefName isCros
 // rather than pulling the repo's recent PRs and matching client-side: on a busy
 // monorepo the "recent 100" window is only hours wide, so a branch's older PR
 // falls out of it entirely. A `headRefName` lookup is activity-independent — it
-// finds the PR no matter how long ago it was touched. Each alias asks `first: 1`
-// (the branch's most recent PR, any state), so a batch is cheap; we still cap it
-// so a 25k-branch repo builds bounded requests instead of one monster query.
+// finds the PR no matter how long ago it was touched. Each alias is cheap, so a
+// batch is too; we still cap it so a 25k-branch repo builds bounded requests
+// instead of one monster query.
 const BRANCH_BATCH = 50
 
+// PRs to fetch per branch. A head branch can carry several PRs (the same fix
+// opened against more than one base, or a reopened-as-new), and the badge shows
+// one plus a `+N` overflow with the rest in a hovercard — so we pull a handful,
+// newest-activity first, and let the renderer rank them. More than this on a
+// single branch is unheard of; the count it shows is bounded by what's fetched.
+const PRS_PER_BRANCH = 10
+
 /**
- * Build an aliased GraphQL query asking for each branch's most recent PR. Branch
- * names are passed as `$b{i}` variables (never interpolated) so a branch like
- * `"); }` can't break out of the query.
+ * Build an aliased GraphQL query asking for each branch's PRs. Branch names are
+ * passed as `$b{i}` variables (never interpolated) so a branch like `"); }`
+ * can't break out of the query.
  */
 function branchPullRequestsQuery(count: number): string {
   const params = Array.from({ length: count }, (_, i) => `$b${i}: String!`).join(', ')
   const aliases = Array.from(
     { length: count },
     (_, i) =>
-      `b${i}: pullRequests(headRefName: $b${i}, first: 1, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } }`
+      `b${i}: pullRequests(headRefName: $b${i}, first: ${PRS_PER_BRANCH}, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } }`
   ).join('\n    ')
   return `query($owner: String!, $name: String!, ${params}) {
   repository(owner: $owner, name: $name) {
@@ -524,12 +531,12 @@ function branchPullRequestsQuery(count: number): string {
 }
 
 /**
- * The most recent pull request (any state) for each of `branches` on
- * `owner/repo`, looked up by head ref so it's found regardless of repo activity.
- * Returns only branches that actually have a PR — the caller knows which
- * branches it asked about, so a branch absent here is "checked, no PR" (it
- * caches that and won't re-ask). Batched into bounded round trips; auth/network
- * failures throw AccountAuthError (the caller keeps its last-known badges).
+ * Every pull request (any state, newest activity first) for each of `branches`
+ * on `owner/repo`, looked up by head ref so they're found regardless of repo
+ * activity. Returns a flat list — the caller groups it by head branch; a branch
+ * the caller asked about but that's absent here is "checked, no PR". Batched
+ * into bounded round trips; auth/network failures throw AccountAuthError (the
+ * caller keeps its last-known badges).
  */
 export async function fetchPullRequestsForBranches(
   host: string,
@@ -552,8 +559,10 @@ export async function fetchPullRequestsForBranches(
     const repoData = data.repository
     if (!repoData) continue
     chunk.forEach((_, i) => {
-      const pr = parsePullRequest(repoData[`b${i}`]?.nodes?.[0])
-      if (pr) found.push(pr)
+      for (const node of repoData[`b${i}`]?.nodes ?? []) {
+        const pr = parsePullRequest(node)
+        if (pr) found.push(pr)
+      }
     })
   }
   return found
