@@ -417,12 +417,11 @@
 .pr-card__row:hover .pr-card__open {
   opacity: 1;
 }
-/* Footer link shown when the branch has more PRs than the card lists. Content
-   centered (the link reads as a footer CTA). */
+/* Footer link shown when the branch has more PRs than the card lists.
+   Left-aligned like the rows, its content vertically centered. */
 .pr-card__more {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 5px;
   width: 100%;
   margin-top: 4px;
