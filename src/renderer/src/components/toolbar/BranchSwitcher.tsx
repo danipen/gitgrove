@@ -43,6 +43,10 @@ interface Props {
   /** Each branch's most recent PR (any state) keyed by head branch — drives the
    *  `#123` badge and the "Open Pull Request" menu entry. */
   prByBranch?: Map<string, PullRequestInfo>
+  /** Ask the host for PRs of the branches currently on screen. `revalidate`
+   *  re-asks even cached ones (on open); without it, scrolling only fetches
+   *  rows not looked up yet. Debounced here so a fast fling fires one request. */
+  onNeedPrs?: (branches: string[], opts: { revalidate: boolean }) => void
   /** The checkout in flight: target branch + determinate progress (null while
    *  git hasn't reported any — fast switches never do). */
   switching?: { name: string; percent: number | null } | null
@@ -66,6 +70,7 @@ export function BranchSwitcher({
   busy,
   githubWebUrl = null,
   prByBranch,
+  onNeedPrs,
   switching = null,
   onCheckout,
   onBranchAction,
@@ -135,6 +140,35 @@ export function BranchSwitcher({
   }, [query, open])
 
   const visible = rows.slice(vs.start, vs.end)
+
+  // The branch names on screen (labels excluded) — the only PRs we ask for, so
+  // a 25k-branch repo queries a viewport's worth, never the whole list.
+  const visibleBranches = useMemo(
+    () => visible.flatMap((row) => (row.kind === 'item' ? [row.name] : [])),
+    [visible]
+  )
+  // Keep the fetch callback in a ref so the effects below key off the viewport
+  // changing, not the (inline) callback's identity.
+  const needPrsRef = useRef(onNeedPrs)
+  needPrsRef.current = onNeedPrs
+
+  // On open, revalidate the viewport's PRs: the cache paints badges instantly,
+  // this refreshes them in case CI/state moved while the popover was closed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: open is the trigger; the viewport is read at open time and the scroll effect below tracks its later changes.
+  useEffect(() => {
+    if (open) needPrsRef.current?.(visibleBranches, { revalidate: true })
+  }, [open])
+
+  // As scrolling/filtering reveals new rows, fetch their PRs once motion settles
+  // (debounced). Cached branches are skipped by the caller, so flinging back
+  // over already-seen rows costs nothing and a fast fling fires one request.
+  useEffect(() => {
+    if (!open) return
+    const timer = setTimeout(() => {
+      needPrsRef.current?.(visibleBranches, { revalidate: false })
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [open, visibleBranches])
 
   // A local branch is browsable on the host only once it exists on a remote;
   // `branch.remote` holds entries like `origin/feature/x`, so comparing the

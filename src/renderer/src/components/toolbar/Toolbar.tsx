@@ -18,6 +18,9 @@ interface Props {
   githubWebUrl?: string | null
   /** Open PRs keyed by head branch, for the branch switcher's PR badges. */
   prByBranch?: Map<string, PullRequestInfo>
+  /** Fetch PRs for the branches the switcher is showing (its viewport), so a
+   *  huge repo only ever queries what's on screen — see usePullRequests. */
+  onNeedPrs?: (branches: string[], opts: { revalidate: boolean }) => void
   busy: boolean
   refreshing: boolean
   themePref: ThemePref
@@ -58,6 +61,7 @@ export function Toolbar({
   branchesLoading,
   githubWebUrl,
   prByBranch,
+  onNeedPrs,
   busy,
   refreshing,
   themePref,
@@ -121,6 +125,7 @@ export function Toolbar({
           busy={busy}
           githubWebUrl={githubWebUrl}
           prByBranch={prByBranch}
+          onNeedPrs={onNeedPrs}
           switching={switching}
           onCheckout={onCheckout}
           onBranchAction={onBranchAction}

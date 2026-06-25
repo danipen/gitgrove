@@ -22,7 +22,8 @@ const api: GitGroveApi = {
   removeRecent: (path) => ipcRenderer.invoke(IPC.removeRecent, path),
   remoteUrl: (repoPath) => ipcRenderer.invoke(IPC.remoteUrl, repoPath),
   repoHostInfo: (repoPath) => ipcRenderer.invoke(IPC.repoHostInfo, repoPath),
-  pullRequests: (repoPath) => ipcRenderer.invoke(IPC.pullRequests, repoPath),
+  pullRequestsForBranches: (repoPath, branches) =>
+    ipcRenderer.invoke(IPC.pullRequestsForBranches, repoPath, branches),
   revealRepo: (repoPath) => ipcRenderer.invoke(IPC.revealRepo, repoPath),
   openTerminal: (repoPath) => ipcRenderer.invoke(IPC.openTerminal, repoPath),
   snapshot: (repoPath) => ipcRenderer.invoke(IPC.snapshot, repoPath),

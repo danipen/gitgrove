@@ -491,42 +491,70 @@ export function parsePullRequest(node: unknown): PullRequestInfo | null {
   }
 }
 
-// PRs targeting this repo, newest activity first, across all states: open ones
-// drive the branch badge, while merged/closed ones still let the menu link
-// straight to the PR. `first: 100` is plenty — a branch's most recent PR (the
-// one we surface) is by definition recently updated, so it stays in the window.
-const PULL_REQUESTS_QUERY = `
-query($owner: String!, $name: String!) {
-  repository(owner: $owner, name: $name) {
-    pullRequests(states: [OPEN, MERGED, CLOSED], first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) {
-      nodes {
-        number state title url isDraft headRefName baseRefName isCrossRepository
-        commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-      }
-    }
-  }
-}`
+// The PR fields the pill/menu render — shared by every per-branch alias below.
+const PR_FIELDS = `number state title url isDraft headRefName baseRefName isCrossRepository
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }`
+
+// How many branches we ask about in one round trip. We query PRs *by head ref*
+// rather than pulling the repo's recent PRs and matching client-side: on a busy
+// monorepo the "recent 100" window is only hours wide, so a branch's older PR
+// falls out of it entirely. A `headRefName` lookup is activity-independent — it
+// finds the PR no matter how long ago it was touched. Each alias asks `first: 1`
+// (the branch's most recent PR, any state), so a batch is cheap; we still cap it
+// so a 25k-branch repo builds bounded requests instead of one monster query.
+const BRANCH_BATCH = 50
 
 /**
- * Every open pull request on `owner/repo`, matched to local branches by their
- * head ref. One GraphQL round trip; auth/network failures throw AccountAuthError
- * (the caller turns that into an empty list — PR badges just don't show).
+ * Build an aliased GraphQL query asking for each branch's most recent PR. Branch
+ * names are passed as `$b{i}` variables (never interpolated) so a branch like
+ * `"); }` can't break out of the query.
  */
-export async function fetchPullRequests(
+function branchPullRequestsQuery(count: number): string {
+  const params = Array.from({ length: count }, (_, i) => `$b${i}: String!`).join(', ')
+  const aliases = Array.from(
+    { length: count },
+    (_, i) =>
+      `b${i}: pullRequests(headRefName: $b${i}, first: 1, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } }`
+  ).join('\n    ')
+  return `query($owner: String!, $name: String!, ${params}) {
+  repository(owner: $owner, name: $name) {
+    ${aliases}
+  }
+}`
+}
+
+/**
+ * The most recent pull request (any state) for each of `branches` on
+ * `owner/repo`, looked up by head ref so it's found regardless of repo activity.
+ * Returns only branches that actually have a PR — the caller knows which
+ * branches it asked about, so a branch absent here is "checked, no PR" (it
+ * caches that and won't re-ask). Batched into bounded round trips; auth/network
+ * failures throw AccountAuthError (the caller keeps its last-known badges).
+ */
+export async function fetchPullRequestsForBranches(
   host: string,
   token: string,
   owner: string,
   repo: string,
+  branches: string[],
   fetchImpl: FetchLike = fetch
 ): Promise<PullRequestInfo[]> {
-  const data = await graphqlQuery<{
-    repository: { pullRequests: { nodes: unknown[] } } | null
-  }>(host, token, PULL_REQUESTS_QUERY, { owner, name: repo }, fetchImpl)
-  const nodes = data.repository?.pullRequests?.nodes ?? []
-  const prs: PullRequestInfo[] = []
-  for (const node of nodes) {
-    const pr = parsePullRequest(node)
-    if (pr) prs.push(pr)
+  const found: PullRequestInfo[] = []
+  for (let start = 0; start < branches.length; start += BRANCH_BATCH) {
+    const chunk = branches.slice(start, start + BRANCH_BATCH)
+    const variables: Record<string, string> = { owner, name: repo }
+    chunk.forEach((branch, i) => {
+      variables[`b${i}`] = branch
+    })
+    const data = await graphqlQuery<{
+      repository: Record<string, { nodes: unknown[] }> | null
+    }>(host, token, branchPullRequestsQuery(chunk.length), variables, fetchImpl)
+    const repoData = data.repository
+    if (!repoData) continue
+    chunk.forEach((_, i) => {
+      const pr = parsePullRequest(repoData[`b${i}`]?.nodes?.[0])
+      if (pr) found.push(pr)
+    })
   }
-  return prs
+  return found
 }

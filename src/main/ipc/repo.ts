@@ -9,7 +9,7 @@ import { getBranches, getRemoteWebUrl, getUnpushedCommits } from '../git/read'
 import { getRepoSnapshot } from '../git/status'
 import * as gitWrite from '../git/write'
 import { getRepoHostInfo } from '../github/host'
-import { listPullRequests } from '../github/pulls'
+import { listPullRequestsForBranches } from '../github/pulls'
 import { openTerminal } from '../menu'
 import { getRecentRepos, removeRecentRepo } from '../store'
 import type { HandlerDeps } from './context'
@@ -37,7 +37,9 @@ export function registerRepoHandlers(deps: HandlerDeps): void {
   ipcMain.handle(IPC.removeRecent, (_e, path: string) => removeRecentRepo(path))
   ipcMain.handle(IPC.remoteUrl, (_e, repoPath: string) => getRemoteWebUrl(repoPath))
   ipcMain.handle(IPC.repoHostInfo, (_e, repoPath: string) => getRepoHostInfo(repoPath))
-  ipcMain.handle(IPC.pullRequests, (_e, repoPath: string) => listPullRequests(repoPath))
+  ipcMain.handle(IPC.pullRequestsForBranches, (_e, repoPath: string, branches: string[]) =>
+    listPullRequestsForBranches(repoPath, branches)
+  )
   ipcMain.handle(IPC.revealRepo, async (_e, repoPath: string) => {
     // openPath returns '' on success, an error string otherwise.
     const err = await shell.openPath(repoPath)

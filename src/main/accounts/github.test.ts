@@ -5,7 +5,7 @@ import {
   type DeviceCodeGrant,
   type FetchLike,
   fetchProfile,
-  fetchPullRequests,
+  fetchPullRequestsForBranches,
   fetchRepositories,
   graphqlUrl,
   nextPageUrl,
@@ -413,7 +413,7 @@ describe('parsePullRequest', () => {
   })
 })
 
-describe('fetchPullRequests', () => {
+describe('fetchPullRequestsForBranches', () => {
   const prNode = (over: Record<string, unknown> = {}) => ({
     number: 1,
     title: 'PR',
@@ -424,42 +424,86 @@ describe('fetchPullRequests', () => {
     isCrossRepository: false,
     ...over
   })
-
-  test('parses open PRs and posts to the GraphQL endpoint', async () => {
-    const { impl, calls } = scriptedFetch([
-      {
-        json: {
-          data: {
-            repository: {
-              pullRequests: {
-                nodes: [prNode(), prNode({ number: 2, headRefName: 'other', isDraft: true })]
-              }
-            }
-          }
-        }
+  /** A repository payload with each branch's PR under its `b{i}` alias (an empty
+   *  `nodes` for a branch with no PR — exactly the shape the alias query yields). */
+  const aliased = (...perBranch: Array<Record<string, unknown> | null>) => ({
+    json: {
+      data: {
+        repository: Object.fromEntries(
+          perBranch.map((node, i) => [`b${i}`, { nodes: node ? [node] : [] }])
+        )
       }
+    }
+  })
+
+  test('looks up PRs by head ref, passing each branch as a variable', async () => {
+    const { impl, calls } = scriptedFetch([
+      aliased(prNode(), prNode({ number: 2, headRefName: 'other', isDraft: true }))
     ])
-    const prs = await fetchPullRequests('github.com', 'tok', 'o', 'r', impl)
+    const prs = await fetchPullRequestsForBranches(
+      'github.com',
+      'tok',
+      'o',
+      'r',
+      ['feature', 'other'],
+      impl
+    )
     expect(calls[0].url).toBe('https://api.github.com/graphql')
-    expect(calls[0].body).toMatchObject({ variables: { owner: 'o', name: 'r' } })
+    expect(calls[0].body).toMatchObject({
+      variables: { owner: 'o', name: 'r', b0: 'feature', b1: 'other' }
+    })
+    expect(calls[0].body.query).toContain('headRefName: $b0')
     expect(prs.map((p) => ({ n: p.number, head: p.headBranch, draft: p.draft }))).toEqual([
       { n: 1, head: 'feature', draft: false },
       { n: 2, head: 'other', draft: true }
     ])
   })
 
+  test('omits branches with no PR (empty alias result)', async () => {
+    const { impl } = scriptedFetch([aliased(prNode(), null)])
+    const prs = await fetchPullRequestsForBranches(
+      'github.com',
+      'tok',
+      'o',
+      'r',
+      ['feature', 'lonely'],
+      impl
+    )
+    expect(prs.map((p) => p.headBranch)).toEqual(['feature'])
+  })
+
+  test('no branches → no request', async () => {
+    const { impl, calls } = scriptedFetch([])
+    expect(await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', [], impl)).toEqual([])
+    expect(calls).toHaveLength(0)
+  })
+
+  test('batches large branch lists into bounded requests', async () => {
+    const branches = Array.from({ length: 51 }, (_, i) => `b/${i}`)
+    // Two round trips (50 + 1); each just needs a well-formed repository payload.
+    const { impl, calls } = scriptedFetch([aliased(prNode()), aliased(prNode({ number: 2 }))])
+    await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', branches, impl)
+    expect(calls).toHaveLength(2)
+  })
+
   test('treats a missing repository (null data branch) as no PRs', async () => {
     const { impl } = scriptedFetch([{ json: { data: { repository: null } } }])
-    expect(await fetchPullRequests('github.com', 'tok', 'o', 'r', impl)).toEqual([])
+    expect(await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', ['x'], impl)).toEqual(
+      []
+    )
   })
 
   test('surfaces a 401 as bad-token', async () => {
     const { impl } = scriptedFetch([{ status: 401, json: { message: 'Bad credentials' } }])
-    expect(await code(fetchPullRequests('github.com', 'nope', 'o', 'r', impl))).toBe('bad-token')
+    expect(
+      await code(fetchPullRequestsForBranches('github.com', 'nope', 'o', 'r', ['x'], impl))
+    ).toBe('bad-token')
   })
 
   test('treats GraphQL errors as a network failure', async () => {
     const { impl } = scriptedFetch([{ json: { errors: [{ message: 'NOT_FOUND' }] } }])
-    expect(await code(fetchPullRequests('github.com', 'tok', 'o', 'r', impl))).toBe('network')
+    expect(
+      await code(fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', ['x'], impl))
+    ).toBe('network')
   })
 })
