@@ -395,3 +395,27 @@
   text-transform: capitalize;
   color: var(--fg-faint);
 }
+/* Footer link shown when the branch has more PRs than the card lists — the only
+   interactive part of the otherwise read-only card, so it re-enables pointer
+   events on itself. */
+.pr-card__more {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 2px;
+  padding: 6px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.pr-card__more:hover {
+  background: var(--bg-hover);
+}

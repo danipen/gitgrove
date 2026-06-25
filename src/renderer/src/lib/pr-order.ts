@@ -6,6 +6,16 @@
 import type { PullRequestInfo } from '@shared/types'
 
 /**
+ * A branch's PRs as the UI holds them: the fetched, importance-ordered list plus
+ * the host's `total` (which can exceed `prs.length` for a long-lived branch — it
+ * drives the badge's `+N` and the hovercard's "view all" link).
+ */
+export interface BranchPrs {
+  prs: PullRequestInfo[]
+  total: number
+}
+
+/**
  * Importance rank for the badge: the actionable open PR first, then a draft,
  * then the historical merged and closed ones. Lower sorts first.
  */

@@ -5,30 +5,32 @@
 // so this module just answers one call cleanly.
 
 import { parseOwnerRepo } from '@shared/git-host-urls'
-import type { PullRequestInfo } from '@shared/types'
+import type { PullRequestLookup } from '@shared/types'
 import { accountsStore } from '../accounts/cipher'
 import { fetchPullRequestsForBranches } from '../accounts/github'
 import { getRemoteWebUrl } from '../git/read'
 
+const EMPTY: PullRequestLookup = { prs: [], totals: {} }
+
 export async function listPullRequestsForBranches(
   repoPath: string,
   branches: string[]
-): Promise<PullRequestInfo[]> {
-  if (branches.length === 0) return []
+): Promise<PullRequestLookup> {
+  if (branches.length === 0) return EMPTY
   const webUrl = await getRemoteWebUrl(repoPath)
-  if (!webUrl) return []
+  if (!webUrl) return EMPTY
   const ownerRepo = parseOwnerRepo(webUrl)
-  if (!ownerRepo) return []
+  if (!ownerRepo) return EMPTY
   let host: string
   try {
     host = new URL(webUrl).host
   } catch {
-    return []
+    return EMPTY
   }
   // No connected account for the host → no token to call the API with → no PR
   // data. (This is also the gate: PR badges only appear once signed in.)
   const token = accountsStore().getTokenForHost(host)
-  if (!token) return []
+  if (!token) return EMPTY
   try {
     return await fetchPullRequestsForBranches(
       host,
@@ -40,6 +42,6 @@ export async function listPullRequestsForBranches(
   } catch {
     // Transient failure: hand back nothing and let the renderer keep its
     // last-known badges (it only overwrites its cache on a successful fetch).
-    return []
+    return EMPTY
   }
 }

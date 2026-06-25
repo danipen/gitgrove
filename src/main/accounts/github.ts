@@ -14,6 +14,7 @@ import type {
   AccountErrorCode,
   PullRequestChecks,
   PullRequestInfo,
+  PullRequestLookup,
   PullRequestState,
   RemoteRepo
 } from '@shared/types'
@@ -521,7 +522,7 @@ function branchPullRequestsQuery(count: number): string {
   const aliases = Array.from(
     { length: count },
     (_, i) =>
-      `b${i}: pullRequests(headRefName: $b${i}, first: ${PRS_PER_BRANCH}, orderBy: { field: UPDATED_AT, direction: DESC }) { nodes { ${PR_FIELDS} } }`
+      `b${i}: pullRequests(headRefName: $b${i}, first: ${PRS_PER_BRANCH}, orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes { ${PR_FIELDS} } }`
   ).join('\n    ')
   return `query($owner: String!, $name: String!, ${params}) {
   repository(owner: $owner, name: $name) {
@@ -531,12 +532,13 @@ function branchPullRequestsQuery(count: number): string {
 }
 
 /**
- * Every pull request (any state, newest activity first) for each of `branches`
- * on `owner/repo`, looked up by head ref so they're found regardless of repo
- * activity. Returns a flat list — the caller groups it by head branch; a branch
- * the caller asked about but that's absent here is "checked, no PR". Batched
- * into bounded round trips; auth/network failures throw AccountAuthError (the
- * caller keeps its last-known badges).
+ * The PRs (any state, newest activity first) for each of `branches` on
+ * `owner/repo`, looked up by head ref so they're found regardless of repo
+ * activity, plus the per-branch totals (the host's full count, which can exceed
+ * the fetched `PRS_PER_BRANCH`). Returns a flat PR list — the caller groups it
+ * by head branch; a branch the caller asked about but that's absent here is
+ * "checked, no PR". Batched into bounded round trips; auth/network failures
+ * throw AccountAuthError (the caller keeps its last-known badges).
  */
 export async function fetchPullRequestsForBranches(
   host: string,
@@ -545,8 +547,9 @@ export async function fetchPullRequestsForBranches(
   repo: string,
   branches: string[],
   fetchImpl: FetchLike = fetch
-): Promise<PullRequestInfo[]> {
-  const found: PullRequestInfo[] = []
+): Promise<PullRequestLookup> {
+  const prs: PullRequestInfo[] = []
+  const totals: Record<string, number> = {}
   for (let start = 0; start < branches.length; start += BRANCH_BATCH) {
     const chunk = branches.slice(start, start + BRANCH_BATCH)
     const variables: Record<string, string> = { owner, name: repo }
@@ -554,16 +557,19 @@ export async function fetchPullRequestsForBranches(
       variables[`b${i}`] = branch
     })
     const data = await graphqlQuery<{
-      repository: Record<string, { nodes: unknown[] }> | null
+      repository: Record<string, { totalCount: number; nodes: unknown[] }> | null
     }>(host, token, branchPullRequestsQuery(chunk.length), variables, fetchImpl)
     const repoData = data.repository
     if (!repoData) continue
-    chunk.forEach((_, i) => {
-      for (const node of repoData[`b${i}`]?.nodes ?? []) {
+    chunk.forEach((branch, i) => {
+      const conn = repoData[`b${i}`]
+      if (!conn) return
+      if (typeof conn.totalCount === 'number') totals[branch] = conn.totalCount
+      for (const node of conn.nodes ?? []) {
         const pr = parsePullRequest(node)
-        if (pr) found.push(pr)
+        if (pr) prs.push(pr)
       }
     })
   }
-  return found
+  return { prs, totals }
 }

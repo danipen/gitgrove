@@ -32,7 +32,7 @@ import type {
   MergeOutcome,
   MergePreview,
   OpProgress,
-  PullRequestInfo,
+  PullRequestLookup,
   RebaseTodoItem,
   RecentRepo,
   RemoteRepo,
@@ -220,12 +220,13 @@ export interface GitGroveApi {
   /** The repo's web URL plus whether its host supports GitHub-aware actions. */
   repoHostInfo(repoPath: string): Promise<RepoHostInfo>
   /**
-   * The most recent pull request (any state) for each of `branches`, looked up
-   * by head ref on the repo's GitHub remote. Returns only branches that have a
-   * PR (`[]` when not on GitHub or no account is connected); the caller knows
-   * which branches it asked about, so an absent branch is "checked, no PR".
+   * The PRs for each of `branches`, looked up by head ref on the repo's GitHub
+   * remote, plus the per-branch totals (which can exceed the fetched count).
+   * Returns empty (`{ prs: [], totals: {} }`) when not on GitHub or no account is
+   * connected; the caller knows which branches it asked about, so a branch with
+   * no PRs in the result is "checked, no PR".
    */
-  pullRequestsForBranches(repoPath: string, branches: string[]): Promise<PullRequestInfo[]>
+  pullRequestsForBranches(repoPath: string, branches: string[]): Promise<PullRequestLookup>
   /** Open the repo folder in the OS file manager (Finder/Explorer/…). */
   revealRepo(repoPath: string): Promise<boolean>
   /** Open a terminal rooted at the repo. Resolves false if none could launch. */

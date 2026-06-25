@@ -424,13 +424,20 @@ describe('fetchPullRequestsForBranches', () => {
     isCrossRepository: false,
     ...over
   })
-  /** A repository payload with each branch's PR under its `b{i}` alias (an empty
-   *  `nodes` for a branch with no PR — exactly the shape the alias query yields). */
-  const aliased = (...perBranch: Array<Record<string, unknown> | null>) => ({
+  /** A repository payload with each branch's connection under its `b{i}` alias:
+   *  `totalCount` + the PR nodes (pass a node, or `[count, ...nodes]` to set a
+   *  total larger than the listed nodes, or null for a branch with no PRs) —
+   *  exactly the shape the alias query yields. */
+  const conn = (
+    ...perBranch: Array<Record<string, unknown> | Record<string, unknown>[] | null>
+  ) => ({
     json: {
       data: {
         repository: Object.fromEntries(
-          perBranch.map((node, i) => [`b${i}`, { nodes: node ? [node] : [] }])
+          perBranch.map((entry, i) => {
+            const nodes = entry === null ? [] : Array.isArray(entry) ? entry : [entry]
+            return [`b${i}`, { totalCount: nodes.length, nodes }]
+          })
         )
       }
     }
@@ -438,9 +445,9 @@ describe('fetchPullRequestsForBranches', () => {
 
   test('looks up PRs by head ref, passing each branch as a variable', async () => {
     const { impl, calls } = scriptedFetch([
-      aliased(prNode(), prNode({ number: 2, headRefName: 'other', isDraft: true }))
+      conn(prNode(), prNode({ number: 2, headRefName: 'other', isDraft: true }))
     ])
-    const prs = await fetchPullRequestsForBranches(
+    const { prs, totals } = await fetchPullRequestsForBranches(
       'github.com',
       'tok',
       'o',
@@ -453,15 +460,38 @@ describe('fetchPullRequestsForBranches', () => {
       variables: { owner: 'o', name: 'r', b0: 'feature', b1: 'other' }
     })
     expect(calls[0].body.query).toContain('headRefName: $b0')
+    expect(calls[0].body.query).toContain('totalCount')
     expect(prs.map((p) => ({ n: p.number, head: p.headBranch, draft: p.draft }))).toEqual([
       { n: 1, head: 'feature', draft: false },
       { n: 2, head: 'other', draft: true }
     ])
+    expect(totals).toEqual({ feature: 1, other: 1 })
+  })
+
+  test('reports the host total per branch, even when it exceeds the fetched PRs', async () => {
+    // A branch with 2 fetched nodes but a totalCount of 12 (more exist).
+    const { impl } = scriptedFetch([
+      {
+        json: {
+          data: { repository: { b0: { totalCount: 12, nodes: [prNode(), prNode({ number: 2 })] } } }
+        }
+      }
+    ])
+    const { prs, totals } = await fetchPullRequestsForBranches(
+      'github.com',
+      'tok',
+      'o',
+      'r',
+      ['feature'],
+      impl
+    )
+    expect(prs).toHaveLength(2)
+    expect(totals.feature).toBe(12)
   })
 
   test('omits branches with no PR (empty alias result)', async () => {
-    const { impl } = scriptedFetch([aliased(prNode(), null)])
-    const prs = await fetchPullRequestsForBranches(
+    const { impl } = scriptedFetch([conn(prNode(), null)])
+    const { prs, totals } = await fetchPullRequestsForBranches(
       'github.com',
       'tok',
       'o',
@@ -470,27 +500,32 @@ describe('fetchPullRequestsForBranches', () => {
       impl
     )
     expect(prs.map((p) => p.headBranch)).toEqual(['feature'])
+    expect(totals).toEqual({ feature: 1, lonely: 0 })
   })
 
   test('no branches → no request', async () => {
     const { impl, calls } = scriptedFetch([])
-    expect(await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', [], impl)).toEqual([])
+    expect(await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', [], impl)).toEqual({
+      prs: [],
+      totals: {}
+    })
     expect(calls).toHaveLength(0)
   })
 
   test('batches large branch lists into bounded requests', async () => {
     const branches = Array.from({ length: 51 }, (_, i) => `b/${i}`)
     // Two round trips (50 + 1); each just needs a well-formed repository payload.
-    const { impl, calls } = scriptedFetch([aliased(prNode()), aliased(prNode({ number: 2 }))])
+    const { impl, calls } = scriptedFetch([conn(prNode()), conn(prNode({ number: 2 }))])
     await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', branches, impl)
     expect(calls).toHaveLength(2)
   })
 
   test('treats a missing repository (null data branch) as no PRs', async () => {
     const { impl } = scriptedFetch([{ json: { data: { repository: null } } }])
-    expect(await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', ['x'], impl)).toEqual(
-      []
-    )
+    expect(await fetchPullRequestsForBranches('github.com', 'tok', 'o', 'r', ['x'], impl)).toEqual({
+      prs: [],
+      totals: {}
+    })
   })
 
   test('surfaces a 401 as bad-token', async () => {

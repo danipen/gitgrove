@@ -17,15 +17,9 @@
 // other host the data stays empty and the effects are inert.
 
 import { compareUrl } from '@shared/git-host-urls'
-import type {
-  BranchInfo,
-  PullRequestInfo,
-  RepoHostInfo,
-  RepoSummary,
-  SyncStatus
-} from '@shared/types'
+import type { BranchInfo, RepoHostInfo, RepoSummary, SyncStatus } from '@shared/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { groupPrsByBranch } from './pr-order'
+import { type BranchPrs, groupPrsByBranch } from './pr-order'
 
 interface Params {
   getRepoPath: () => string | undefined
@@ -46,10 +40,10 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
   // Full SHAs of commits not yet on any remote: their host commit page 404s, so
   // "View on GitHub" is grayed out for them. Loaded only for GitHub hosts.
   const [unpushed, setUnpushed] = useState<Set<string>>(new Set())
-  // Per-branch PR cache: a branch's PRs ordered by importance, or `[]` once we've
-  // checked and found none (so we don't re-ask on every scroll). A branch absent
-  // from the map hasn't been looked up yet.
-  const [prCache, setPrCache] = useState<Map<string, PullRequestInfo[]>>(new Map())
+  // Per-branch PR cache: a branch's PRs (importance-ordered) + the host total, or
+  // an empty list once we've checked and found none (so we don't re-ask on every
+  // scroll). A branch absent from the map hasn't been looked up yet.
+  const [prCache, setPrCache] = useState<Map<string, BranchPrs>>(new Map())
   // False until the current branch's first PR fetch resolves, so the "Create
   // Pull Request" banner never flashes before we know whether it has a PR.
   const [prsLoaded, setPrsLoaded] = useState(false)
@@ -75,20 +69,25 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
       })
       if (wanted.length === 0) return
       for (const b of wanted) inFlightRef.current.add(b)
-      let found: PullRequestInfo[] | null = null
+      let lookup: Awaited<ReturnType<typeof window.gitgrove.pullRequestsForBranches>> | null = null
       try {
-        found = await window.gitgrove.pullRequestsForBranches(repoPath, wanted)
+        lookup = await window.gitgrove.pullRequestsForBranches(repoPath, wanted)
       } catch {
-        found = null
+        lookup = null
       }
       for (const b of wanted) inFlightRef.current.delete(b)
       // Repo switched out from under the request — discard the stale answer.
-      if (found === null || getRepoPath() !== repoPath) return
-      const grouped = groupPrsByBranch(found)
+      if (lookup === null || getRepoPath() !== repoPath) return
+      const grouped = groupPrsByBranch(lookup.prs)
       setPrCache((prev) => {
         const next = new Map(prev)
-        // Every branch we asked about gets an entry — its PRs, or `[]` for none.
-        for (const b of wanted) next.set(b, grouped.get(b) ?? [])
+        // Every branch we asked about gets an entry — its PRs (+ host total), or
+        // an empty list for none. The total falls back to what we received when
+        // the host didn't report one.
+        for (const b of wanted) {
+          const prs = grouped.get(b) ?? []
+          next.set(b, { prs, total: lookup.totals[b] ?? prs.length })
+        }
         return next
       })
     },
@@ -121,13 +120,13 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
     inFlightRef.current.clear()
   }, [])
 
-  // Branch name → its PRs (importance-ordered), for the badge cluster and the
-  // "Open Pull Request" menu entries. Branches with no PR (cached `[]`) drop out,
-  // so `.has(name)` answers "does this branch have a PR?".
+  // Branch name → its PRs (+ host total), for the badge cluster and the "Open
+  // Pull Request" menu entries. Branches with no PR drop out, so `.has(name)`
+  // answers "does this branch have a PR?".
   const prByBranch = useMemo(() => {
-    const map = new Map<string, PullRequestInfo[]>()
-    for (const [name, prs] of prCache) {
-      if (prs.length > 0) map.set(name, prs)
+    const map = new Map<string, BranchPrs>()
+    for (const [name, entry] of prCache) {
+      if (entry.prs.length > 0) map.set(name, entry)
     }
     return map
   }, [prCache])
@@ -165,7 +164,7 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
   // settles the effect re-runs with no timer, so it's silent when CI is done.
   const current = currentBranchRef.current
   // The pill shows the branch's top PR; poll while *that* one's checks run.
-  const headPending = current ? prByBranch.get(current)?.[0]?.checks === 'pending' : false
+  const headPending = current ? prByBranch.get(current)?.prs[0]?.checks === 'pending' : false
   useEffect(() => {
     if (hostInfo?.provider !== 'github' || !repo || !headPending) return
     const repoPath = repo.path

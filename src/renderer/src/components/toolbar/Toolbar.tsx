@@ -1,7 +1,8 @@
-import type { BranchInfo, PullRequestInfo, RepoSummary, SyncStatus } from '@shared/types'
+import type { BranchInfo, RepoSummary, SyncStatus } from '@shared/types'
 import { useState } from 'react'
 import { Icon } from '@/lib/icons'
 import { isMac } from '@/lib/platform'
+import type { BranchPrs } from '@/lib/pr-order'
 import type { ResolvedTheme, ThemePref } from '@/lib/theme'
 import { type BranchAction, BranchSwitcher } from './BranchSwitcher'
 import { MenuBar } from './MenuBar'
@@ -16,9 +17,9 @@ interface Props {
   branchesLoading: boolean
   /** The repo's GitHub web base URL, when the host supports it (else null). */
   githubWebUrl?: string | null
-  /** Each branch's PRs (importance-ordered) keyed by head branch, for the branch
+  /** Each branch's PRs (+ host total) keyed by head branch, for the branch
    *  switcher's PR badges. */
-  prByBranch?: Map<string, PullRequestInfo[]>
+  prByBranch?: Map<string, BranchPrs>
   /** Fetch PRs for the branches the switcher is showing (its viewport), so a
    *  huge repo only ever queries what's on screen — see usePullRequests. */
   onNeedPrs?: (branches: string[], opts: { revalidate: boolean }) => void

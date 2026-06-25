@@ -43,6 +43,15 @@ export function compareUrl(webBase: string, baseBranch: string, headBranch: stri
 }
 
 /**
+ * The repo's pull-request list filtered to a head branch — the "see all PRs for
+ * this branch" escape hatch when a branch has more PRs than the badge hovercard
+ * shows. Uses GitHub's PR search syntax (`is:pr head:<branch>`).
+ */
+export function headPullRequestsUrl(webBase: string, branch: string): string {
+  return `${trimTrailingSlash(webBase)}/pulls?q=${encodeURIComponent(`is:pr head:${branch}`)}`
+}
+
+/**
  * Split a browsable repo URL (e.g. `https://github.com/owner/repo`) into its
  * owner and name, or null when it isn't a recognizable repo URL. Tolerates a
  * trailing `.git` and extra path segments (takes the first two). Used to drive
