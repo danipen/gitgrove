@@ -516,10 +516,16 @@ export function BranchSwitcher({
           loading ? 'Loading branches…' : switching ? `Switching to ${switching.name}…` : undefined
         }
         onClick={() => {
-          setOpen((v) => {
-            if (!v) onOpen?.()
-            return !v
-          })
+          if (open) {
+            setOpen(false)
+            return
+          }
+          // Open fresh: a filter left over from the last open (or another repo)
+          // shouldn't pre-narrow the list — like the repo switcher, every open
+          // starts empty.
+          setQuery('')
+          onOpen?.()
+          setOpen(true)
         }}
         onContextMenu={
           branch && !branch.detached && onBranchAction && !switching
