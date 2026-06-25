@@ -169,6 +169,11 @@ interface Props {
   onOpen?: () => void
 }
 
+/** A row's head-ref name for PR matching. A local row already is it; a remote
+ *  row like `origin/foo` maps to `foo` — a remote branch is exactly what a PR's
+ *  head ref names, so it's matched and fetched under the bare name. */
+const headRef = (name: string, local: boolean) => (local ? name : name.slice(name.indexOf('/') + 1))
+
 /** Fixed row height used by the virtualizer (must match the inline row height below). */
 const ROW_H = 32
 /** Empty space kept below the last row so it never sits flush against the edge. */
@@ -253,10 +258,15 @@ export function BranchSwitcher({
 
   const visible = rows.slice(vs.start, vs.end)
 
-  // The branch names on screen (labels excluded) — the only PRs we ask for, so
-  // a 25k-branch repo queries a viewport's worth, never the whole list.
+  // The head refs on screen (labels excluded; remote rows mapped to their bare
+  // name, deduped) — the only PRs we ask for, so a 25k-branch repo queries a
+  // viewport's worth, never the whole list.
   const visibleBranches = useMemo(
-    () => visible.flatMap((row) => (row.kind === 'item' ? [row.name] : [])),
+    () => [
+      ...new Set(
+        visible.flatMap((row) => (row.kind === 'item' ? [headRef(row.name, row.local)] : []))
+      )
+    ],
     [visible]
   )
   // Keep the fetch callback in a ref so the effects below key off the viewport
@@ -488,7 +498,7 @@ export function BranchSwitcher({
                     <span className="popover__item-main">
                       <span className="popover__item-title">{highlightMatch(row.name, query)}</span>
                     </span>
-                    <BranchPrBadges prs={prByBranch?.get(row.name)} />
+                    <BranchPrBadges prs={prByBranch?.get(headRef(row.name, row.local))} />
                     {row.current && <span className="tag tag--current">current</span>}
                   </button>
                 )
@@ -563,7 +573,10 @@ export function BranchSwitcher({
                     label: 'Copy Branch Name',
                     icon: <Icon.Copy size={15} />,
                     onClick: () => window.gitgrove.clipboardWrite(menu.name)
-                  }
+                  },
+                  // A remote row matches PRs by its bare ref, so its menu links to
+                  // them (and to the branch on the host) just like a local one.
+                  ...githubMenuItems(headRef(menu.name, false))
                 ]
           }
         />
