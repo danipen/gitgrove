@@ -344,14 +344,14 @@
   }
 }
 
-/* The hovercard listing every PR on a branch (icon, status, number, title),
-   shown on hover of the `+N` cluster. Read-only and portal-rendered, so it sits
-   on the tooltip layer (z 90, above the branch popover) and can't be clipped.
+/* The hovercard listing a branch's PRs (icon, title, number), shown on hover of
+   the badge — each row a link. Portal-rendered, so it sits on the tooltip layer
+   (z 90, above the branch popover) and can't be clipped.
    styles: BranchSwitcher.tsx (PrHoverCard) */
 .pr-card {
   position: fixed;
   z-index: 90;
-  width: 320px;
+  width: 420px;
   max-width: calc(100vw - 16px);
   padding: 6px;
   background: var(--bg-elevated);
