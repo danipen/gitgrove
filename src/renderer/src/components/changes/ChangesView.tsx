@@ -216,8 +216,15 @@ export function ChangesView({
     filtered: files,
     query: filterQuery,
     active: filterActive,
-    bar: filterBar
+    bar: filterBar,
+    reset: resetFilter
   } = useFileFilter(changes, filterTypes)
+
+  // Clear the file filter when switching repos, so a query/chip left from the
+  // previous repo doesn't silently hide the new repo's changes. (History clears
+  // its own file filter the same way when the selected commit changes.)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: repoPath is the intentional reset trigger
+  useEffect(() => resetFilter(), [repoPath])
 
   const stats = useMemo(() => {
     let includedCount = 0
