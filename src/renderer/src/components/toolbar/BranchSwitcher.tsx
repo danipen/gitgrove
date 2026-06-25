@@ -258,17 +258,29 @@ export function BranchSwitcher({
 
   const visible = rows.slice(vs.start, vs.end)
 
+  // The default branch is where work merges *into*, never *from*, so PRs with it
+  // as their head ref are reverse "merge default into <branch>" updates — noise,
+  // not "this branch has a PR". So it gets no badge and we never fetch its PRs
+  // (the "Create Pull Request" banner skips the default branch for the same
+  // reason). `prsForRow` is how every badge site (pill + rows) honours that.
+  const defaultBranch = branch?.defaultBranch ?? null
+  const prsForRow = (name: string, local: boolean) => {
+    const ref = headRef(name, local)
+    return ref === defaultBranch ? undefined : prByBranch?.get(ref)
+  }
+
   // The head refs on screen (labels excluded; remote rows mapped to their bare
-  // name, deduped) — the only PRs we ask for, so a 25k-branch repo queries a
-  // viewport's worth, never the whole list.
-  const visibleBranches = useMemo(
-    () => [
-      ...new Set(
-        visible.flatMap((row) => (row.kind === 'item' ? [headRef(row.name, row.local)] : []))
-      )
-    ],
-    [visible]
-  )
+  // name, the default branch dropped, deduped) — the only PRs we ask for, so a
+  // 25k-branch repo queries a viewport's worth, never the whole list.
+  const visibleBranches = useMemo(() => {
+    const refs = new Set<string>()
+    for (const row of visible) {
+      if (row.kind !== 'item') continue
+      const ref = headRef(row.name, row.local)
+      if (ref !== defaultBranch) refs.add(ref)
+    }
+    return [...refs]
+  }, [visible, defaultBranch])
   // Keep the fetch callback in a ref so the effects below key off the viewport
   // changing, not the (inline) callback's identity.
   const needPrsRef = useRef(onNeedPrs)
@@ -304,7 +316,9 @@ export function BranchSwitcher({
    *  "View Branch on GitHub" when the branch is published. */
   const githubMenuItems = (name: string) => {
     const items = []
-    for (const pr of prByBranch?.get(name) ?? []) {
+    // Skip the default branch's head-ref PRs (reverse-merge noise — see prsForRow).
+    const prs = name === defaultBranch ? [] : (prByBranch?.get(name) ?? [])
+    for (const pr of prs) {
       items.push({
         label: `Open Pull Request #${pr.number}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
         icon: <Icon.Github size={15} />,
@@ -385,9 +399,10 @@ export function BranchSwitcher({
       : '—'
 
   // The current branch's PRs, for the pill's badge cluster (hidden mid-switch
-  // and on a detached HEAD, which has no branch to match).
+  // and on a detached HEAD, which has no branch to match; none on the default
+  // branch, per prsForRow).
   const headPrs =
-    !switching && !branch?.detached ? prByBranch?.get(branch?.current ?? '') : undefined
+    !switching && !branch?.detached ? prsForRow(branch?.current ?? '', true) : undefined
 
   return (
     <>
@@ -498,7 +513,7 @@ export function BranchSwitcher({
                     <span className="popover__item-main">
                       <span className="popover__item-title">{highlightMatch(row.name, query)}</span>
                     </span>
-                    <BranchPrBadges prs={prByBranch?.get(headRef(row.name, row.local))} />
+                    <BranchPrBadges prs={prsForRow(row.name, row.local)} />
                     {row.current && <span className="tag tag--current">current</span>}
                   </button>
                 )
