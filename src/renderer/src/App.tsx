@@ -53,6 +53,7 @@ import { buildCommitSelection, buildStashSelection } from './lib/commit-selectio
 import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
+import { createRepoGeneration } from './lib/repoGeneration'
 import { useTheme } from './lib/theme'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
@@ -164,6 +165,10 @@ export function App() {
   const undoRef = useRef<UndoSnapshot | null>(undo)
   undoRef.current = undo
   const branchesLoadingRef = useRef(false)
+  // Bumped on every repo switch; async loaders capture it before they await and
+  // bail on return if it moved, so a slow load from the previous repo never
+  // paints the newly-opened one — see createRepoGeneration.
+  const repoGenRef = useRef(createRepoGeneration())
   // Refresh coalescing: one in flight at a time; triggers that arrive while it
   // runs collapse into a single trailing run (watcher + focus + post-op can
   // otherwise stack three status passes on big repos).
@@ -250,8 +255,16 @@ export function App() {
   }, [])
 
   const loadSnapshot = useCallback(
-    async (repoPath: string) =>
-      applySnapshot(JSON.parse(await window.gitgrove.snapshot(repoPath)) as RepoSnapshot),
+    async (repoPath: string): Promise<ChangedFile[] | null> => {
+      const generation = repoGenRef.current.current()
+      const snap = JSON.parse(await window.gitgrove.snapshot(repoPath)) as RepoSnapshot
+      // A repo switch landed while the (potentially slow) snapshot was fetching:
+      // this one belongs to the previous repo, so drop it rather than paint the
+      // new repo's sidebar with the old changes/branch/sync/stashes. `null`
+      // signals "stale" so callers skip their follow-up selection too.
+      if (!repoGenRef.current.isCurrent(generation)) return null
+      return applySnapshot(snap)
+    },
     [applySnapshot]
   )
 
@@ -259,8 +272,13 @@ export function App() {
     if (branchesLoadingRef.current) return null
     branchesLoadingRef.current = true
     setBranchesLoading(true)
+    const generation = repoGenRef.current.current()
     try {
       const info = await window.gitgrove.branches(repoPath)
+      // Enumeration is the slowest sidebar load on big repos; if the repo was
+      // switched out from under it, bail without painting the previous repo's
+      // branch list (and current branch) onto the new one.
+      if (!repoGenRef.current.isCurrent(generation)) return null
       setBranch(info)
       return info
     } finally {
@@ -466,6 +484,9 @@ export function App() {
         // and which branches have PRs.
         hostInfoRef.current?.provider === 'github' ? loadGithubData(repoPath) : Promise.resolve()
       ])
+      // A repo switch landed mid-refresh: the snapshot is stale, so don't touch
+      // the (now different) repo's selection or diff.
+      if (!files) return
       // Keep the working selection valid; only re-fetch its diff when the
       // Changes tab is actually showing it, so a background edit never clobbers
       // a commit diff the user is reading in History.
@@ -589,6 +610,9 @@ export function App() {
       // branch list and status are fetched here so the repo switch itself is
       // instant and each panel shows its own progress.
       setRepo(summary)
+      // Mark this as the active repo: any load still in flight for the previous
+      // one now reads as stale and won't paint this repo's sidebar.
+      const generation = repoGenRef.current.next()
       setMissingRepo(null)
       // Resolve the host (web URL + GitHub-ness) for view-on-web / PR links;
       // cheap and independent, so it fills in on its own without gating the UI.
@@ -628,11 +652,13 @@ export function App() {
       setChangesLoading(true)
       try {
         const files = await loadSnapshot(summary.path)
-        if (files.length > 0) autoSelect(files, tabRef.current === 'changes')
+        // `null` = a switch superseded this load; leave the spinner and the
+        // selection to the repo that's now active rather than clobbering them.
+        if (files && files.length > 0) autoSelect(files, tabRef.current === 'changes')
       } catch (e) {
         await failOrRecover(e)
       } finally {
-        setChangesLoading(false)
+        if (repoGenRef.current.isCurrent(generation)) setChangesLoading(false)
       }
     },
     [
@@ -730,7 +756,7 @@ export function App() {
         // showing, otherwise leave it for the next time the tab is opened.
         if (tabRef.current === 'history') loadLog(repoPath).catch(fail)
         const files = await loadSnapshot(repoPath)
-        if (files.length > 0) autoSelect(files, tabRef.current === 'changes')
+        if (files && files.length > 0) autoSelect(files, tabRef.current === 'changes')
         // 'conflicts' is data, not an error (see CheckoutOutcome) — the files
         // arrive marked conflicted in the refreshed snapshot.
         if (result.outcome === 'conflicts') {
