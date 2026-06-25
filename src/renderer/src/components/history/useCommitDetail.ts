@@ -97,9 +97,16 @@ export function useCommitDetail({ getRepoPath, fail, loadCommitDiff, diffRef, cl
 
   /** Clear the selected commit and its files (branch switch / repo open). */
   const resetDetail = useCallback(() => {
+    // Bump the token (and forget the loaded hash) so a commit-files fetch still
+    // in flight for the previous repo can't repopulate the cleared selection or
+    // fire a stale commit diff into the pane — mirrors clearDiff / resetLog. The
+    // bailed fetch's token-guarded `finally` won't clear its spinner, so do it here.
+    commitReq.current++
+    commitFilesHashRef.current = null
     setSelectedCommit(null)
     setCommitFiles([])
     setCommitSelPath(null)
+    setCommitFilesLoading(false)
   }, [])
 
   return {

@@ -20,6 +20,10 @@ export function useCommitSize(
   useEffect(() => {
     const repoPath = getRepoPath()
     if (!repoPath) return
+    // A repo switch (or any change to the inputs) resets `changes`/`selections`,
+    // re-running this effect; `cancelled` lets an already-dispatched stat call
+    // from the previous repo land without writing its size into the new one.
+    let cancelled = false
     const t = setTimeout(() => {
       const paths: string[] = []
       for (const f of changes) {
@@ -32,10 +36,17 @@ export function useCommitSize(
       }
       window.gitgrove
         .selectionSize(repoPath, paths)
-        .then(setCommitSize)
-        .catch(() => setCommitSize(null))
+        .then((size) => {
+          if (!cancelled) setCommitSize(size)
+        })
+        .catch(() => {
+          if (!cancelled) setCommitSize(null)
+        })
     }, 400)
-    return () => clearTimeout(t)
+    return () => {
+      cancelled = true
+      clearTimeout(t)
+    }
   }, [changes, selections, getRepoPath])
 
   return commitSize

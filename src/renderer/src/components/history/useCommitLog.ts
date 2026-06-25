@@ -160,9 +160,20 @@ export function useCommitLog(getRepoPath: () => string | undefined, fail: (e: un
 
   /** Drop the loaded log entirely (branch switch / repo open); keeps the filter. */
   const resetLog = useCallback(() => {
+    // Bump the token so a loadLog/loadMoreLog still in flight for the previous
+    // repo or branch bails instead of landing its commits (and `logLoaded`) in
+    // the now-reset list — the same invalidation clearDiff does for the pane.
+    // Its `finally` is token-guarded and so won't clear the loading flags it
+    // raised; clear them here, or the spinner sticks and (since the next visit
+    // gates loadLog on `!commitsLoading`) the new repo's log never loads.
+    logReq.current++
+    loadingMoreRef.current = false
     setCommits([])
     setLogHasMore(false)
     setLogLoaded(false)
+    setCommitsLoading(false)
+    setCommitsLoadingMore(false)
+    setLogSearching(false)
   }, [])
 
   return {
