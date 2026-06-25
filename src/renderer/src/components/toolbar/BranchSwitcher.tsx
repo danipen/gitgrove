@@ -80,7 +80,8 @@ function PrHoverCard({
   total,
   githubWebUrl,
   onHoverEnter,
-  onHoverLeave
+  onHoverLeave,
+  onActivate
 }: {
   anchor: HTMLElement | null
   prs: PullRequestInfo[]
@@ -88,6 +89,8 @@ function PrHoverCard({
   githubWebUrl?: string | null
   onHoverEnter: () => void
   onHoverLeave: () => void
+  /** Called after opening a PR / the list, so the switcher can dismiss itself. */
+  onActivate: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
@@ -129,6 +132,7 @@ function PrHoverCard({
           onClick={(e) => {
             e.stopPropagation()
             window.gitgrove.openExternal(pr.url)
+            onActivate()
           }}
         >
           <span className="pr-card__glyph">
@@ -147,6 +151,7 @@ function PrHoverCard({
           onClick={(e) => {
             e.stopPropagation()
             window.gitgrove.openExternal(headPullRequestsUrl(githubWebUrl, prs[0].headBranch))
+            onActivate()
           }}
         >
           View all {total} on GitHub
@@ -164,10 +169,13 @@ function PrHoverCard({
  *  when the branch has no PR. */
 function BranchPrBadges({
   branchPrs,
-  githubWebUrl
+  githubWebUrl,
+  onActivate
 }: {
   branchPrs: BranchPrs | undefined
   githubWebUrl?: string | null
+  /** Called when a PR is opened, so the switcher popover can dismiss itself. */
+  onActivate?: () => void
 }) {
   const ref = useRef<HTMLSpanElement>(null)
   const [open, setOpen] = useState(false)
@@ -175,6 +183,14 @@ function BranchPrBadges({
   const closeT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   if (!branchPrs || branchPrs.prs.length === 0) return null
   const { prs, total } = branchPrs
+  // Opening a PR sends focus to the browser; tear the card (and switcher) down
+  // so a stale, unfocused popover isn't left hanging behind it.
+  const activate = () => {
+    clearTimeout(showT.current)
+    clearTimeout(closeT.current)
+    setOpen(false)
+    onActivate?.()
+  }
   // Open after a short hover; close on a short delay so the pointer can travel
   // the gap into the card (which cancels the close via keepOpen).
   const show = () => {
@@ -203,6 +219,7 @@ function BranchPrBadges({
           githubWebUrl={githubWebUrl}
           onHoverEnter={keepOpen}
           onHoverLeave={hide}
+          onActivate={activate}
         />
       )}
     </span>
@@ -531,7 +548,11 @@ export function BranchSwitcher({
             {label}
           </span>
         </span>
-        <BranchPrBadges branchPrs={headPrs} githubWebUrl={githubWebUrl} />
+        <BranchPrBadges
+          branchPrs={headPrs}
+          githubWebUrl={githubWebUrl}
+          onActivate={() => setOpen(false)}
+        />
         <span className={`pill__chev${loading || switching ? ' is-spinning' : ''}`}>
           {loading || switching ? <Icon.Refresh size={14} /> : <Icon.Chevron size={14} />}
         </span>
@@ -601,6 +622,7 @@ export function BranchSwitcher({
                     <BranchPrBadges
                       branchPrs={prsForRow(row.name, row.local)}
                       githubWebUrl={githubWebUrl}
+                      onActivate={() => setOpen(false)}
                     />
                     {row.current && <span className="tag tag--current">current</span>}
                   </button>
