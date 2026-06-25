@@ -689,6 +689,17 @@ export interface PullRequestInfo {
 }
 
 /**
+ * The result of looking up PRs for a set of branches: the fetched PRs (flat —
+ * the caller groups them by head ref) plus, per head ref, the host's *total* PR
+ * count, which can exceed what we fetched. The total drives the badge's `+N` and
+ * the hovercard's "showing X of N — view all" link for long-lived branches.
+ */
+export interface PullRequestLookup {
+  prs: PullRequestInfo[]
+  totals: Record<string, number>
+}
+
+/**
  * Outcome of resolving a commit email to a host avatar via the connected
  * account's API. `ok: false` means a transient failure (network, rate limit,
  * bad token) — the renderer must retry later, never cache it. `ok: true`

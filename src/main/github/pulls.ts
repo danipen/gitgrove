@@ -1,38 +1,47 @@
-// Lists the open pull requests for a repo's GitHub remote, resolving the
-// owner/repo from the remote URL and the token from the connected account. The
-// renderer drives how often this is called (on repo open, after sync, on focus,
-// and while checks run); this module just answers one call cleanly.
+// Looks up the pull requests for specific branches on a repo's GitHub remote,
+// resolving the owner/repo from the remote URL and the token from the connected
+// account. The renderer drives which branches it asks about and how often (the
+// current branch on open/sync/focus, viewport branches as the switcher scrolls),
+// so this module just answers one call cleanly.
 
 import { parseOwnerRepo } from '@shared/git-host-urls'
-import type { PullRequestInfo } from '@shared/types'
+import type { PullRequestLookup } from '@shared/types'
 import { accountsStore } from '../accounts/cipher'
-import { fetchPullRequests } from '../accounts/github'
+import { fetchPullRequestsForBranches } from '../accounts/github'
 import { getRemoteWebUrl } from '../git/read'
 
-// Last successful result per repo. A transient fetch failure hands this back
-// instead of an empty list, so PR badges don't flicker away on a network blip.
-const lastByRepo = new Map<string, PullRequestInfo[]>()
+const EMPTY: PullRequestLookup = { prs: [], totals: {} }
 
-export async function listPullRequests(repoPath: string): Promise<PullRequestInfo[]> {
+export async function listPullRequestsForBranches(
+  repoPath: string,
+  branches: string[]
+): Promise<PullRequestLookup> {
+  if (branches.length === 0) return EMPTY
   const webUrl = await getRemoteWebUrl(repoPath)
-  if (!webUrl) return []
+  if (!webUrl) return EMPTY
   const ownerRepo = parseOwnerRepo(webUrl)
-  if (!ownerRepo) return []
+  if (!ownerRepo) return EMPTY
   let host: string
   try {
     host = new URL(webUrl).host
   } catch {
-    return []
+    return EMPTY
   }
   // No connected account for the host → no token to call the API with → no PR
   // data. (This is also the gate: PR badges only appear once signed in.)
   const token = accountsStore().getTokenForHost(host)
-  if (!token) return []
+  if (!token) return EMPTY
   try {
-    const prs = await fetchPullRequests(host, token, ownerRepo.owner, ownerRepo.repo)
-    lastByRepo.set(repoPath, prs)
-    return prs
+    return await fetchPullRequestsForBranches(
+      host,
+      token,
+      ownerRepo.owner,
+      ownerRepo.repo,
+      branches
+    )
   } catch {
-    return lastByRepo.get(repoPath) ?? []
+    // Transient failure: hand back nothing and let the renderer keep its
+    // last-known badges (it only overwrites its cache on a successful fetch).
+    return EMPTY
   }
 }

@@ -334,6 +334,18 @@
   flex: 1;
   white-space: nowrap;
 }
+/* A row that opens a submenu: keep it highlighted while its submenu is open, and
+   trail a chevron pointing at where the submenu appears. */
+.ctx-menu__item--parent.is-open {
+  background: var(--bg-hover);
+}
+.ctx-menu__caret {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1;
+}
 .tag {
   font-size: 10px;
   font-weight: 600;

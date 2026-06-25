@@ -275,12 +275,19 @@
   color: var(--st-added);
 }
 
-/* The `#123` badge marking a branch that has a pull request — shown on the
-   branch switcher's trigger pill and its list rows. The number is a neutral
-   pill across every state (open, draft, merged, closed); only the leading glyph
-   carries meaning: the green/red/amber CI rollup for open PRs, or a merge/closed
-   octicon (no CI dot — that CI is long settled) for merged/closed.
-   styles: BranchSwitcher.tsx */
+/* A branch's PR badge cluster — shown on the switcher's trigger pill and list
+   rows: the most important PR as a `#123` badge plus a `+N` overflow chip, with
+   the full list in a hovercard (.pr-card). styles: BranchSwitcher.tsx */
+.branch-prs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+/* The `#123` badge. The number is a neutral pill across every state (open,
+   draft, merged, closed); only the leading glyph carries meaning: the
+   green/red/amber CI rollup for open PRs, or a merge/closed octicon (no CI dot —
+   that CI is long settled) for merged/closed. */
 .branch-pr {
   display: inline-flex;
   align-items: center;
@@ -294,14 +301,13 @@
   /* Muted: the number is secondary — the leading glyph is the real signal. */
   color: var(--fg-muted);
 }
-/* Only the leading state glyph carries the color — merge purple, closed red. */
-.branch-pr--merged .ci-status {
-  color: var(--pr-merged);
+/* The "+N" overflow chip: a branch carries N+1 PRs; the rest are in the card. */
+.branch-pr--more {
+  gap: 0;
 }
-.branch-pr--closed .ci-status {
-  color: var(--st-deleted);
-}
-/* CI rollup inside the badge: ✓ passing, ✗ failing, or a pulsing dot running. */
+/* CI rollup inside the badge: ✓ passing, ✗ failing, or a pulsing dot running.
+   The state glyph also carries the per-state color (also used in .pr-card, where
+   it sits outside .branch-pr): merge purple, closed red. */
 .ci-status {
   display: inline-flex;
   align-items: center;
@@ -311,6 +317,19 @@
 }
 .ci-status--failure {
   color: var(--st-deleted);
+}
+.ci-status--merged {
+  color: var(--pr-merged);
+}
+.ci-status--closed {
+  color: var(--st-deleted);
+}
+/* Open / draft PR octicons in the hovercard (open is green, a draft is muted). */
+.ci-status--open {
+  color: var(--st-added);
+}
+.ci-status--draft {
+  color: var(--fg-muted);
 }
 .ci-status--pending {
   width: 6px;
@@ -323,4 +342,100 @@
   50% {
     opacity: 0.35;
   }
+}
+
+/* The hovercard listing a branch's PRs (icon, title, number), shown on hover of
+   the badge — each row a link. Portal-rendered, so it sits on the tooltip layer
+   (z 90, above the branch popover) and can't be clipped.
+   styles: BranchSwitcher.tsx (PrHoverCard) */
+.pr-card {
+  position: fixed;
+  z-index: 90;
+  width: 420px;
+  max-width: calc(100vw - 16px);
+  padding: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--popover-shadow);
+  animation: pop-in 0.1s ease-out;
+}
+.pr-card__head {
+  padding: 3px 6px 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+/* Each row is a button — clicking opens that PR in the browser. */
+.pr-card__row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+.pr-card__row:hover {
+  background: var(--bg-hover);
+}
+/* Fixed-width glyph + number columns so the titles line up across rows. */
+.pr-card__glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex: none;
+}
+.pr-card__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pr-card__num {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+/* The trailing "open in browser" glyph: faint until the row is hovered, the cue
+   that the row is a link. */
+.pr-card__open {
+  flex: none;
+  color: var(--fg-muted);
+  opacity: 0;
+}
+.pr-card__row:hover .pr-card__open {
+  opacity: 1;
+}
+/* Footer link shown when the branch has more PRs than the card lists.
+   Left-aligned like the rows, its content vertically centered. */
+.pr-card__more {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 6px;
+  border: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pr-card__more:hover {
+  background: var(--bg-hover);
 }

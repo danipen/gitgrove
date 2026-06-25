@@ -1,24 +1,19 @@
-import { branchUrl } from '@shared/git-host-urls'
+import { branchUrl, headPullRequestsUrl } from '@shared/git-host-urls'
 import type { BranchInfo, PullRequestChecks, PullRequestInfo } from '@shared/types'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ClearButton } from '@/components/common/ClearButton'
-import { ContextMenu } from '@/components/common/ContextMenu'
+import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
 import { Popover } from '@/components/common/Popover'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { type BranchRow, buildBranchRows } from '@/lib/branch-rows'
 import { highlightMatch } from '@/lib/highlight'
 import { Icon } from '@/lib/icons'
+import type { BranchPrs } from '@/lib/pr-order'
 import { useListKeyNav } from '@/lib/useListKeyNav'
 
 /** Branch operations surfaced from the switcher (beyond plain checkout). */
 export type BranchAction = 'new' | 'merge' | 'rename' | 'delete'
-
-/** Tooltip wording for each CI rollup state, appended to the PR badge's tip. */
-const CHECKS_LABEL: Record<PullRequestChecks, string> = {
-  success: 'checks passing',
-  failure: 'checks failing',
-  pending: 'checks running'
-}
 
 /** The CI rollup glyph inside a PR badge: a green check when passing, a red
  *  cross when failing, or a pulsing amber dot while checks are still running.
@@ -32,6 +27,205 @@ function CiStatus({ state }: { state: PullRequestChecks }) {
   )
 }
 
+/** The leading state glyph for a PR, shared by the badge and the hovercard: the
+ *  green/red/amber CI rollup for open PRs (nothing when no checks ran), or
+ *  GitHub's merged/closed octicon (no CI dot — that CI is long settled). */
+function PrGlyph({ pr }: { pr: PullRequestInfo }) {
+  if (pr.state === 'open') return pr.checks ? <CiStatus state={pr.checks} /> : null
+  return (
+    <span className={`ci-status ci-status--${pr.state}`} aria-hidden>
+      {pr.state === 'merged' ? <Icon.PrMerged size={11} /> : <Icon.PrClosed size={11} />}
+    </span>
+  )
+}
+
+/** The hovercard's leading state glyph: GitHub's open / merged / closed pull-
+ *  request octicon, tinted by state (green / muted draft / purple / red). Unlike
+ *  the badge's CI-rollup glyph, this always shows — it's the row's only state cue
+ *  now that the text label is gone. */
+function PrStateIcon({ pr }: { pr: PullRequestInfo }) {
+  const state = pr.state === 'open' && pr.draft ? 'draft' : pr.state
+  const Glyph =
+    pr.state === 'merged' ? Icon.PrMerged : pr.state === 'closed' ? Icon.PrClosed : Icon.PrOpen
+  return (
+    <span className={`ci-status ci-status--${state}`} aria-hidden>
+      <Glyph size={13} />
+    </span>
+  )
+}
+
+/** The `#123` pill marking a branch's most important PR: a state glyph + the
+ *  number, tinted for merged (purple) / closed (red). One badge per branch — the
+ *  full list (and count) lives in the hovercard. styles: features/toolbar.css */
+function PrBadge({ pr }: { pr: PullRequestInfo }) {
+  const stateClass =
+    pr.state === 'merged' ? ' branch-pr--merged' : pr.state === 'closed' ? ' branch-pr--closed' : ''
+  return (
+    <span className={`branch-pr${stateClass}`}>
+      <PrGlyph pr={pr} />#{pr.number}
+    </span>
+  )
+}
+
+/** A floating card listing a branch's PRs (icon, status, number, title) — shown
+ *  on hover of the badge, always (one PR or many) so the UX is uniform. Each row
+ *  is clickable to open the PR; when the branch has more PRs than were fetched
+ *  (`total > prs.length`), a footer links to the full list on the host. Stays
+ *  open while the pointer is over it (onHover*), so its rows are reachable.
+ *  Portal-rendered so the popover / row overflow can't clip it; positioned under
+ *  the badge, flipped above near the bottom edge. styles: features/toolbar.css */
+function PrHoverCard({
+  anchor,
+  prs,
+  total,
+  githubWebUrl,
+  onHoverEnter,
+  onHoverLeave,
+  onActivate
+}: {
+  anchor: HTMLElement | null
+  prs: PullRequestInfo[]
+  total: number
+  githubWebUrl?: string | null
+  onHoverEnter: () => void
+  onHoverLeave: () => void
+  /** Called after opening a PR / the list, so the switcher can dismiss itself. */
+  onActivate: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: prs changes the measured height
+  useLayoutEffect(() => {
+    if (!anchor || !ref.current) return
+    const r = anchor.getBoundingClientRect()
+    const card = ref.current.getBoundingClientRect()
+    const m = 8
+    // Right-align to the badge (it sits at the row's trailing edge), clamped.
+    let left = Math.min(r.right - card.width, window.innerWidth - card.width - m)
+    left = Math.max(m, left)
+    let top = r.bottom + 6
+    if (top + card.height > window.innerHeight - m) top = r.top - 6 - card.height
+    top = Math.max(m, Math.min(top, window.innerHeight - card.height - m))
+    setPos({ top, left })
+  }, [anchor, prs])
+  // More PRs exist than we fetched — offer the host's full, filtered list.
+  const more = total > prs.length
+  return createPortal(
+    <div
+      ref={ref}
+      className="pr-card"
+      style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: 'hidden' }}
+      onMouseEnter={onHoverEnter}
+      onMouseLeave={onHoverLeave}
+    >
+      <div className="pr-card__head">
+        {total} pull request{total === 1 ? '' : 's'}
+      </div>
+      {prs.map((pr) => (
+        // stopPropagation: the card is portal-rendered but lives in the branch
+        // row's / pill's React subtree, so without it a click would also fire
+        // their onClick and switch branch / toggle the popover.
+        <button
+          key={pr.number}
+          type="button"
+          className="pr-card__row"
+          onClick={(e) => {
+            e.stopPropagation()
+            window.gitgrove.openExternal(pr.url)
+            onActivate()
+          }}
+        >
+          <span className="pr-card__glyph">
+            <PrStateIcon pr={pr} />
+          </span>
+          <span className="pr-card__title">{pr.title}</span>
+          <span className="pr-card__num">#{pr.number}</span>
+          {/* The open affordance — makes it obvious the row opens in the browser. */}
+          <Icon.External className="pr-card__open" size={12} />
+        </button>
+      ))}
+      {more && githubWebUrl && (
+        <button
+          type="button"
+          className="pr-card__more"
+          onClick={(e) => {
+            e.stopPropagation()
+            window.gitgrove.openExternal(headPullRequestsUrl(githubWebUrl, prs[0].headBranch))
+            onActivate()
+          }}
+        >
+          View all {total} on GitHub
+          <Icon.External size={12} />
+        </button>
+      )}
+    </div>,
+    document.body
+  )
+}
+
+/** A branch's PR affordance: a single badge for its most important PR, with a
+ *  hovercard (always, one PR or many) listing them all — clickable, counted, and
+ *  with a "view all" link when the host has more than we fetched. Renders nothing
+ *  when the branch has no PR. */
+function BranchPrBadges({
+  branchPrs,
+  githubWebUrl,
+  onActivate
+}: {
+  branchPrs: BranchPrs | undefined
+  githubWebUrl?: string | null
+  /** Called when a PR is opened, so the switcher popover can dismiss itself. */
+  onActivate?: () => void
+}) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [open, setOpen] = useState(false)
+  const showT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const closeT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  if (!branchPrs || branchPrs.prs.length === 0) return null
+  const { prs, total } = branchPrs
+  // Opening a PR sends focus to the browser; tear the card (and switcher) down
+  // so a stale, unfocused popover isn't left hanging behind it.
+  const activate = () => {
+    clearTimeout(showT.current)
+    clearTimeout(closeT.current)
+    setOpen(false)
+    onActivate?.()
+  }
+  // Open after a short hover; close on a short delay so the pointer can travel
+  // the gap into the card (which cancels the close via keepOpen).
+  const show = () => {
+    clearTimeout(closeT.current)
+    showT.current = setTimeout(() => setOpen(true), 120)
+  }
+  const keepOpen = () => {
+    clearTimeout(showT.current)
+    clearTimeout(closeT.current)
+    setOpen(true)
+  }
+  const hide = () => {
+    clearTimeout(showT.current)
+    closeT.current = setTimeout(() => setOpen(false), 150)
+  }
+  return (
+    // The empty data-tip swallows the row's branch-name tip while hovering the
+    // badge, so only the rich hovercard shows.
+    <span ref={ref} className="branch-prs" data-tip="" onMouseEnter={show} onMouseLeave={hide}>
+      <PrBadge pr={prs[0]} />
+      {open && (
+        <PrHoverCard
+          anchor={ref.current}
+          prs={prs}
+          total={total}
+          githubWebUrl={githubWebUrl}
+          onHoverEnter={keepOpen}
+          onHoverLeave={hide}
+          onActivate={activate}
+        />
+      )}
+    </span>
+  )
+}
+
 interface Props {
   branch: BranchInfo | null
   /** True while the full branch list is being fetched after a repo open. */
@@ -40,9 +234,14 @@ interface Props {
   /** The repo's GitHub web base URL, when the host supports it — enables
    *  "View Branch on GitHub" for branches that exist on the remote. */
   githubWebUrl?: string | null
-  /** Each branch's most recent PR (any state) keyed by head branch — drives the
-   *  `#123` badge and the "Open Pull Request" menu entry. */
-  prByBranch?: Map<string, PullRequestInfo>
+  /** Each branch's PRs (+ host total) keyed by head branch — drives the `#123`
+   *  badge cluster (one badge + a `+N` overflow) and the "Open Pull Request"
+   *  menu entries. */
+  prByBranch?: Map<string, BranchPrs>
+  /** Ask the host for PRs of the branches currently on screen. `revalidate`
+   *  re-asks even cached ones (on open); without it, scrolling only fetches
+   *  rows not looked up yet. Debounced here so a fast fling fires one request. */
+  onNeedPrs?: (branches: string[], opts: { revalidate: boolean }) => void
   /** The checkout in flight: target branch + determinate progress (null while
    *  git hasn't reported any — fast switches never do). */
   switching?: { name: string; percent: number | null } | null
@@ -52,6 +251,15 @@ interface Props {
   /** Called when the popover opens — the branch list is (re)loaded lazily. */
   onOpen?: () => void
 }
+
+/** A row's head-ref name for PR matching. A local row already is it; a remote
+ *  row like `origin/foo` maps to `foo` — a remote branch is exactly what a PR's
+ *  head ref names, so it's matched and fetched under the bare name. */
+const headRef = (name: string, local: boolean) => (local ? name : name.slice(name.indexOf('/') + 1))
+
+/** Cap a PR title so a submenu of them doesn't grow unboundedly wide. */
+const truncate = (title: string, max = 52) =>
+  title.length > max ? `${title.slice(0, max - 1)}…` : title
 
 /** Fixed row height used by the virtualizer (must match the inline row height below). */
 const ROW_H = 32
@@ -66,6 +274,7 @@ export function BranchSwitcher({
   busy,
   githubWebUrl = null,
   prByBranch,
+  onNeedPrs,
   switching = null,
   onCheckout,
   onBranchAction,
@@ -136,6 +345,43 @@ export function BranchSwitcher({
 
   const visible = rows.slice(vs.start, vs.end)
 
+  // A row's PRs, keyed by its head ref (remote rows map to their bare name).
+  const prsForRow = (name: string, local: boolean): BranchPrs | undefined =>
+    prByBranch?.get(headRef(name, local))
+
+  // The head refs on screen (labels excluded; remote rows mapped to their bare
+  // name, deduped) — the only PRs we ask for, so a 25k-branch repo queries a
+  // viewport's worth, never the whole list.
+  const visibleBranches = useMemo(() => {
+    const refs = new Set<string>()
+    for (const row of visible) {
+      if (row.kind === 'item') refs.add(headRef(row.name, row.local))
+    }
+    return [...refs]
+  }, [visible])
+  // Keep the fetch callback in a ref so the effects below key off the viewport
+  // changing, not the (inline) callback's identity.
+  const needPrsRef = useRef(onNeedPrs)
+  needPrsRef.current = onNeedPrs
+
+  // On open, revalidate the viewport's PRs: the cache paints badges instantly,
+  // this refreshes them in case CI/state moved while the popover was closed.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: open is the trigger; the viewport is read at open time and the scroll effect below tracks its later changes.
+  useEffect(() => {
+    if (open) needPrsRef.current?.(visibleBranches, { revalidate: true })
+  }, [open])
+
+  // As scrolling/filtering reveals new rows, fetch their PRs once motion settles
+  // (debounced). Cached branches are skipped by the caller, so flinging back
+  // over already-seen rows costs nothing and a fast fling fires one request.
+  useEffect(() => {
+    if (!open) return
+    const timer = setTimeout(() => {
+      needPrsRef.current?.(visibleBranches, { revalidate: false })
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [open, visibleBranches])
+
   // A local branch is browsable on the host only once it exists on a remote;
   // `branch.remote` holds entries like `origin/feature/x`, so comparing the
   // part after the remote name avoids offering a link that would 404.
@@ -143,19 +389,44 @@ export function BranchSwitcher({
     branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
 
   /** The GitHub group for a branch's menu, under a single leading separator (or
-   *  nothing when none apply): "Open Pull Request #N" linking straight to the
-   *  branch's most recent PR (with a state hint for merged/closed ones), plus
-   *  "View Branch on GitHub" when the branch is published. */
-  const githubMenuItems = (name: string) => {
-    const items = []
-    const pr = prByBranch?.get(name)
-    if (pr) {
+   *  nothing when none apply): one "Open Pull Request #N" entry when the branch
+   *  has a single PR, or a "Pull Requests (N)" submenu listing them (plus a "View
+   *  all on GitHub" entry when the host has more than we fetched) when it has
+   *  several — so the menu never spills 10 rows. Then "View Branch on GitHub"
+   *  when the branch is published. */
+  const githubMenuItems = (name: string): ContextMenuItem[] => {
+    const entry = prByBranch?.get(name)
+    const prs = entry?.prs ?? []
+    const total = entry?.total ?? prs.length
+    const items: ContextMenuItem[] = []
+
+    if (total === 1 && prs.length === 1) {
+      const pr = prs[0]
       items.push({
         label: `Open Pull Request #${pr.number}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       })
+    } else if (prs.length > 0) {
+      const submenu: ContextMenuItem[] = prs.map((pr) => ({
+        label: `#${pr.number} ${truncate(pr.title)}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
+        icon: <Icon.Github size={15} />,
+        onClick: () => window.gitgrove.openExternal(pr.url)
+      }))
+      if (githubWebUrl && total > prs.length) {
+        const web = githubWebUrl
+        submenu.push(
+          {},
+          {
+            label: `View all ${total} on GitHub`,
+            icon: <Icon.External size={15} />,
+            onClick: () => window.gitgrove.openExternal(headPullRequestsUrl(web, name))
+          }
+        )
+      }
+      items.push({ label: `Pull Requests (${total})`, icon: <Icon.Github size={15} />, submenu })
     }
+
     if (githubWebUrl && isPublished(name)) {
       items.push({
         label: 'View Branch on GitHub',
@@ -229,47 +500,11 @@ export function BranchSwitcher({
         : branch.current
       : '—'
 
-  // The `#123` pill marking a branch that has a PR. Open PRs carry the CI rollup
-  // glyph (green/red/amber); merged PRs go purple and closed red, each with
-  // GitHub's own PR-state octicon and no CI dot (their checks are long settled).
-  // styles: features/toolbar.css (.branch-pr)
-  const renderPrBadge = (pr: PullRequestInfo | undefined) => {
-    if (!pr) return null
-    // Number stays neutral for every state, including drafts — "Draft" lives in
-    // the tooltip/menu, not a dimmed number. Only merged/closed tint the glyph.
-    const stateClass =
-      pr.state === 'merged'
-        ? ' branch-pr--merged'
-        : pr.state === 'closed'
-          ? ' branch-pr--closed'
-          : ''
-    const kind =
-      pr.state === 'merged'
-        ? 'Merged PR'
-        : pr.state === 'closed'
-          ? 'Closed PR'
-          : pr.draft
-            ? 'Draft PR'
-            : 'PR'
-    const checks = pr.state === 'open' && pr.checks ? ` — ${CHECKS_LABEL[pr.checks]}` : ''
-    return (
-      <span
-        className={`branch-pr${stateClass}`}
-        data-tip={`${kind} #${pr.number}: ${pr.title}${checks}`}
-      >
-        {pr.state === 'open' ? (
-          pr.checks && <CiStatus state={pr.checks} />
-        ) : (
-          <span className="ci-status" aria-hidden>
-            {pr.state === 'merged' ? <Icon.PrMerged size={11} /> : <Icon.PrClosed size={11} />}
-          </span>
-        )}
-        #{pr.number}
-      </span>
-    )
-  }
-  const headPr =
-    !switching && !branch?.detached ? prByBranch?.get(branch?.current ?? '') : undefined
+  // The current branch's PRs, for the pill's badge cluster (hidden mid-switch
+  // and on a detached HEAD, which has no branch to match; none on the default
+  // branch, per prsForRow).
+  const headPrs =
+    !switching && !branch?.detached ? prsForRow(branch?.current ?? '', true) : undefined
 
   return (
     <>
@@ -313,7 +548,11 @@ export function BranchSwitcher({
             {label}
           </span>
         </span>
-        {renderPrBadge(headPr)}
+        <BranchPrBadges
+          branchPrs={headPrs}
+          githubWebUrl={githubWebUrl}
+          onActivate={() => setOpen(false)}
+        />
         <span className={`pill__chev${loading || switching ? ' is-spinning' : ''}`}>
           {loading || switching ? <Icon.Refresh size={14} /> : <Icon.Chevron size={14} />}
         </span>
@@ -380,7 +619,11 @@ export function BranchSwitcher({
                     <span className="popover__item-main">
                       <span className="popover__item-title">{highlightMatch(row.name, query)}</span>
                     </span>
-                    {renderPrBadge(prByBranch?.get(row.name))}
+                    <BranchPrBadges
+                      branchPrs={prsForRow(row.name, row.local)}
+                      githubWebUrl={githubWebUrl}
+                      onActivate={() => setOpen(false)}
+                    />
                     {row.current && <span className="tag tag--current">current</span>}
                   </button>
                 )
@@ -455,7 +698,10 @@ export function BranchSwitcher({
                     label: 'Copy Branch Name',
                     icon: <Icon.Copy size={15} />,
                     onClick: () => window.gitgrove.clipboardWrite(menu.name)
-                  }
+                  },
+                  // A remote row matches PRs by its bare ref, so its menu links to
+                  // them (and to the branch on the host) just like a local one.
+                  ...githubMenuItems(headRef(menu.name, false))
                 ]
           }
         />

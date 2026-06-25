@@ -207,13 +207,14 @@ export function App() {
 
   // The GitHub slice: unpushed set, PR badges, the create-PR banner — see
   // usePullRequests.
-  const { unpushedRef, prByBranch, createPrUrl, loadGithubData, resetGithub } = usePullRequests({
-    getRepoPath,
-    repo,
-    hostInfo,
-    branch,
-    sync
-  })
+  const { unpushedRef, prByBranch, createPrUrl, loadGithubData, fetchBranchPrs, resetGithub } =
+    usePullRequests({
+      getRepoPath,
+      repo,
+      hostInfo,
+      branch,
+      sync
+    })
 
   // ── Data loaders ─────────────────────────────────────────────────────────
   // One IPC round-trip refreshes everything the sidebar shows: files, current
@@ -1338,6 +1339,7 @@ export function App() {
         branchesLoading={branchesLoading}
         githubWebUrl={hostInfo?.provider === 'github' ? hostInfo.webUrl : null}
         prByBranch={prByBranch}
+        onNeedPrs={(branches, opts) => fetchBranchPrs(repo.path, branches, opts)}
         busy={busy}
         refreshing={refreshing}
         themePref={themePref}

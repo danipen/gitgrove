@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { branchUrl, commitUrl, compareUrl, parseOwnerRepo } from './git-host-urls'
+import {
+  branchUrl,
+  commitUrl,
+  compareUrl,
+  headPullRequestsUrl,
+  parseOwnerRepo
+} from './git-host-urls'
 
 const BASE = 'https://github.com/octocat/hello'
 
@@ -35,6 +41,20 @@ describe('compareUrl', () => {
   test('encodes both refs without touching the ... separator', () => {
     expect(compareUrl(BASE, 'release/1.0', 'feature/x')).toBe(
       'https://github.com/octocat/hello/compare/release%2F1.0...feature%2Fx?expand=1'
+    )
+  })
+})
+
+describe('headPullRequestsUrl', () => {
+  test('builds a PR search filtered to the head branch', () => {
+    expect(headPullRequestsUrl(BASE, 'feature')).toBe(
+      'https://github.com/octocat/hello/pulls?q=is%3Apr%20head%3Afeature'
+    )
+  })
+
+  test('encodes a branch with slashes', () => {
+    expect(headPullRequestsUrl(BASE, 'performance/uum-137749')).toBe(
+      'https://github.com/octocat/hello/pulls?q=is%3Apr%20head%3Aperformance%2Fuum-137749'
     )
   })
 })
