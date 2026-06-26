@@ -1,6 +1,6 @@
 import { branchUrl, headPullRequestsUrl } from '@shared/git-host-urls'
 import type { BranchInfo, PullRequestChecks, PullRequestInfo } from '@shared/types'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ClearButton } from '@/components/common/ClearButton'
 import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
@@ -71,24 +71,27 @@ function PrBadge({ pr }: { pr: PullRequestInfo }) {
  *  on hover of the badge, always (one PR or many) so the UX is uniform. Each row
  *  is clickable to open the PR; when the branch has more PRs than were fetched
  *  (`total > prs.length`), a footer links to the full list on the host. Stays
- *  open while the pointer is over it (onHover*), so its rows are reachable.
- *  Portal-rendered so the popover / row overflow can't clip it; positioned under
- *  the badge, flipped above near the bottom edge. styles: features/toolbar.css */
+ *  open while the pointer is in the badge↔card safe zone (see the tracking
+ *  effect), so its rows are reachable across the gap. Portal-rendered so the
+ *  popover / row overflow can't clip it; positioned under the badge, flipped
+ *  above near the bottom edge. styles: features/toolbar.css */
 function PrHoverCard({
   anchor,
   prs,
   total,
   githubWebUrl,
-  onHoverEnter,
-  onHoverLeave,
+  keepOpen,
+  requestClose,
   onActivate
 }: {
   anchor: HTMLElement | null
   prs: PullRequestInfo[]
   total: number
   githubWebUrl?: string | null
-  onHoverEnter: () => void
-  onHoverLeave: () => void
+  /** Pointer is inside the badge↔card safe zone — cancel any pending close. */
+  keepOpen: () => void
+  /** Pointer has left the safe zone — start the close countdown. */
+  requestClose: () => void
   /** Called after opening a PR / the list, so the switcher can dismiss itself. */
   onActivate: () => void
 }) {
@@ -99,15 +102,50 @@ function PrHoverCard({
     if (!anchor || !ref.current) return
     const r = anchor.getBoundingClientRect()
     const card = ref.current.getBoundingClientRect()
-    const m = 8
+    const m = 8 // viewport-edge margin
+    const gap = 6 // space between the badge and the card
     // Right-align to the badge (it sits at the row's trailing edge), clamped.
     let left = Math.min(r.right - card.width, window.innerWidth - card.width - m)
     left = Math.max(m, left)
-    let top = r.bottom + 6
-    if (top + card.height > window.innerHeight - m) top = r.top - 6 - card.height
+    let top = r.bottom + gap
+    if (top + card.height > window.innerHeight - m) top = r.top - gap - card.height
     top = Math.max(m, Math.min(top, window.innerHeight - card.height - m))
     setPos({ top, left })
   }, [anchor, prs])
+  // Keep the card open while the pointer is anywhere in the "safe zone" — the
+  // badge, the card, or the full-width corridor between them — and close once it
+  // has left that zone. The badge is small and sits at the card's trailing edge
+  // while the card is wide and drops to its left, so the pointer travels a
+  // diagonal to reach a row; tracking the live position (rather than relying on
+  // mouseenter/leave across the two elements and the gap between them) means no
+  // travel path, gap, or React-portal event-ordering can dismiss it mid-journey.
+  useEffect(() => {
+    const card = ref.current
+    if (!anchor || !card) return
+    const onMove = (e: PointerEvent) => {
+      const a = anchor.getBoundingClientRect()
+      const c = card.getBoundingClientRect()
+      const { clientX: x, clientY: y } = e
+      const pad = 6 // sub-pixel + a little slack so a grazing path still counts
+      const inRect = (rect: DOMRect) =>
+        x >= rect.left - pad &&
+        x <= rect.right + pad &&
+        y >= rect.top - pad &&
+        y <= rect.bottom + pad
+      // The corridor spans the card's full width across the gap between the two,
+      // so any descent into the card crosses it instead of a dead patch (works
+      // whether the card sits below the badge or, when flipped, above it).
+      const inCorridor =
+        x >= c.left - pad &&
+        x <= c.right + pad &&
+        y >= Math.min(a.bottom, c.bottom) - pad &&
+        y <= Math.max(a.top, c.top) + pad
+      if (inRect(a) || inRect(c) || inCorridor) keepOpen()
+      else requestClose()
+    }
+    document.addEventListener('pointermove', onMove)
+    return () => document.removeEventListener('pointermove', onMove)
+  }, [anchor, keepOpen, requestClose])
   // More PRs exist than we fetched — offer the host's full, filtered list.
   const more = total > prs.length
   return createPortal(
@@ -115,8 +153,6 @@ function PrHoverCard({
       ref={ref}
       className="pr-card"
       style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: 'hidden' }}
-      onMouseEnter={onHoverEnter}
-      onMouseLeave={onHoverLeave}
     >
       <div className="pr-card__head">
         {total} pull request{total === 1 ? '' : 's'}
@@ -181,35 +217,51 @@ function BranchPrBadges({
   const [open, setOpen] = useState(false)
   const showT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const closeT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Pointer is back in the badge↔card safe zone — cancel any pending close.
+  const keepOpen = useCallback(() => {
+    if (closeT.current) {
+      clearTimeout(closeT.current)
+      closeT.current = undefined
+    }
+  }, [])
+  // Pointer has left the safe zone — close after a short grace. Scheduled once
+  // (not reset on every move) so it still fires while the pointer keeps moving
+  // away; keepOpen cancels it if the pointer returns in time.
+  const requestClose = useCallback(() => {
+    if (closeT.current) return
+    closeT.current = setTimeout(() => {
+      closeT.current = undefined
+      setOpen(false)
+    }, 200)
+  }, [])
   if (!branchPrs || branchPrs.prs.length === 0) return null
   const { prs, total } = branchPrs
+  const onBadgeEnter = () => {
+    keepOpen() // cancel a close left from a quick out-and-back
+    showT.current = setTimeout(() => setOpen(true), 120) // open after a short hover
+  }
+  // Only cancel a not-yet-open hover; once the card is open the tracking effect
+  // owns the close, so we don't dismiss just because the pointer left the badge
+  // (it's likely on its way into the card).
+  const onBadgeLeave = () => clearTimeout(showT.current)
   // Opening a PR sends focus to the browser; tear the card (and switcher) down
   // so a stale, unfocused popover isn't left hanging behind it.
   const activate = () => {
     clearTimeout(showT.current)
-    clearTimeout(closeT.current)
+    keepOpen()
     setOpen(false)
     onActivate?.()
-  }
-  // Open after a short hover; close on a short delay so the pointer can travel
-  // the gap into the card (which cancels the close via keepOpen).
-  const show = () => {
-    clearTimeout(closeT.current)
-    showT.current = setTimeout(() => setOpen(true), 120)
-  }
-  const keepOpen = () => {
-    clearTimeout(showT.current)
-    clearTimeout(closeT.current)
-    setOpen(true)
-  }
-  const hide = () => {
-    clearTimeout(showT.current)
-    closeT.current = setTimeout(() => setOpen(false), 150)
   }
   return (
     // The empty data-tip swallows the row's branch-name tip while hovering the
     // badge, so only the rich hovercard shows.
-    <span ref={ref} className="branch-prs" data-tip="" onMouseEnter={show} onMouseLeave={hide}>
+    <span
+      ref={ref}
+      className="branch-prs"
+      data-tip=""
+      onMouseEnter={onBadgeEnter}
+      onMouseLeave={onBadgeLeave}
+    >
       <PrBadge pr={prs[0]} />
       {open && (
         <PrHoverCard
@@ -217,8 +269,8 @@ function BranchPrBadges({
           prs={prs}
           total={total}
           githubWebUrl={githubWebUrl}
-          onHoverEnter={keepOpen}
-          onHoverLeave={hide}
+          keepOpen={keepOpen}
+          requestClose={requestClose}
           onActivate={activate}
         />
       )}
