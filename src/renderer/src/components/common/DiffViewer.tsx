@@ -133,6 +133,40 @@ const LINE_CHECKBOX_CSS =
   `[data-line-type="change-deletion"][data-column-number][data-hovered]{background:var(--diffs-bg-deletion-emphasis)}`
 
 /**
+ * Make the empty side of a hunk read uniformly as one continuous diagonal hatch.
+ * Pierre only hatches the content filler (`[data-content-buffer]`) and leaves the
+ * other blanks flat — and a per-cell hatch can't be continuous, since each filler
+ * cell anchors the pattern at its own origin and steps out of phase at every
+ * seam.
+ *
+ * Instead paint the stripe on the two column *wrappers* (`[data-gutter]` and
+ * `[data-content]`, which hug the rows exactly — so the layer never overruns past
+ * the last line the way the padded `[data-code]` panel does) and make the filler
+ * cells transparent so they reveal it. Real lines and number cells keep the
+ * opaque `background-color` pierre gives them, so the hatch shows through *only*
+ * the blanks. The two wrappers meet at the gutter↔content seam, so anchor the
+ * gutter's pattern to its right edge (`100%`) and the content's to its left (`0`):
+ * a stripe tile boundary then lands on the seam from both sides and the diagonal
+ * is continuous across it — at any gutter width, with no measurement (pierre
+ * `Math.ceil`s the width it exposes, so measuring would be ~1px off). The empty
+ * mirror of the additions-side "Include in commit" bar is cleared only on
+ * `[data-deletions]` so the bar's own side stays opaque (unified has no mirror).
+ * Also for pierre's `unsafeCSS`.
+ */
+const BUFFER_HATCH =
+  'background-color:var(--diffs-bg);background-size:8px 8px;background-origin:border-box;' +
+  'background-repeat:repeat;background-image:repeating-linear-gradient(-45deg,transparent,' +
+  'transparent calc(3px * 1.414),var(--diffs-bg-buffer) calc(3px * 1.414),' +
+  'var(--diffs-bg-buffer) calc(4px * 1.414))'
+const GUTTER_POLISH_CSS =
+  `[data-gutter]{${BUFFER_HATCH};background-position:100% 0}` +
+  `[data-content]{${BUFFER_HATCH};background-position:0 0}` +
+  ':is([data-content-buffer],' +
+  "[data-gutter-buffer='buffer']," +
+  "[data-deletions] [data-gutter-buffer='annotation']," +
+  '[data-deletions] [data-line-annotation]){background-color:transparent;background-image:none}'
+
+/**
  * Human description of an LFS object's size across the diff: a single size,
  * or "old → new" when the change replaced the object. Sizes are of the real
  * LFS content, not the pointer file.
@@ -348,7 +382,7 @@ function DiffViewerImpl({
       // below), not the whole line.
       lineHoverHighlight: 'number' as const,
       onLineNumberClick,
-      unsafeCSS: `${LINE_CHECKBOX_CSS}${buildExcludedDiffCss(excludedLines)}`
+      unsafeCSS: `${LINE_CHECKBOX_CSS}${GUTTER_POLISH_CSS}${buildExcludedDiffCss(excludedLines)}`
     }
   }, [blocks, diffOptions, onLineNumberClick, selection])
 
