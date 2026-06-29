@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef } from 'react'
+import { useCallback, useRef } from 'react'
 import type { FileSelection } from '@/lib/commit-selection'
 import {
   type ChangeBlock,
@@ -41,7 +41,7 @@ interface Stroke {
   anchor: ChangedLine
   /** What the run is painted to: true leaves it out of the commit, false puts in. */
   exclude: boolean
-  /** Key of the line the pointer was last over, to skip the flood of same-line moves. */
+  /** Key of the line last under the pointer, to skip the flood of same-line moves. */
   lastKey: string
 }
 
@@ -78,16 +78,21 @@ function gutterChangeCell(path: readonly (EventTarget | undefined)[]): ChangedLi
  * across change blocks. It's all pure renderer state — git is touched only at
  * commit time (see lib/staging).
  *
- * Returns the line-enter handler for pierre's diff options; the gutter
- * pointerdown is wired directly onto `bodyRef` (a native capture listener
- * catches it before it reaches pierre's shadow DOM).
+ * Returns the line-enter handler for pierre's diff options plus `bodyRef`, a
+ * callback ref for the diff body: the gutter pointerdown is a native capture
+ * listener (it must see the event before pierre's shadow DOM), and a callback ref
+ * re-binds it whenever that element mounts or is swapped — which a one-shot effect
+ * would miss when the body unmounts (e.g. switching to a multi-file selection).
  */
-export function useStagingDrag(ctx: StagingDragContext, bodyRef: RefObject<HTMLDivElement | null>) {
+export function useStagingDrag(ctx: StagingDragContext) {
   // The handlers are stable so pierre's options don't churn; they read the live
   // context through this ref rather than closing over each render's values.
   const ref = useRef(ctx)
   ref.current = ctx
   const stroke = useRef<Stroke | null>(null)
+  // The diff body the listener is bound to (also where the no-text-select
+  // attribute rides during a stroke).
+  const body = useRef<HTMLDivElement | null>(null)
 
   // Repaint the run from anchor to the line currently under the pointer. The base
   // is the press-time snapshot, so a fast drag whose moves batch in one frame
@@ -97,8 +102,6 @@ export function useStagingDrag(ctx: StagingDragContext, bodyRef: RefObject<HTMLD
     if (!s) return
     const c = ref.current
     const range = rangeChangedLines(c.blocks, c.unified, s.anchor, current)
-    // biome-ignore lint/suspicious/noExplicitAny: temp probe
-    ;(window as any).__sd = { paintTo: current, rangeLen: range.length, exclude: s.exclude, blocks: c.blocks.length, unified: c.unified }
     if (range.length === 0) return // pointer left the anchor's track — keep the last run
     c.onChange(
       paintSelection(
@@ -115,23 +118,17 @@ export function useStagingDrag(ctx: StagingDragContext, bodyRef: RefObject<HTMLD
 
   const endStroke = useCallback(() => {
     stroke.current = null
-    bodyRef.current?.removeAttribute('data-staging-drag')
+    body.current?.removeAttribute('data-staging-drag')
     window.removeEventListener('pointerup', endStroke)
     window.removeEventListener('pointercancel', endStroke)
-  }, [bodyRef])
+  }, [])
 
-  // A native capture listener catches the pointerdown before it reaches pierre's
-  // shadow DOM; composedPath() still exposes the gutter cell across the boundary.
-  useEffect(() => {
-    const body = bodyRef.current
-    if (!body) return
-    const onPointerDown = (e: PointerEvent) => {
-      // biome-ignore lint/suspicious/noExplicitAny: temp probe
-      ;(window as any).__pd = { enabled: ref.current.enabled, button: e.button }
+  // Captured before the event reaches pierre's shadow DOM; composedPath() still
+  // exposes the gutter cell across the boundary.
+  const onPointerDown = useCallback(
+    (e: PointerEvent) => {
       if (!ref.current.enabled || e.button !== 0) return
       const anchor = gutterChangeCell(e.composedPath())
-      // biome-ignore lint/suspicious/noExplicitAny: temp probe
-      ;(window as any).__pd.anchor = anchor
       if (!anchor) return
       e.preventDefault() // don't begin a text selection from the gutter
       const c = ref.current
@@ -141,20 +138,27 @@ export function useStagingDrag(ctx: StagingDragContext, bodyRef: RefObject<HTMLD
       // single click would have flipped it.
       const exclude = !excludedKeysFor(c.selection, c.blocks, block).has(lineKey(anchor))
       stroke.current = { base: c.selection, anchor, exclude, lastKey: lineKey(anchor) }
-      body.setAttribute('data-staging-drag', '')
+      body.current?.setAttribute('data-staging-drag', '')
       paintTo(anchor) // flip the pressed line right away
       window.addEventListener('pointerup', endStroke)
       window.addEventListener('pointercancel', endStroke)
-    }
-    body.addEventListener('pointerdown', onPointerDown, true)
-    return () => body.removeEventListener('pointerdown', onPointerDown, true)
-  }, [bodyRef, endStroke, paintTo])
+    },
+    [paintTo, endStroke]
+  )
+
+  // Bind the capture listener to the diff body, re-binding if the element changes.
+  const bodyRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      body.current?.removeEventListener('pointerdown', onPointerDown, true)
+      body.current = el
+      el?.addEventListener('pointerdown', onPointerDown, true)
+    },
+    [onPointerDown]
+  )
 
   const onLineEnter = useCallback(
     (props: LineEvent) => {
       const s = stroke.current
-      // biome-ignore lint/suspicious/noExplicitAny: temp probe
-      ;(window as any).__le = { fired: ((window as any).__le?.fired ?? 0) + 1, stroke: !!s, buttons: props.event.buttons, line: props.lineNumber, type: props.lineType }
       if (!s) return
       if (!(props.event.buttons & 1)) {
         endStroke() // primary button is no longer down — the stroke is over
@@ -175,5 +179,5 @@ export function useStagingDrag(ctx: StagingDragContext, bodyRef: RefObject<HTMLD
   // when a click handler is wired; toggling itself happens on pointerdown above.
   const onLineNumberClick = useCallback(() => {}, [])
 
-  return { onLineEnter, onLineNumberClick }
+  return { bodyRef, onLineEnter, onLineNumberClick }
 }

@@ -2,7 +2,7 @@ import { parseDiffFromFile } from '@pierre/diffs'
 import type { BaseDiffOptions, DiffLineAnnotation } from '@pierre/diffs/react'
 import { FileDiff, MultiFileDiff, PatchDiff } from '@pierre/diffs/react'
 import type { DiffPayload } from '@shared/types'
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 import {
   IMAGE_DIFF_MODES,
   type ImageDiffMode,
@@ -362,21 +362,18 @@ function DiffViewerImpl({
     meta && diff && blocks[blockIndex] ? buildBlockPatch(diff.path, meta, blocks, blockIndex) : null
 
   // Gutter interaction: a click toggles one line; pressing and dragging paints a
-  // run. Both are wired here and read the live selection through the hook's ref.
-  const bodyRef = useRef<HTMLDivElement>(null)
-  const { onLineEnter, onLineNumberClick } = useStagingDrag(
-    {
-      enabled: selectable && !!meta && !!selectionActions && !selectionActions.busy,
-      unified: mode === 'unified',
-      path: diff?.path ?? '',
-      meta: meta ?? EMPTY_META,
-      blocks,
-      owner,
-      selection,
-      onChange: selectionActions?.onChange ?? noop
-    },
-    bodyRef
-  )
+  // run. Wired here, reading the live selection through the hook's ref; `bodyRef`
+  // binds the drag listener to the diff body below.
+  const { bodyRef, onLineEnter, onLineNumberClick } = useStagingDrag({
+    enabled: selectable && !!meta && !!selectionActions && !selectionActions.busy,
+    unified: mode === 'unified',
+    path: diff?.path ?? '',
+    meta: meta ?? EMPTY_META,
+    blocks,
+    owner,
+    selection,
+    onChange: selectionActions?.onChange ?? noop
+  })
 
   // The lines to gray as "not in this commit" — fully-excluded blocks contribute
   // all their lines, partially-excluded ones just the deselected lines. Pierre
