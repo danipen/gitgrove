@@ -7,8 +7,11 @@ import {
   type ChangedLine,
   type DisplayMeta,
   lineKey,
+  lineOwners,
   listBlockLines,
-  listChangeBlocks
+  listChangeBlocks,
+  paintSelection,
+  rangeChangedLines
 } from './staging'
 
 const EMPTY: ReadonlySet<string> = new Set()
@@ -320,5 +323,146 @@ describe('buildExcludedDiffCss', () => {
     )
     expect(css).not.toContain('[data-line="1"]')
     expect(css).not.toContain('change-deletion')
+  })
+})
+
+describe('lineOwners', () => {
+  test('maps each changed line key to its owning block', () => {
+    const blocks = listChangeBlocks(META) // block 0 (line 1), block 1 (line 4)
+    const owner = lineOwners(blocks)
+    expect(owner.get(lineKey({ type: 'change-deletion', lineNumber: 1 }))).toBe(0)
+    expect(owner.get(lineKey({ type: 'change-addition', lineNumber: 1 }))).toBe(0)
+    expect(owner.get(lineKey({ type: 'change-deletion', lineNumber: 4 }))).toBe(1)
+    expect(owner.get(lineKey({ type: 'change-addition', lineNumber: 4 }))).toBe(1)
+  })
+})
+
+// A single change block of three added lines (new lines 2, 3, 4), so a stroke
+// can cover a run *within* one block.
+const ADD3: DisplayMeta = {
+  deletionLines: ['a\n', 'b\n'],
+  additionLines: ['a\n', 'x\n', 'y\n', 'z\n', 'b\n'],
+  hunks: [
+    {
+      deletionStart: 1,
+      deletionCount: 2,
+      additionStart: 1,
+      additionCount: 5,
+      hunkContent: [
+        { type: 'context', lines: 1 },
+        { type: 'change', deletions: 0, deletionLineIndex: 1, additions: 3, additionLineIndex: 1 },
+        { type: 'context', lines: 1 }
+      ]
+    }
+  ]
+}
+const add = (lineNumber: number): ChangedLine => ({ type: 'change-addition', lineNumber })
+const del = (lineNumber: number): ChangedLine => ({ type: 'change-deletion', lineNumber })
+
+describe('rangeChangedLines', () => {
+  test('covers the inclusive run between anchor and pointer', () => {
+    const blocks = listChangeBlocks(ADD3)
+    expect(rangeChangedLines(blocks, true, add(2), add(4))).toEqual([add(2), add(3), add(4)])
+  })
+
+  test('is the same run regardless of drag direction', () => {
+    const blocks = listChangeBlocks(ADD3)
+    expect(rangeChangedLines(blocks, true, add(4), add(2))).toEqual([add(2), add(3), add(4)])
+  })
+
+  test('dragging back toward the anchor shrinks the run (overshoot self-corrects)', () => {
+    const blocks = listChangeBlocks(ADD3)
+    expect(rangeChangedLines(blocks, true, add(2), add(3))).toEqual([add(2), add(3)])
+  })
+
+  test('unified order interleaves a block — anchoring on an addition can reach a deletion', () => {
+    // META rows in unified order: -1, +1, -4, +4.
+    const blocks = listChangeBlocks(META)
+    expect(rangeChangedLines(blocks, true, add(1), add(4))).toEqual([add(1), del(4), add(4)])
+  })
+
+  test('split keeps the run on the anchor side, skipping the other column', () => {
+    const blocks = listChangeBlocks(META)
+    expect(rangeChangedLines(blocks, false, add(1), add(4))).toEqual([add(1), add(4)])
+  })
+
+  test('returns [] when the pointer is off the anchor track (other split column)', () => {
+    const blocks = listChangeBlocks(META)
+    expect(rangeChangedLines(blocks, false, add(1), del(4))).toEqual([])
+  })
+})
+
+describe('paintSelection', () => {
+  const allIn = (): ReadonlySet<string> => EMPTY
+
+  test('painting a run to "exclude" leaves exactly those lines out of the commit', () => {
+    const blocks = listChangeBlocks(ADD3)
+    const owner = lineOwners(blocks)
+    const sel = paintSelection('f.txt', ADD3, blocks, owner, allIn, [add(2), add(3)], true)
+    if (sel === 'all' || sel === 'none') throw new Error('expected a partial selection')
+    expect(sel.get(0)?.excluded).toEqual(new Set([lineKey(add(2)), lineKey(add(3))]))
+  })
+
+  test('painting every line of the only block out collapses to "none"', () => {
+    const blocks = listChangeBlocks(ADD3)
+    const owner = lineOwners(blocks)
+    expect(
+      paintSelection('f.txt', ADD3, blocks, owner, allIn, listBlockLines(blocks[0]), true)
+    ).toBe('none')
+  })
+
+  test('painting to "include" from an all-excluded base puts the lines back in', () => {
+    const blocks = listChangeBlocks(META)
+    const owner = lineOwners(blocks)
+    const allOut = (i: number) => blockLineKeys(blocks[i])
+    const sel = paintSelection(
+      'f.txt',
+      META,
+      blocks,
+      owner,
+      allOut,
+      listBlockLines(blocks[0]),
+      false
+    )
+    if (sel === 'all' || sel === 'none') throw new Error('expected a partial selection')
+    expect([...sel.keys()]).toEqual([0])
+    expect(sel.get(0)?.excluded.size).toBe(0)
+  })
+
+  test('a painted run flows across blocks', () => {
+    const blocks = listChangeBlocks(META)
+    const owner = lineOwners(blocks)
+    const sel = paintSelection('f.txt', META, blocks, owner, allIn, [add(1), add(4)], true)
+    if (sel === 'all' || sel === 'none') throw new Error('expected a partial selection')
+    expect(sel.get(0)?.excluded.has(lineKey(add(1)))).toBe(true)
+    expect(sel.get(1)?.excluded.has(lineKey(add(4)))).toBe(true)
+  })
+})
+
+describe('drag stroke (range + paint composed)', () => {
+  // Replay a stroke: paint the anchor→pointer range, fresh from the base, on each
+  // move — exactly what the gutter drag does, so the overshoot behaviour is the
+  // emergent result, not special-cased.
+  const replay = (meta: DisplayMeta, anchor: ChangedLine, moves: ChangedLine[]) => {
+    const blocks = listChangeBlocks(meta)
+    const owner = lineOwners(blocks)
+    const base = (): ReadonlySet<string> => EMPTY // everything starts included
+    let sel: ReturnType<typeof paintSelection> = 'all'
+    for (const cur of [anchor, ...moves]) {
+      const range = rangeChangedLines(blocks, true, anchor, cur)
+      sel = paintSelection('f.txt', meta, blocks, owner, base, range, true)
+    }
+    return sel
+  }
+
+  test('sweeping down a block excludes the whole run', () => {
+    expect(replay(ADD3, add(2), [add(3), add(4)])).toBe('none')
+  })
+
+  test('overshooting then dragging back leaves only the run up to the release point', () => {
+    // Down to 4, then back to 3: the final range is 2..3, so 4 is never excluded.
+    const sel = replay(ADD3, add(2), [add(3), add(4), add(3)])
+    if (sel === 'all' || sel === 'none') throw new Error('expected a partial selection')
+    expect(sel.get(0)?.excluded).toEqual(new Set([lineKey(add(2)), lineKey(add(3))]))
   })
 })

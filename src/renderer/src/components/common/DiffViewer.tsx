@@ -17,15 +17,18 @@ import {
   buildBlockPatch,
   buildExcludedDiffCss,
   buildFileSelection,
-  type ChangeBlock,
   type ChangedLine,
+  type DisplayMeta,
+  excludedKeysFor,
   lineKey,
+  lineOwners,
   listBlockLines,
   listChangeBlocks
 } from '@/lib/staging'
 import type { ResolvedTheme } from '@/lib/theme'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import { ConfirmDialog } from './Dialog'
+import { useStagingDrag } from './useStagingDrag'
 
 export type DiffMode = 'split' | 'unified'
 
@@ -81,20 +84,10 @@ type CheckState = 'checked' | 'indeterminate' | 'unchecked'
 
 const EMPTY_SET: ReadonlySet<string> = new Set()
 
-/**
- * The changed-line keys a block currently leaves *out* of the commit: none when
- * the file is fully in, all of them when it's fully out or the block is absent
- * from a partial map, else the block's stored exclusions.
- */
-function excludedKeysFor(
-  selection: FileSelection,
-  blocks: ChangeBlock[],
-  blockIndex: number
-): ReadonlySet<string> {
-  if (selection === 'all') return EMPTY_SET
-  if (selection === 'none') return blockLineKeys(blocks[blockIndex])
-  return selection.get(blockIndex)?.excluded ?? blockLineKeys(blocks[blockIndex])
-}
+// Placeholders for the staging-drag hook when no working diff is shown — its
+// context is required every render but inert (`enabled` false) in that case.
+const EMPTY_META: DisplayMeta = { deletionLines: [], additionLines: [], hunks: [] }
+const noop = () => {}
 
 /**
  * The per-line staging affordance, injected into pierre's shadow DOM via its
@@ -333,12 +326,9 @@ function DiffViewerImpl({
     () => blocks.map((b) => ({ ...b.anchor, metadata: { blockIndex: b.index } })),
     [blocks]
   )
-  // Which block owns each changed line — lets a gutter click find its block.
-  const lineOwner = useMemo(() => {
-    const owner = new Map<string, number>()
-    for (const b of blocks) for (const l of listBlockLines(b)) owner.set(lineKey(l), b.index)
-    return owner
-  }, [blocks])
+  // Which block owns each changed line — lets a gutter click or drag-paint
+  // stroke find the block whose exclusions it edits.
+  const owner = useMemo(() => lineOwners(blocks), [blocks])
 
   const selection = selectionActions?.selection ?? 'all'
   const excludedFor = (blockIndex: number) => excludedKeysFor(selection, blocks, blockIndex)
@@ -367,31 +357,25 @@ function DiffViewerImpl({
       excludedFor(blockIndex).size === 0 ? blockLineKeys(blocks[blockIndex]) : EMPTY_SET
     )
 
-  const toggleLine = (blockIndex: number, line: ChangedLine) => {
-    const excluded = new Set(excludedFor(blockIndex))
-    const key = lineKey(line)
-    if (!excluded.delete(key)) excluded.add(key)
-    emit(blockIndex, excluded)
-  }
-
   // The whole-block patch (every line), used by discard regardless of selection.
   const blockPatch = (blockIndex: number): string | null =>
     meta && diff && blocks[blockIndex] ? buildBlockPatch(diff.path, meta, blocks, blockIndex) : null
 
-  // A gutter click toggles its line. Kept behind a ref so the (stable) pierre
-  // handler always sees the live selection without re-registering on every edit.
-  const lineClickRef = useRef<(line: ChangedLine) => void>(() => {})
-  lineClickRef.current = (line) => {
-    if (selectionActions?.busy) return
-    const blockIndex = lineOwner.get(lineKey(line))
-    if (blockIndex !== undefined) toggleLine(blockIndex, line)
-  }
-  const onLineNumberClick = useMemo(
-    () => (props: { lineType: string; lineNumber: number }) => {
-      if (props.lineType === 'change-addition' || props.lineType === 'change-deletion')
-        lineClickRef.current({ type: props.lineType, lineNumber: props.lineNumber })
+  // Gutter interaction: a click toggles one line; pressing and dragging paints a
+  // run. Both are wired here and read the live selection through the hook's ref.
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const { onLineEnter, onLineNumberClick } = useStagingDrag(
+    {
+      enabled: selectable && !!meta && !!selectionActions && !selectionActions.busy,
+      unified: mode === 'unified',
+      path: diff?.path ?? '',
+      meta: meta ?? EMPTY_META,
+      blocks,
+      owner,
+      selection,
+      onChange: selectionActions?.onChange ?? noop
     },
-    []
+    bodyRef
   )
 
   // The lines to gray as "not in this commit" — fully-excluded blocks contribute
@@ -412,9 +396,11 @@ function DiffViewerImpl({
       // below), not the whole line.
       lineHoverHighlight: 'number' as const,
       onLineNumberClick,
+      // Drag-paint: each line the pointer crosses mid-stroke (see useStagingDrag).
+      onLineEnter,
       unsafeCSS: `${LINE_CHECKBOX_CSS}${GUTTER_POLISH_CSS}${STAGE_BAR_SPAN_CSS}${buildExcludedDiffCss(excludedLines)}`
     }
-  }, [blocks, diffOptions, onLineNumberClick, selection])
+  }, [blocks, diffOptions, onLineNumberClick, onLineEnter, selection])
 
   const renderSelectionBar = (annotation: DiffLineAnnotation<BlockRef>) => {
     const { blockIndex } = annotation.metadata
@@ -587,7 +573,7 @@ function DiffViewerImpl({
         )}
       </div>
 
-      <div className={`diff-body${imageView ? ' diff-body--image' : ''}`}>
+      <div ref={bodyRef} className={`diff-body${imageView ? ' diff-body--image' : ''}`}>
         {spin && (
           <div className="center-state">
             <div className="spinner" />

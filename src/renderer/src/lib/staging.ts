@@ -79,6 +79,35 @@ export const blockLineKeys = (block: ChangeBlock): Set<string> =>
   new Set(listBlockLines(block).map(lineKey))
 
 /**
+ * Map every changed line's key to the index of the block that owns it. The
+ * renderer uses it to resolve a gutter click — or a drag-paint stroke — back to
+ * the block whose exclusions it edits.
+ */
+export function lineOwners(blocks: readonly ChangeBlock[]): Map<string, number> {
+  const owner = new Map<string, number>()
+  for (const block of blocks)
+    for (const line of listBlockLines(block)) owner.set(lineKey(line), block.index)
+  return owner
+}
+
+const EMPTY_KEYS: ReadonlySet<string> = new Set()
+
+/**
+ * The changed-line keys a block currently leaves *out* of the commit: none when
+ * the file is fully in, all of them when it's fully out or the block is absent
+ * from a partial map, else the block's stored exclusions.
+ */
+export function excludedKeysFor(
+  selection: FileSelection,
+  blocks: ChangeBlock[],
+  blockIndex: number
+): ReadonlySet<string> {
+  if (selection === 'all') return EMPTY_KEYS
+  if (selection === 'none') return blockLineKeys(blocks[blockIndex])
+  return selection.get(blockIndex)?.excluded ?? blockLineKeys(blocks[blockIndex])
+}
+
+/**
  * Every changed line of a block, in unified-patch order: deletions (old side)
  * first, then additions (new side). The renderer iterates these to draw a
  * checkbox per line and to roll the line selection up into the block's state.
@@ -310,4 +339,66 @@ export function buildFileSelection(
   if (map.size === 0) return 'none'
   if (map.size === blocks.length && !anyPartialBlock) return 'all'
   return map
+}
+
+/**
+ * Paint a set of changed lines to a single membership state, over the file's
+ * current per-block exclusions (`base`). `exclude` true leaves every line in
+ * `lines` *out* of the commit, false puts them all back *in*; lines not listed
+ * keep their `base`. The write is a fixed-value set (not a flip), so painting the
+ * same line twice is a no-op — which is what lets a drag recompute its whole
+ * range from scratch on every move without flicker. Flows across blocks (`owner`
+ * maps a line key to its block). Returns the normalized `FileSelection`.
+ */
+export function paintSelection(
+  path: string,
+  meta: DisplayMeta,
+  blocks: ChangeBlock[],
+  owner: ReadonlyMap<string, number>,
+  base: (blockIndex: number) => ReadonlySet<string>,
+  lines: Iterable<ChangedLine>,
+  exclude: boolean
+): FileSelection {
+  const overrides = new Map<number, Set<string>>()
+  for (const line of lines) {
+    const key = lineKey(line)
+    const blockIndex = owner.get(key)
+    if (blockIndex === undefined) continue
+    let excluded = overrides.get(blockIndex)
+    if (!excluded) {
+      excluded = new Set(base(blockIndex))
+      overrides.set(blockIndex, excluded)
+    }
+    if (exclude) excluded.add(key)
+    else excluded.delete(key)
+  }
+  return buildFileSelection(path, meta, blocks, (i) => overrides.get(i) ?? base(i))
+}
+
+/**
+ * The changed lines a drag covers — the contiguous run from its `anchor` line to
+ * the line currently under the pointer, inclusive, in the order the diff renders
+ * them. In unified view that's a single interleaved column (each block's
+ * deletions then its additions); in split view each side has its own gutter, so
+ * the run stays on the anchor's side. Order-independent of drag direction (the
+ * run is the same whether the pointer is above or below the anchor), so dragging
+ * back past the anchor simply shrinks the run — overshoot corrects itself.
+ * Returns [] when `current` isn't on the anchor's track (e.g. the pointer
+ * drifted into the other split column), so the caller can keep the last range.
+ */
+export function rangeChangedLines(
+  blocks: ChangeBlock[],
+  unified: boolean,
+  anchor: ChangedLine,
+  current: ChangedLine
+): ChangedLine[] {
+  const order = unified
+    ? blocks.flatMap(listBlockLines)
+    : blocks.flatMap((b) => listBlockLines(b).filter((l) => l.type === anchor.type))
+  const at = (line: ChangedLine) =>
+    order.findIndex((l) => l.type === line.type && l.lineNumber === line.lineNumber)
+  const a = at(anchor)
+  const c = at(current)
+  if (a === -1 || c === -1) return []
+  return a <= c ? order.slice(a, c + 1) : order.slice(c, a + 1)
 }
