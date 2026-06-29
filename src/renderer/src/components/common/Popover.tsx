@@ -35,11 +35,16 @@ export function Popover({ anchor, open, onClose, align = 'left', width, children
   // visible. React's autoFocus can't do this: it fires on mount, during the
   // hidden measurement pass, where the browser refuses focus(). Runs once per
   // open — re-measures (children changing while the user types) must not yank
-  // focus back.
+  // focus back. We only latch `focused` once we've *actually* focused an
+  // element: when the control is rendered from async data (e.g. the repo
+  // switcher's filter appears only after the recents load), it's absent on the
+  // first measure, so the next re-measure must get another chance to focus it.
   useEffect(() => {
     if (!pos || focused.current) return
+    const target = ref.current?.querySelector<HTMLElement>('[data-autofocus]')
+    if (!target) return
     focused.current = true
-    ref.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus()
+    target.focus()
   }, [pos])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: children affect the measured height
