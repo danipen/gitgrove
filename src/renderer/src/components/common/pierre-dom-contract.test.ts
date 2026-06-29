@@ -22,8 +22,6 @@ import { preloadDiffHTML } from '@pierre/diffs/ssr'
  * driving the real app per CLAUDE.md):
  *   • `data-hovered` — pierre sets it on the hovered number cell at runtime; used by
  *     LINE_CHECKBOX_CSS (brighten the check) and buildExcludedDiffCss (gray excluded rows).
- *   • `data-gutter-buffer="buffer"` — the client-computed hunk-expansion filler that
- *     GUTTER_POLISH_CSS clears to reveal the hatch (only "annotation" appears in SSR).
  *   • pierre's CSS custom-property indirection we consume/override: `--diffs-bg`,
  *     `--diffs-bg-buffer` (the hatch), and the `--diffs-bg-{addition,deletion}-emphasis`
  *     / `--diffs-fg-number-{addition,deletion}` `*-override` knobs (buildExcludedDiffCss).
@@ -110,14 +108,14 @@ const CONTRACTS: Contract[] = [
     fix: 'Update the `[data-unified]` branch of STAGE_BAR_SPAN_CSS to the new unified-column attribute.'
   },
   {
-    selector: '[data-gutter] and [data-content] (column wrappers)',
-    present: (html) => attr('data-gutter')(html) && attr('data-content')(html),
+    selector: '[data-content] (content column wrapper)',
+    present: attr('data-content'),
     modes: ['split', 'unified'],
-    usedBy: 'DiffViewer GUTTER_POLISH_CSS (paints the hatch on the two wrappers)',
+    usedBy: 'DiffViewer GUTTER_POLISH_CSS (paints the hatch on the content wrapper)',
     purpose:
-      'The hatch is painted on the column wrappers and revealed through transparent filler ' +
-      'cells; the bar also relies on `[data-content]` not being a stacking context.',
-    fix: 'Re-point the wrapper selectors in GUTTER_POLISH_CSS; re-verify the gutter↔content seam and the bar lift on screen.'
+      'The hatch is painted on the content column wrapper and revealed through transparent ' +
+      'filler cells; the bar also relies on `[data-content]` not being a stacking context.',
+    fix: 'Re-point the wrapper selector in GUTTER_POLISH_CSS; re-verify the hatch and the bar lift on screen.'
   },
   {
     selector: '[data-line-annotation] (content cell that hosts the bar)',
@@ -127,15 +125,6 @@ const CONTRACTS: Contract[] = [
     purpose:
       'Pierre slots our `.stage-bar` into this cell; the lift makes it paint above the gutter.',
     fix: 'Re-point the `[data-line-annotation]` selectors; confirm `renderAnnotation` still lands here.'
-  },
-  {
-    selector: 'data-gutter-buffer="annotation" (gutter gap beside the bar)',
-    present: has('data-gutter-buffer="annotation"'),
-    modes: ['split', 'unified'],
-    usedBy:
-      "DiffViewer GUTTER_POLISH_CSS — clears `[data-deletions] [data-gutter-buffer='annotation']`",
-    purpose: "The empty gutter cell on the bar's mirror side, cleared to hatch.",
-    fix: 'Update the gutter-gap value/attribute in GUTTER_POLISH_CSS.'
   },
   {
     selector: '[data-content-buffer] (hatched content filler)',

@@ -129,9 +129,8 @@ const LINE_CHECKBOX_CSS =
   // An included line goes to its strong add/del color; an excluded one to strong
   // gray (set in buildExcludedDiffCss, which wins by source order). The emphasis
   // tint is only 15% opaque, so paint it *over* the line's opaque rest-state
-  // background (`--diffs-bg-{addition,deletion}`) rather than replacing it —
-  // otherwise the gutter hatch (GUTTER_POLISH_CSS, painted on the wrapper behind
-  // every cell) bleeds through the hovered number on changed lines.
+  // background (`--diffs-bg-{addition,deletion}`) rather than replacing it — so
+  // hovering visibly deepens the rect instead of washing it paler than rest.
   `${CHANGED_NUM}[data-hovered]::after{opacity:1}` +
   '[data-line-type="change-addition"][data-column-number][data-hovered]{background:' +
   'linear-gradient(var(--diffs-bg-addition-emphasis),var(--diffs-bg-addition-emphasis)) ' +
@@ -141,38 +140,32 @@ const LINE_CHECKBOX_CSS =
   'var(--diffs-bg-deletion)}'
 
 /**
- * Make the empty side of a hunk read uniformly as one continuous diagonal hatch.
- * Pierre only hatches the content filler (`[data-content-buffer]`) and leaves the
- * other blanks flat — and a per-cell hatch can't be continuous, since each filler
- * cell anchors the pattern at its own origin and steps out of phase at every
- * seam.
+ * Make the empty side of a hunk's *content* read as one continuous diagonal
+ * hatch. Pierre hatches the content filler (`[data-content-buffer]`) per cell,
+ * but a per-cell hatch can't be continuous — each filler anchors the pattern at
+ * its own origin and steps out of phase at every seam.
  *
- * Instead paint the stripe on the two column *wrappers* (`[data-gutter]` and
- * `[data-content]`, which hug the rows exactly — so the layer never overruns past
- * the last line the way the padded `[data-code]` panel does) and make the filler
- * cells transparent so they reveal it. Real lines and number cells keep the
- * opaque `background-color` pierre gives them, so the hatch shows through *only*
- * the blanks. The two wrappers meet at the gutter↔content seam, so anchor the
- * gutter's pattern to its right edge (`100%`) and the content's to its left (`0`):
- * a stripe tile boundary then lands on the seam from both sides and the diagonal
- * is continuous across it — at any gutter width, with no measurement (pierre
- * `Math.ceil`s the width it exposes, so measuring would be ~1px off). The empty
+ * Instead paint the stripe on the content column *wrapper* (`[data-content]`,
+ * which hugs the rows exactly — so the layer never overruns past the last line
+ * the way the padded `[data-code]` panel does) and make the filler cells
+ * transparent so they reveal one unbroken pattern. Real lines keep the opaque
+ * `background-color` pierre gives them, so the hatch shows through *only* the
+ * blanks. The number gutter is left to pierre's solid default — the hatch means
+ * "no code on this side", which is the content column's message, not the number
+ * rail's (and a solid rail keeps the per-line ✓ checks legible). The empty
  * mirror of the additions-side "Include in commit" bar is cleared only on
  * `[data-deletions]` so the bar's own side stays opaque (unified has no mirror).
  * Also for pierre's `unsafeCSS`.
  */
-const BUFFER_HATCH =
+const CONTENT_HATCH =
   'background-color:var(--diffs-bg);background-size:8px 8px;background-origin:border-box;' +
   'background-repeat:repeat;background-image:repeating-linear-gradient(-45deg,transparent,' +
   'transparent calc(3px * 1.414),var(--diffs-bg-buffer) calc(3px * 1.414),' +
   'var(--diffs-bg-buffer) calc(4px * 1.414))'
 const GUTTER_POLISH_CSS =
-  `[data-gutter]{${BUFFER_HATCH};background-position:100% 0}` +
-  `[data-content]{${BUFFER_HATCH};background-position:0 0}` +
-  ':is([data-content-buffer],' +
-  "[data-gutter-buffer='buffer']," +
-  "[data-deletions] [data-gutter-buffer='annotation']," +
-  '[data-deletions] [data-line-annotation]){background-color:transparent;background-image:none}'
+  `[data-content]{${CONTENT_HATCH}}` +
+  ':is([data-content-buffer],[data-deletions] [data-line-annotation])' +
+  '{background-color:transparent;background-image:none}'
 
 /**
  * Pull the staging bar across the gutter↔content seam so its checkbox lands *in*
