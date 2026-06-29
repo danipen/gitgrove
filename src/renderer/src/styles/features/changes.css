@@ -415,24 +415,11 @@
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
 }
-.stage-bar[data-state='checked'] {
-  /* This bar is a pierre line annotation, slotted into the diff's shadow tree, so
-     pierre's --diffs-bg-addition (the exact background it paints behind added lines)
-     is in scope here via the flattened tree. Reuse it verbatim so the staged green is
-     identical to the additions this bar toggles, and tracks both themes on its own (the
-     value is a light-dark() resolved against our color-scheme). The fallback mirrors
-     pierre's recipe with our own green, in case the variable is ever out of reach. */
-  background: var(--diffs-bg-addition, color-mix(in lab, var(--bg-panel) 80%, var(--st-added)));
-}
-/* Some — but not all — of the block's lines are in: a muted half-step between
-   the full green and the set-aside gray, so the bar reads as "partly in". */
-.stage-bar[data-state='indeterminate'] {
-  background: color-mix(
-    in lab,
-    var(--bg-panel) 60%,
-    var(--diffs-bg-addition, color-mix(in lab, var(--bg-panel) 80%, var(--st-added)))
-  );
-}
+/* The bar is always the neutral panel gray — never tinted by state. Staging is
+   kind-neutral (additions and deletions go in alike), so a colored wash would either
+   misread as "addition" green over a deletion, or — since this bar repeats on every
+   block — stack into bands that fight the diff. The checkbox alone carries the on/off
+   signal; the bar and its label stay neutral. */
 .stage-bar__check {
   display: inline-flex;
   align-items: center;
@@ -447,10 +434,6 @@
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;
-}
-.stage-bar[data-state='checked'] .stage-bar__check,
-.stage-bar[data-state='indeterminate'] .stage-bar__check {
-  color: var(--st-added);
 }
 .stage-bar__spacer {
   flex: 1;
