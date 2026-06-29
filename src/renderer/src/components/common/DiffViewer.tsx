@@ -127,10 +127,18 @@ const LINE_CHECKBOX_CSS =
   'opacity:.55;transition:opacity .1s ease}' +
   // Hover: emphasize the check and deepen the number rect so it feels clickable.
   // An included line goes to its strong add/del color; an excluded one to strong
-  // gray (set in buildExcludedDiffCss, which wins by source order).
+  // gray (set in buildExcludedDiffCss, which wins by source order). The emphasis
+  // tint is only 15% opaque, so paint it *over* the line's opaque rest-state
+  // background (`--diffs-bg-{addition,deletion}`) rather than replacing it —
+  // otherwise the gutter hatch (GUTTER_POLISH_CSS, painted on the wrapper behind
+  // every cell) bleeds through the hovered number on changed lines.
   `${CHANGED_NUM}[data-hovered]::after{opacity:1}` +
-  `[data-line-type="change-addition"][data-column-number][data-hovered]{background:var(--diffs-bg-addition-emphasis)}` +
-  `[data-line-type="change-deletion"][data-column-number][data-hovered]{background:var(--diffs-bg-deletion-emphasis)}`
+  '[data-line-type="change-addition"][data-column-number][data-hovered]{background:' +
+  'linear-gradient(var(--diffs-bg-addition-emphasis),var(--diffs-bg-addition-emphasis)) ' +
+  'var(--diffs-bg-addition)}' +
+  '[data-line-type="change-deletion"][data-column-number][data-hovered]{background:' +
+  'linear-gradient(var(--diffs-bg-deletion-emphasis),var(--diffs-bg-deletion-emphasis)) ' +
+  'var(--diffs-bg-deletion)}'
 
 /**
  * Make the empty side of a hunk read uniformly as one continuous diagonal hatch.
