@@ -357,6 +357,16 @@ function DiffViewerImpl({
     const block = blocks[blockIndex]
     if (!block || !selectionActions) return null
     const check = blockCheck(blockIndex)
+    // The stat counts only the lines actually going into the commit, so it
+    // tracks the line checkboxes (a partly-selected block shows its real total).
+    const excluded = excludedFor(blockIndex)
+    let adds = 0
+    let dels = 0
+    for (const line of listBlockLines(block)) {
+      if (excluded.has(lineKey(line))) continue
+      if (line.type === 'change-addition') adds++
+      else dels++
+    }
     return (
       <div className="stage-bar" data-state={check}>
         <label className="stage-bar__check">
@@ -372,8 +382,8 @@ function DiffViewerImpl({
           Include in commit
         </label>
         <span className="diff-stat">
-          {block.newLines > 0 && <span className="diff-stat__add">+{block.newLines}</span>}
-          {block.oldLines > 0 && <span className="diff-stat__del">−{block.oldLines}</span>}
+          {adds > 0 && <span className="diff-stat__add">+{adds}</span>}
+          {dels > 0 && <span className="diff-stat__del">−{dels}</span>}
         </span>
         <span className="stage-bar__spacer" />
         <button
