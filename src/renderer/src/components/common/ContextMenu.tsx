@@ -30,11 +30,17 @@ interface Props {
  */
 export function ContextMenu({ x, y, items, onClose }: Props) {
   useEffect(() => {
+    // Capture-phase + stopPropagation so Escape dismisses *this* menu only —
+    // when the menu is layered over another overlay (e.g. the branch switcher
+    // popover, whose own window-level Escape would otherwise also fire) one
+    // Escape peels just the top layer, leaving the surface beneath open.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      onClose()
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [onClose])
 
   return createPortal(

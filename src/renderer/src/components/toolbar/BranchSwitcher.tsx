@@ -457,7 +457,7 @@ export function BranchSwitcher({
     if (total === 1 && prs.length === 1) {
       const pr = prs[0]
       items.push({
-        label: `Open Pull Request #${pr.number}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
+        label: `Open Pull Request #${pr.number} on GitHub`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       })
