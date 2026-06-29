@@ -267,6 +267,10 @@
   border-radius: 8px;
   background: var(--bg-active);
   color: var(--fg-muted);
+  /* Same 1px ring as the PR pill (.branch-pr): these neutral count pills share a
+     fill (--bg-active == --pr-pill-bg), so the ring keeps them one visual family.
+     box-shadow (not border) leaves the width/height untouched. */
+  box-shadow: 0 0 0 1px var(--pr-pill-ring);
 }
 .sync-badge--behind {
   color: var(--st-modified);
