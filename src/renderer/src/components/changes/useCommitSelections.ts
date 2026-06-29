@@ -56,19 +56,19 @@ export function useCommitSelections({ changes, changesRef, getRepoPath, runOpRef
     [changesRef]
   )
 
-  /** Replace one file's hunk selection (from the diff's checkbox bars). */
-  const setHunkSelection = useCallback(
-    (path: string, selected: Map<number, string>, totalHunks: number) => {
-      setSelections((prev) => {
-        const next = new Map(prev)
-        if (selected.size === totalHunks) next.delete(path)
-        else if (selected.size === 0) next.set(path, 'none')
-        else next.set(path, selected)
-        return next
-      })
-    },
-    []
-  )
+  /**
+   * Replace one file's selection from the diff's block/line checkboxes. The
+   * diff pane computes the normalized value (it knows the blocks and lines):
+   * `'all'` clears the entry so a plain `git add` covers it again.
+   */
+  const setFileSelection = useCallback((path: string, sel: FileSelection) => {
+    setSelections((prev) => {
+      const next = new Map(prev)
+      if (sel === 'all') next.delete(path)
+      else next.set(path, sel)
+      return next
+    })
+  }, [])
 
   /** Discard a hunk in the working tree (reverse-apply its display patch). */
   const discardHunk = useCallback(
@@ -88,7 +88,7 @@ export function useCommitSelections({ changes, changesRef, getRepoPath, runOpRef
     setSelections,
     toggleFileIncluded,
     setAllIncluded,
-    setHunkSelection,
+    setFileSelection,
     discardHunk,
     commitSize
   }

@@ -5,9 +5,21 @@
 
 import type { ChangedFile, CommitSelection } from '@shared/types'
 
-/** Per-file commit selection: 'all', 'none', or the selected change blocks
- *  (block index → its standalone commit patch). Missing key = 'all'. */
-export type FileSelection = 'all' | 'none' | ReadonlyMap<number, string>
+/**
+ * What one contributing change block puts into the commit: its standalone patch,
+ * plus the changed-line keys (see `lib/staging`) left *out* within it. An empty
+ * `excluded` set means the whole block is in; a non-empty one means the patch
+ * already covers just the kept lines. A block with everything excluded never
+ * appears — it simply isn't in the map.
+ */
+export interface BlockSelection {
+  patch: string
+  excluded: ReadonlySet<string>
+}
+
+/** Per-file commit selection: 'all', 'none', or the contributing change blocks
+ *  (block index → its `BlockSelection`). Missing key = 'all'. */
+export type FileSelection = 'all' | 'none' | ReadonlyMap<number, BlockSelection>
 
 export type SelectionMap = ReadonlyMap<string, FileSelection>
 
@@ -34,7 +46,7 @@ export function buildCommitSelection(
       paths.push(f.path)
     } else {
       all = false
-      if (sel !== 'none') patches.push(...sel.values())
+      if (sel !== 'none') for (const block of sel.values()) patches.push(block.patch)
     }
   }
   return { all, paths: all ? [] : paths, patches }

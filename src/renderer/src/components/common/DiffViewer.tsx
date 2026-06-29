@@ -12,23 +12,32 @@ import type { FileSelection } from '@/lib/commit-selection'
 import { formatBytes, splitPath, statusLabel, statusLetter } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
-import { buildBlockPatch, buildExcludedDiffCss, listChangeBlocks } from '@/lib/staging'
+import {
+  blockLineKeys,
+  buildBlockPatch,
+  buildExcludedDiffCss,
+  buildFileSelection,
+  type ChangedLine,
+  type DisplayMeta,
+  excludedKeysFor,
+  lineKey,
+  lineOwners,
+  listBlockLines,
+  listChangeBlocks
+} from '@/lib/staging'
 import type { ResolvedTheme } from '@/lib/theme'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import { ConfirmDialog } from './Dialog'
+import { useStagingDrag } from './useStagingDrag'
 
 export type DiffMode = 'split' | 'unified'
 
-/** Wiring for the change-block selection bars on working diffs. */
+/** Wiring for the change-block/line selection on working diffs. */
 export interface SelectionActions {
   /** Current selection for the displayed file. */
   selection: FileSelection
-  /**
-   * Replace the file's block selection: selected block index → its standalone
-   * patch (used at commit time), plus the total block count so the caller can
-   * normalize full/empty selections back to 'all'/'none'.
-   */
-  onChange: (selected: Map<number, string>, totalBlocks: number) => void
+  /** Replace the file's selection (already normalized to 'all'/'none'/blocks). */
+  onChange: (selection: FileSelection) => void
   /** Discard a change block in the working tree (reverse-applies its patch). */
   onDiscard: (patch: string) => void
   busy: boolean
@@ -70,6 +79,115 @@ interface Props {
 interface BlockRef {
   blockIndex: number
 }
+
+type CheckState = 'checked' | 'indeterminate' | 'unchecked'
+
+const EMPTY_SET: ReadonlySet<string> = new Set()
+
+// Placeholders for the staging-drag hook when no working diff is shown — its
+// context is required every render but inert (`enabled` false) in that case.
+const EMPTY_META: DisplayMeta = { deletionLines: [], additionLines: [], hunks: [] }
+const noop = () => {}
+
+/**
+ * The per-line staging affordance, injected into pierre's shadow DOM via its
+ * `unsafeCSS` option. Only a *changed* line is toggleable, so only its gutter
+ * number gets the clickable cursor (pierre marks every number interactive once
+ * `onLineNumberClick` is wired — we reset the rest back to the default arrow).
+ * A check sits in a fixed column at the left of the gutter whenever the line is
+ * in the commit, and vanishes once it's left out (excluded lines hide it via
+ * `buildExcludedDiffCss` and gray their row). Every number cell reserves that
+ * column with `padding-inline-start`, so the right-aligned number never reaches
+ * the check whatever its width and the check stays put as digit counts change.
+ * The check inherits the line-number color (green for additions, red for
+ * deletions). Hovering the row brightens the check and lifts the number rect
+ * with the hover tint, so the gutter feels clickable — a tick you can flip.
+ * (Pierre draws its change-indicator bar as the cell's own `::before`, so the
+ * check rides the cell's `::after` to leave that bar untouched.)
+ */
+const CHANGED_NUM =
+  ':is([data-line-type="change-addition"],[data-line-type="change-deletion"])[data-column-number]'
+const LINE_CHECKBOX_CSS =
+  // Reserve the check column on every number cell so numbers stay aligned and
+  // never collide with it; only changed numbers are clickable. Knob: the
+  // padding is the column width.
+  '[data-column-number]{cursor:default;position:relative;padding-inline-start:23px}' +
+  `${CHANGED_NUM}{cursor:pointer}` +
+  // The "in the commit" check, anchored at a fixed spot in that column. Dim at
+  // rest so a calm gutter still reads as numbers; full on hover.
+  `${CHANGED_NUM}::after{content:"✓";position:absolute;inset-inline-start:9px;inset-block-start:50%;` +
+  'transform:translateY(-50%);font-size:1.1em;line-height:1;font-weight:700;' +
+  'opacity:.55;transition:opacity .1s ease}' +
+  // Hover: emphasize the check and deepen the number rect so it feels clickable.
+  // An included line goes to its strong add/del color; an excluded one to strong
+  // gray (set in buildExcludedDiffCss, which wins by source order). The emphasis
+  // tint is only 15% opaque, so paint it *over* the line's opaque rest-state
+  // background (`--diffs-bg-{addition,deletion}`) rather than replacing it — so
+  // hovering visibly deepens the rect instead of washing it paler than rest.
+  `${CHANGED_NUM}[data-hovered]::after{opacity:1}` +
+  '[data-line-type="change-addition"][data-column-number][data-hovered]{background:' +
+  'linear-gradient(var(--diffs-bg-addition-emphasis),var(--diffs-bg-addition-emphasis)) ' +
+  'var(--diffs-bg-addition)}' +
+  '[data-line-type="change-deletion"][data-column-number][data-hovered]{background:' +
+  'linear-gradient(var(--diffs-bg-deletion-emphasis),var(--diffs-bg-deletion-emphasis)) ' +
+  'var(--diffs-bg-deletion)}' +
+  // Only changed lines are clickable (the cursor rules above), so only they get a
+  // hover highlight. Pierre's `lineHoverHighlight:'number'` tints *every* hovered
+  // number rect by overriding `--diffs-line-bg`; on a non-changed (unclickable)
+  // line, restore it to the rest value pierre already computed for that cell
+  // (`--diffs-computed-selected-line-bg`, which equals the resting `--diffs-line-bg`
+  // for every non-changed line type) so context lines show no hover affordance.
+  '[data-column-number][data-hovered]:not([data-line-type="change-addition"])' +
+  ':not([data-line-type="change-deletion"]){--diffs-line-bg:var(--diffs-computed-selected-line-bg)}'
+
+/**
+ * Make the empty side of a hunk's *content* read as one continuous diagonal
+ * hatch. Pierre hatches the content filler (`[data-content-buffer]`) per cell,
+ * but a per-cell hatch can't be continuous — each filler anchors the pattern at
+ * its own origin and steps out of phase at every seam.
+ *
+ * Instead paint the stripe on the content column *wrapper* (`[data-content]`,
+ * which hugs the rows exactly — so the layer never overruns past the last line
+ * the way the padded `[data-code]` panel does) and make the filler cells
+ * transparent so they reveal one unbroken pattern. Real lines keep the opaque
+ * `background-color` pierre gives them, so the hatch shows through *only* the
+ * blanks. The number gutter is left to pierre's solid default — the hatch means
+ * "no code on this side", which is the content column's message, not the number
+ * rail's (and a solid rail keeps the per-line ✓ checks legible). The empty
+ * mirror of the additions-side "Include in commit" bar is cleared only on
+ * `[data-deletions]` so the bar's own side stays opaque (unified has no mirror).
+ * Also for pierre's `unsafeCSS`.
+ */
+const CONTENT_HATCH =
+  'background-color:var(--diffs-bg);background-size:8px 8px;background-origin:border-box;' +
+  'background-repeat:repeat;background-image:repeating-linear-gradient(-45deg,transparent,' +
+  'transparent calc(3px * 1.414),var(--diffs-bg-buffer) calc(3px * 1.414),' +
+  'var(--diffs-bg-buffer) calc(4px * 1.414))'
+const GUTTER_POLISH_CSS =
+  `[data-content]{${CONTENT_HATCH}}` +
+  ':is([data-content-buffer],[data-deletions] [data-line-annotation])' +
+  '{background-color:transparent;background-image:none}'
+
+/**
+ * Pull the staging bar across the gutter↔content seam so its checkbox lands *in*
+ * the gutter, lined up with the per-line ✓ checks — the way pierre's own "N
+ * unmodified lines" separator spans the whole row, rather than a panel floating to
+ * the right of a blank gutter. The `.stage-bar` is slotted into the *content* cell,
+ * which sits under the sticky gutter (`z-index:3`), so two moves make it reach left:
+ * (1) give each side a query container so the slotted bar can size itself to the
+ * side's *visible* width with `100cqi` and offset itself left into the gutter (the
+ * geometry lives in `.stage-bar`, changes.css); (2) lift the annotation row above
+ * the gutter — `[data-content]` isn't a stacking context, so a z-index on the
+ * annotation cell wins against the gutter within the shared `[data-code]` context.
+ * Only the bar's own side — additions in split, the single column in unified; the
+ * deletions mirror stays empty (cleared to hatch by GUTTER_POLISH_CSS above). The
+ * bar paints its own `--bg-panel` across the gutter (no separate fill needed), and
+ * because it's sized from the visible width it stays put while long lines scroll
+ * under it — the gutter checkbox never drifts out of alignment on horizontal scroll.
+ */
+const STAGE_BAR_SPAN_CSS =
+  '[data-code]{container-type:inline-size}' +
+  ':is([data-additions],[data-unified]) [data-line-annotation]{position:relative;z-index:4}'
 
 /**
  * Human description of an LFS object's size across the diff: a single size,
@@ -191,11 +309,12 @@ function DiffViewerImpl({
     [diff?.path, diff?.newContents]
   )
 
-  // ── Change-block selection bars (Changes tab, tracked modified files) ─────
+  // ── Change-block + line selection (Changes tab, tracked modified files) ───
   // The displayed diff is parsed from the full contents; every contiguous
   // changed region gets its own bar (finer than hunks — the differ merges
-  // nearby blocks into one hunk). Patches are rendered only when needed
-  // (commit / discard); toggling is pure renderer state — no git, no waiting.
+  // nearby blocks into one hunk), and every changed line gets its own gutter
+  // checkbox underneath. Patches are rendered only when needed (commit /
+  // discard); toggling is pure renderer state — no git, no waiting.
   const selectable =
     !!selectionActions && !!diff && canExpand && diff.status === 'modified' && !diff.oldPath
   const meta = useMemo(
@@ -207,65 +326,111 @@ function DiffViewerImpl({
     () => blocks.map((b) => ({ ...b.anchor, metadata: { blockIndex: b.index } })),
     [blocks]
   )
+  // Which block owns each changed line — lets a gutter click or drag-paint
+  // stroke find the block whose exclusions it edits.
+  const owner = useMemo(() => lineOwners(blocks), [blocks])
 
+  const selection = selectionActions?.selection ?? 'all'
+  const excludedFor = (blockIndex: number) => excludedKeysFor(selection, blocks, blockIndex)
+
+  const blockCheck = (blockIndex: number): CheckState => {
+    const excluded = excludedFor(blockIndex).size
+    if (excluded === 0) return 'checked'
+    return excluded >= listBlockLines(blocks[blockIndex]).length ? 'unchecked' : 'indeterminate'
+  }
+
+  // Recompute the file's selection after overriding one block's exclusions.
+  const emit = (overrideBlock: number, excluded: ReadonlySet<string>) => {
+    if (!meta || !diff || !selectionActions) return
+    selectionActions.onChange(
+      buildFileSelection(diff.path, meta, blocks, (i) =>
+        i === overrideBlock ? excluded : excludedFor(i)
+      )
+    )
+  }
+
+  // Block bar: a fully-included block clears to "all out"; anything else
+  // (partial or fully out) fills back to "all in".
+  const toggleBlock = (blockIndex: number) =>
+    emit(
+      blockIndex,
+      excludedFor(blockIndex).size === 0 ? blockLineKeys(blocks[blockIndex]) : EMPTY_SET
+    )
+
+  // The whole-block patch (every line), used by discard regardless of selection.
   const blockPatch = (blockIndex: number): string | null =>
     meta && diff && blocks[blockIndex] ? buildBlockPatch(diff.path, meta, blocks, blockIndex) : null
 
-  const isBlockSelected = (blockIndex: number): boolean => {
-    const sel = selectionActions?.selection ?? 'all'
-    if (sel === 'all') return true
-    if (sel === 'none') return false
-    return sel.has(blockIndex)
-  }
+  // Gutter interaction: a click toggles one line; pressing and dragging paints a
+  // run. Wired here, reading the live selection through the hook's ref; `bodyRef`
+  // binds the drag listener to the diff body below.
+  const { bodyRef, onLineEnter, onLineNumberClick } = useStagingDrag({
+    enabled: selectable && !!meta && !!selectionActions && !selectionActions.busy,
+    unified: mode === 'unified',
+    path: diff?.path ?? '',
+    meta: meta ?? EMPTY_META,
+    blocks,
+    owner,
+    selection,
+    onChange: selectionActions?.onChange ?? noop
+  })
 
-  // Gray out the lines of excluded blocks (checkbox off) so the diff still shows
-  // the change but reads as "not in this commit". Pierre paints line backgrounds
-  // in its shadow DOM, so we feed the rule through its `unsafeCSS` option; the
-  // string is empty in the common all-included case, injecting nothing.
-  const selection = selectionActions?.selection
+  // The lines to gray as "not in this commit" — fully-excluded blocks contribute
+  // all their lines, partially-excluded ones just the deselected lines. Pierre
+  // paints line backgrounds in its shadow DOM, so the rule (plus the per-line
+  // checkbox affordance) rides in through its `unsafeCSS` option; both are empty
+  // in the common all-included case, injecting nothing.
   const fileDiffOptions = useMemo(() => {
-    const isExcluded = (i: number) =>
-      selection === 'all' || selection == null
-        ? false
-        : selection === 'none'
-          ? true
-          : !selection.has(i)
-    const css = buildExcludedDiffCss(blocks, isExcluded)
-    return css ? { ...diffOptions, unsafeCSS: css } : diffOptions
-  }, [blocks, diffOptions, selection])
-
-  const toggleBlock = (blockIndex: number) => {
-    if (!meta || !selectionActions) return
-    const next = new Map<number, string>()
+    const excludedLines: ChangedLine[] = []
     for (const b of blocks) {
-      const selected = b.index === blockIndex ? !isBlockSelected(b.index) : isBlockSelected(b.index)
-      if (selected) {
-        const patch = blockPatch(b.index)
-        if (patch) next.set(b.index, patch)
-      }
+      const excluded = excludedKeysFor(selection, blocks, b.index)
+      if (excluded.size === 0) continue
+      for (const l of listBlockLines(b)) if (excluded.has(lineKey(l))) excludedLines.push(l)
     }
-    selectionActions.onChange(next, blocks.length)
-  }
+    return {
+      ...diffOptions,
+      // Highlight only the line-number rect on hover (we restyle it ourselves
+      // below), not the whole line.
+      lineHoverHighlight: 'number' as const,
+      onLineNumberClick,
+      // Drag-paint: each line the pointer crosses mid-stroke (see useStagingDrag).
+      onLineEnter,
+      unsafeCSS: `${LINE_CHECKBOX_CSS}${GUTTER_POLISH_CSS}${STAGE_BAR_SPAN_CSS}${buildExcludedDiffCss(excludedLines)}`
+    }
+  }, [blocks, diffOptions, onLineNumberClick, onLineEnter, selection])
 
   const renderSelectionBar = (annotation: DiffLineAnnotation<BlockRef>) => {
     const { blockIndex } = annotation.metadata
     const block = blocks[blockIndex]
     if (!block || !selectionActions) return null
-    const selected = isBlockSelected(blockIndex)
+    const check = blockCheck(blockIndex)
+    // The stat counts only the lines actually going into the commit, so it
+    // tracks the line checkboxes (a partly-selected block shows its real total).
+    const excluded = excludedFor(blockIndex)
+    let adds = 0
+    let dels = 0
+    for (const line of listBlockLines(block)) {
+      if (excluded.has(lineKey(line))) continue
+      if (line.type === 'change-addition') adds++
+      else dels++
+    }
     return (
-      <div className="stage-bar" data-state={selected ? 'staged' : 'unstaged'}>
+      <div className="stage-bar" data-state={check}>
         <label className="stage-bar__check">
           <input
             type="checkbox"
-            checked={selected}
+            ref={(el) => {
+              if (el) el.indeterminate = check === 'indeterminate'
+            }}
+            checked={check !== 'unchecked'}
             disabled={selectionActions.busy}
             onChange={() => toggleBlock(blockIndex)}
           />
           Include in commit
         </label>
         <span className="diff-stat">
-          {block.newLines > 0 && <span className="diff-stat__add">+{block.newLines}</span>}
-          {block.oldLines > 0 && <span className="diff-stat__del">−{block.oldLines}</span>}
+          {adds > 0 && <span className="diff-stat__add">+{adds}</span>}
+          {dels > 0 && <span className="diff-stat__del">−{dels}</span>}
         </span>
         <span className="stage-bar__spacer" />
         <button
@@ -405,7 +570,7 @@ function DiffViewerImpl({
         )}
       </div>
 
-      <div className={`diff-body${imageView ? ' diff-body--image' : ''}`}>
+      <div ref={bodyRef} className={`diff-body${imageView ? ' diff-body--image' : ''}`}>
         {spin && (
           <div className="center-state">
             <div className="spinner" />

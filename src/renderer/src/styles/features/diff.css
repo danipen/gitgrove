@@ -98,6 +98,12 @@
      and pierre keeps its own user-select:none on gutters/line numbers. */
   user-select: text;
 }
+/* While a drag-paint stroke is staging lines (useStagingDrag toggles the
+   attribute), suppress text selection so sweeping the pointer across the diff
+   paints checks instead of smearing a selection over the code. */
+.diff-body[data-staging-drag] {
+  user-select: none;
+}
 .diff-body pierre-diff,
 .diff-body .pierre-diffs {
   display: block;

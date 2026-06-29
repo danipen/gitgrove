@@ -23,8 +23,8 @@ describe('buildCommitSelection', () => {
 
   test('a partial file contributes its block patches instead of its path', () => {
     const blocks = new Map([
-      [0, 'patch-block-0'],
-      [2, 'patch-block-2']
+      [0, { patch: 'patch-block-0', excluded: new Set<string>() }],
+      [2, { patch: 'patch-block-2', excluded: new Set(['-9']) }]
     ])
     const sel = buildCommitSelection([file('a'), file('b')], selections([['b', blocks]]))
     expect(sel.all).toBe(false)
@@ -47,7 +47,7 @@ describe('buildStashSelection', () => {
   })
 
   test('partially included files are stashed whole', () => {
-    const blocks = new Map([[0, 'patch']])
+    const blocks = new Map([[0, { patch: 'patch', excluded: new Set<string>() }]])
     expect(buildStashSelection([file('a')], selections([['a', blocks]]))).toEqual({
       all: true,
       paths: ['a']
