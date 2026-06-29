@@ -311,10 +311,6 @@ interface Props {
  *  head ref names, so it's matched and fetched under the bare name. */
 const headRef = (name: string, local: boolean) => (local ? name : name.slice(name.indexOf('/') + 1))
 
-/** Cap a PR title so a submenu of them doesn't grow unboundedly wide. */
-const truncate = (title: string, max = 52) =>
-  title.length > max ? `${title.slice(0, max - 1)}…` : title
-
 /** Fixed row height used by the virtualizer (must match the inline row height below). */
 const ROW_H = 32
 /** Empty space kept below the last row so it never sits flush against the edge. */
@@ -463,7 +459,7 @@ export function BranchSwitcher({
       })
     } else if (prs.length > 0) {
       const submenu: ContextMenuItem[] = prs.map((pr) => ({
-        label: `#${pr.number} ${truncate(pr.title)}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
+        label: `Open Pull Request #${pr.number} on GitHub`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       }))
@@ -478,7 +474,7 @@ export function BranchSwitcher({
           }
         )
       }
-      items.push({ label: `Pull Requests (${total})`, icon: <Icon.Github size={15} />, submenu })
+      items.push({ label: `Pull Requests (${total})`, icon: <Icon.PrOpen size={15} />, submenu })
     }
 
     if (githubWebUrl && isPublished(name)) {
