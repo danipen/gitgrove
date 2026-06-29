@@ -2,7 +2,7 @@ import { parseDiffFromFile } from '@pierre/diffs'
 import type { BaseDiffOptions, DiffLineAnnotation } from '@pierre/diffs/react'
 import { FileDiff, MultiFileDiff, PatchDiff } from '@pierre/diffs/react'
 import type { DiffPayload } from '@shared/types'
-import { memo, useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
   IMAGE_DIFF_MODES,
   type ImageDiffMode,
@@ -12,23 +12,29 @@ import type { FileSelection } from '@/lib/commit-selection'
 import { formatBytes, splitPath, statusLabel, statusLetter } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
-import { buildBlockPatch, buildExcludedDiffCss, listChangeBlocks } from '@/lib/staging'
+import {
+  blockLineKeys,
+  buildBlockPatch,
+  buildExcludedDiffCss,
+  buildFileSelection,
+  type ChangeBlock,
+  type ChangedLine,
+  lineKey,
+  listBlockLines,
+  listChangeBlocks
+} from '@/lib/staging'
 import type { ResolvedTheme } from '@/lib/theme'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import { ConfirmDialog } from './Dialog'
 
 export type DiffMode = 'split' | 'unified'
 
-/** Wiring for the change-block selection bars on working diffs. */
+/** Wiring for the change-block/line selection on working diffs. */
 export interface SelectionActions {
   /** Current selection for the displayed file. */
   selection: FileSelection
-  /**
-   * Replace the file's block selection: selected block index → its standalone
-   * patch (used at commit time), plus the total block count so the caller can
-   * normalize full/empty selections back to 'all'/'none'.
-   */
-  onChange: (selected: Map<number, string>, totalBlocks: number) => void
+  /** Replace the file's selection (already normalized to 'all'/'none'/blocks). */
+  onChange: (selection: FileSelection) => void
   /** Discard a change block in the working tree (reverse-applies its patch). */
   onDiscard: (patch: string) => void
   busy: boolean
@@ -70,6 +76,50 @@ interface Props {
 interface BlockRef {
   blockIndex: number
 }
+
+type CheckState = 'checked' | 'indeterminate' | 'unchecked'
+
+const EMPTY_SET: ReadonlySet<string> = new Set()
+
+/**
+ * The changed-line keys a block currently leaves *out* of the commit: none when
+ * the file is fully in, all of them when it's fully out or the block is absent
+ * from a partial map, else the block's stored exclusions.
+ */
+function excludedKeysFor(
+  selection: FileSelection,
+  blocks: ChangeBlock[],
+  blockIndex: number
+): ReadonlySet<string> {
+  if (selection === 'all') return EMPTY_SET
+  if (selection === 'none') return blockLineKeys(blocks[blockIndex])
+  return selection.get(blockIndex)?.excluded ?? blockLineKeys(blocks[blockIndex])
+}
+
+/**
+ * The per-line staging affordance, injected into pierre's shadow DOM via its
+ * `unsafeCSS` option: every *changed* line's gutter number cell becomes a
+ * clickable checkbox (the click is handled by `onLineNumberClick`). At rest the
+ * gutter just reads as line numbers — included lines are their normal color,
+ * excluded ones gray (via `buildExcludedDiffCss`). Hover a changed row and its
+ * number swaps for a checkbox: a filled accent square when the line is in the
+ * commit, an empty box when it's been left out — so reaching for the gutter
+ * turns it into "tick the lines you want" without ever crowding the digits.
+ * GitGrove's custom properties inherit through the shadow boundary, so the box
+ * tracks the theme like the rest of the diff.
+ */
+const CHANGED_NUM =
+  ':is([data-line-type="change-addition"],[data-line-type="change-deletion"])[data-column-number]'
+const LINE_CHECKBOX_CSS =
+  `${CHANGED_NUM}{position:relative;cursor:pointer}` +
+  // The checkbox, centered where the line number sits. Hidden until the row is
+  // hovered; a filled accent square means "in the commit".
+  `${CHANGED_NUM}::after{content:"";position:absolute;inset-inline-start:50%;inset-block-start:50%;` +
+  'width:12px;height:12px;transform:translate(-50%,-50%);border:1.5px solid var(--accent);' +
+  'border-radius:3px;background:var(--accent);opacity:0;transition:opacity .1s ease}' +
+  `${CHANGED_NUM}[data-hovered]::after{opacity:1}` +
+  // Swap the number out for the box while hovering, so the two never overlap.
+  `${CHANGED_NUM}[data-hovered] [data-line-number-content]{opacity:0}`
 
 /**
  * Human description of an LFS object's size across the diff: a single size,
@@ -191,11 +241,12 @@ function DiffViewerImpl({
     [diff?.path, diff?.newContents]
   )
 
-  // ── Change-block selection bars (Changes tab, tracked modified files) ─────
+  // ── Change-block + line selection (Changes tab, tracked modified files) ───
   // The displayed diff is parsed from the full contents; every contiguous
   // changed region gets its own bar (finer than hunks — the differ merges
-  // nearby blocks into one hunk). Patches are rendered only when needed
-  // (commit / discard); toggling is pure renderer state — no git, no waiting.
+  // nearby blocks into one hunk), and every changed line gets its own gutter
+  // checkbox underneath. Patches are rendered only when needed (commit /
+  // discard); toggling is pure renderer state — no git, no waiting.
   const selectable =
     !!selectionActions && !!diff && canExpand && diff.status === 'modified' && !diff.oldPath
   const meta = useMemo(
@@ -207,57 +258,101 @@ function DiffViewerImpl({
     () => blocks.map((b) => ({ ...b.anchor, metadata: { blockIndex: b.index } })),
     [blocks]
   )
+  // Which block owns each changed line — lets a gutter click find its block.
+  const lineOwner = useMemo(() => {
+    const owner = new Map<string, number>()
+    for (const b of blocks) for (const l of listBlockLines(b)) owner.set(lineKey(l), b.index)
+    return owner
+  }, [blocks])
 
+  const selection = selectionActions?.selection ?? 'all'
+  const excludedFor = (blockIndex: number) => excludedKeysFor(selection, blocks, blockIndex)
+
+  const blockCheck = (blockIndex: number): CheckState => {
+    const excluded = excludedFor(blockIndex).size
+    if (excluded === 0) return 'checked'
+    return excluded >= listBlockLines(blocks[blockIndex]).length ? 'unchecked' : 'indeterminate'
+  }
+
+  // Recompute the file's selection after overriding one block's exclusions.
+  const emit = (overrideBlock: number, excluded: ReadonlySet<string>) => {
+    if (!meta || !diff || !selectionActions) return
+    selectionActions.onChange(
+      buildFileSelection(diff.path, meta, blocks, (i) =>
+        i === overrideBlock ? excluded : excludedFor(i)
+      )
+    )
+  }
+
+  // Block bar: a fully-included block clears to "all out"; anything else
+  // (partial or fully out) fills back to "all in".
+  const toggleBlock = (blockIndex: number) =>
+    emit(
+      blockIndex,
+      excludedFor(blockIndex).size === 0 ? blockLineKeys(blocks[blockIndex]) : EMPTY_SET
+    )
+
+  const toggleLine = (blockIndex: number, line: ChangedLine) => {
+    const excluded = new Set(excludedFor(blockIndex))
+    const key = lineKey(line)
+    if (!excluded.delete(key)) excluded.add(key)
+    emit(blockIndex, excluded)
+  }
+
+  // The whole-block patch (every line), used by discard regardless of selection.
   const blockPatch = (blockIndex: number): string | null =>
     meta && diff && blocks[blockIndex] ? buildBlockPatch(diff.path, meta, blocks, blockIndex) : null
 
-  const isBlockSelected = (blockIndex: number): boolean => {
-    const sel = selectionActions?.selection ?? 'all'
-    if (sel === 'all') return true
-    if (sel === 'none') return false
-    return sel.has(blockIndex)
+  // A gutter click toggles its line. Kept behind a ref so the (stable) pierre
+  // handler always sees the live selection without re-registering on every edit.
+  const lineClickRef = useRef<(line: ChangedLine) => void>(() => {})
+  lineClickRef.current = (line) => {
+    if (selectionActions?.busy) return
+    const blockIndex = lineOwner.get(lineKey(line))
+    if (blockIndex !== undefined) toggleLine(blockIndex, line)
   }
+  const onLineNumberClick = useMemo(
+    () => (props: { lineType: string; lineNumber: number }) => {
+      if (props.lineType === 'change-addition' || props.lineType === 'change-deletion')
+        lineClickRef.current({ type: props.lineType, lineNumber: props.lineNumber })
+    },
+    []
+  )
 
-  // Gray out the lines of excluded blocks (checkbox off) so the diff still shows
-  // the change but reads as "not in this commit". Pierre paints line backgrounds
-  // in its shadow DOM, so we feed the rule through its `unsafeCSS` option; the
-  // string is empty in the common all-included case, injecting nothing.
-  const selection = selectionActions?.selection
+  // The lines to gray as "not in this commit" — fully-excluded blocks contribute
+  // all their lines, partially-excluded ones just the deselected lines. Pierre
+  // paints line backgrounds in its shadow DOM, so the rule (plus the per-line
+  // checkbox affordance) rides in through its `unsafeCSS` option; both are empty
+  // in the common all-included case, injecting nothing.
   const fileDiffOptions = useMemo(() => {
-    const isExcluded = (i: number) =>
-      selection === 'all' || selection == null
-        ? false
-        : selection === 'none'
-          ? true
-          : !selection.has(i)
-    const css = buildExcludedDiffCss(blocks, isExcluded)
-    return css ? { ...diffOptions, unsafeCSS: css } : diffOptions
-  }, [blocks, diffOptions, selection])
-
-  const toggleBlock = (blockIndex: number) => {
-    if (!meta || !selectionActions) return
-    const next = new Map<number, string>()
+    const excludedLines: ChangedLine[] = []
     for (const b of blocks) {
-      const selected = b.index === blockIndex ? !isBlockSelected(b.index) : isBlockSelected(b.index)
-      if (selected) {
-        const patch = blockPatch(b.index)
-        if (patch) next.set(b.index, patch)
-      }
+      const excluded = excludedKeysFor(selection, blocks, b.index)
+      if (excluded.size === 0) continue
+      for (const l of listBlockLines(b)) if (excluded.has(lineKey(l))) excludedLines.push(l)
     }
-    selectionActions.onChange(next, blocks.length)
-  }
+    return {
+      ...diffOptions,
+      lineHoverHighlight: 'both' as const,
+      onLineNumberClick,
+      unsafeCSS: `${LINE_CHECKBOX_CSS}${buildExcludedDiffCss(excludedLines)}`
+    }
+  }, [blocks, diffOptions, onLineNumberClick, selection])
 
   const renderSelectionBar = (annotation: DiffLineAnnotation<BlockRef>) => {
     const { blockIndex } = annotation.metadata
     const block = blocks[blockIndex]
     if (!block || !selectionActions) return null
-    const selected = isBlockSelected(blockIndex)
+    const check = blockCheck(blockIndex)
     return (
-      <div className="stage-bar" data-state={selected ? 'staged' : 'unstaged'}>
+      <div className="stage-bar" data-state={check}>
         <label className="stage-bar__check">
           <input
             type="checkbox"
-            checked={selected}
+            ref={(el) => {
+              if (el) el.indeterminate = check === 'indeterminate'
+            }}
+            checked={check !== 'unchecked'}
             disabled={selectionActions.busy}
             onChange={() => toggleBlock(blockIndex)}
           />

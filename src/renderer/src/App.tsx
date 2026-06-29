@@ -557,7 +557,7 @@ export function App() {
     setSelections,
     toggleFileIncluded,
     setAllIncluded,
-    setHunkSelection,
+    setFileSelection,
     discardHunk,
     commitSize
   } = useCommitSelections({ changes, changesRef, getRepoPath, runOpRef })
@@ -1515,7 +1515,7 @@ export function App() {
                   tab === 'changes' && changeSel
                     ? {
                         selection: selections.get(changeSel) ?? 'all',
-                        onChange: (selected, total) => setHunkSelection(changeSel, selected, total),
+                        onChange: (sel) => setFileSelection(changeSel, sel),
                         onDiscard: discardHunk,
                         busy
                       }

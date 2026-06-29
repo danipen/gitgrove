@@ -1,16 +1,19 @@
 // Selection-to-patch plumbing for the working diff.
 //
 // Checkboxes are pure renderer state — "include this in the next commit" —
-// and git is only touched at commit time. Selection granularity is the
-// *change block*: each contiguous run of added/removed lines gets its own
-// checkbox, even when the display differ merges nearby blocks into one hunk
-// (it joins changes closer than ~2× the context size). Every block can be
-// rendered back into a standalone unified patch: apply it to a HEAD-equal
-// index with `git apply --cached` to include it in a commit, or
-// reverse-apply it to the working tree to discard it.
+// and git is only touched at commit time. Selection works at two grains: the
+// *change block* (each contiguous run of added/removed lines gets a checkbox,
+// even when the display differ merges nearby blocks into one hunk — it joins
+// changes closer than ~2× the context size), and the individual *line* within
+// it. Either way a contributing block is rendered back into a standalone
+// unified patch: apply it to a HEAD-equal index with `git apply --cached` to
+// include it in a commit, or reverse-apply it to the working tree to discard
+// it.
 //
 // Pure functions over the metadata shape @pierre/diffs produces; unit-tested
 // and round-tripped through real `git apply`.
+
+import type { BlockSelection, FileSelection } from './commit-selection'
 
 /**
  * The structural subset of @pierre/diffs' FileDiffMetadata we read. Declared
@@ -40,7 +43,7 @@ export interface DisplayMeta {
   hunks: DisplayHunk[]
 }
 
-/** One contiguous run of changed lines — the unit of commit selection. */
+/** One contiguous run of changed lines — the coarse unit of commit selection. */
 export interface ChangeBlock {
   /** Ordinal across the whole file: the selection/annotation key. */
   index: number
@@ -54,6 +57,39 @@ export interface ChangeBlock {
   newLines: number
   /** Where the block's selection bar anchors in the rendered diff. */
   anchor: { side: 'additions' | 'deletions'; lineNumber: number }
+}
+
+/**
+ * A single changed line on its own side — the *fine* unit of commit selection.
+ * `type` mirrors the `data-line-type` @pierre/diffs emits, so the same value
+ * keys both the patch math and the CSS that grays excluded lines. `lineNumber`
+ * is the line's number on its own side (old for deletions, new for additions).
+ */
+export interface ChangedLine {
+  type: 'change-addition' | 'change-deletion'
+  lineNumber: number
+}
+
+/** Stable, compact key for a changed line (`+34` / `-12`) — the selection id. */
+export const lineKey = ({ type, lineNumber }: ChangedLine): string =>
+  `${type === 'change-addition' ? '+' : '-'}${lineNumber}`
+
+/** The selection keys of every changed line in a block. */
+export const blockLineKeys = (block: ChangeBlock): Set<string> =>
+  new Set(listBlockLines(block).map(lineKey))
+
+/**
+ * Every changed line of a block, in unified-patch order: deletions (old side)
+ * first, then additions (new side). The renderer iterates these to draw a
+ * checkbox per line and to roll the line selection up into the block's state.
+ */
+export function listBlockLines(block: ChangeBlock): ChangedLine[] {
+  const lines: ChangedLine[] = []
+  for (let i = 0; i < block.oldLines; i++)
+    lines.push({ type: 'change-deletion', lineNumber: block.oldStart + i })
+  for (let i = 0; i < block.newLines; i++)
+    lines.push({ type: 'change-addition', lineNumber: block.newStart + i })
+  return lines
 }
 
 const NO_NEWLINE = '\\ No newline at end of file'
@@ -111,17 +147,29 @@ export function listChangeBlocks(meta: DisplayMeta): ChangeBlock[] {
 const BLOCK_CONTEXT = 3
 
 /**
- * Render one change block into a standalone unified patch for `path`.
- * Old-side coordinates are HEAD's, new-side are the working tree's — exactly
- * what `git apply --cached` needs after the index was reset to HEAD, and what
- * `git apply --reverse` needs against the working tree. Context never crosses
- * into a neighboring block (those lines differ between the two sides).
+ * Render one change block into a standalone unified patch for `path`, including
+ * only the lines `isSelected` keeps. Old-side coordinates are HEAD's, new-side
+ * are the working tree's — exactly what `git apply --cached` needs after the
+ * index was reset to HEAD, and what `git apply --reverse` needs against the
+ * working tree. Context never crosses into a neighboring block (those lines
+ * differ between the two sides).
+ *
+ * Line-level selection follows git's own partial-staging rule (the one
+ * `git add -p` builds by hand):
+ * - a **selected** deletion/addition is emitted as-is (`-`/`+`);
+ * - an **unselected addition** is *dropped* — the patch pretends it was never
+ *   written, so it stays only in the working tree;
+ * - an **unselected deletion** is *demoted to context* (` `) — the patch
+ *   pretends it never happened, so the line survives in the index.
+ * The hunk header counts are recomputed from what actually survives. With the
+ * default predicate (everything selected) this reduces to a plain block patch.
  */
 export function buildBlockPatch(
   path: string,
   meta: DisplayMeta,
   blocks: ChangeBlock[],
-  index: number
+  index: number,
+  isSelected: (line: ChangedLine) => boolean = () => true
 ): string {
   const block = blocks[index]
   const prevOldEnd = index > 0 ? blocks[index - 1].oldStart + blocks[index - 1].oldLines : 1
@@ -131,49 +179,62 @@ export function buildBlockPatch(
 
   const oldStart = block.oldStart - lead
   const newStart = block.newStart - lead
-  const oldCount = lead + block.oldLines + trail
-  const newCount = lead + block.newLines + trail
 
   const oldLast = meta.deletionLines.length
   const newLast = meta.additionLines.length
   const oldNoEOF = lacksFinalNewline(meta.deletionLines)
   const newNoEOF = lacksFinalNewline(meta.additionLines)
 
-  const lines: string[] = [
+  // Counts grow with the lines we actually emit, so a partial selection lands a
+  // correct `@@` header without separate bookkeeping for each line type.
+  const body: string[] = []
+  let oldCount = 0
+  let newCount = 0
+
+  // Context lines are identical on both sides; read them from the old side and
+  // mark a missing trailing newline when the context line ends a side.
+  const pushContext = (oldLine: number, newLine: number) => {
+    body.push(` ${chomp(meta.deletionLines[oldLine - 1])}`)
+    oldCount++
+    newCount++
+    if ((oldNoEOF && oldLine === oldLast) || (newNoEOF && newLine === newLast))
+      body.push(NO_NEWLINE)
+  }
+
+  for (let i = 0; i < lead; i++) pushContext(oldStart + i, newStart + i)
+  for (let i = 0; i < block.oldLines; i++) {
+    const lineNumber = block.oldStart + i
+    const text = chomp(meta.deletionLines[lineNumber - 1])
+    if (isSelected({ type: 'change-deletion', lineNumber })) {
+      body.push(`-${text}`)
+      oldCount++
+    } else {
+      // Unselected deletion: keep the line as context so the index still has it.
+      body.push(` ${text}`)
+      oldCount++
+      newCount++
+    }
+    if (oldNoEOF && lineNumber === oldLast) body.push(NO_NEWLINE)
+  }
+  for (let i = 0; i < block.newLines; i++) {
+    const lineNumber = block.newStart + i
+    // Unselected addition: drop it entirely — it never enters this patch.
+    if (!isSelected({ type: 'change-addition', lineNumber })) continue
+    body.push(`+${chomp(meta.additionLines[lineNumber - 1])}`)
+    newCount++
+    if (newNoEOF && lineNumber === newLast) body.push(NO_NEWLINE)
+  }
+  for (let i = 0; i < trail; i++) {
+    pushContext(block.oldStart + block.oldLines + i, block.newStart + block.newLines + i)
+  }
+
+  const lines = [
     `diff --git a/${path} b/${path}`,
     `--- a/${path}`,
     `+++ b/${path}`,
-    `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`
+    `@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`,
+    ...body
   ]
-  // Context lines are identical on both sides; read them from the old side
-  // and mark a missing trailing newline when the context line ends a side.
-  const pushContext = (oldLine: number) => {
-    lines.push(` ${chomp(meta.deletionLines[oldLine - 1])}`)
-    const newLine = oldLine - oldStart + newStart
-    if ((oldNoEOF && oldLine === oldLast) || (newNoEOF && newLine === newLast)) {
-      lines.push(NO_NEWLINE)
-    }
-  }
-  for (let i = 0; i < lead; i++) pushContext(oldStart + i)
-  for (let i = 0; i < block.oldLines; i++) {
-    const line = block.oldStart + i
-    lines.push(`-${chomp(meta.deletionLines[line - 1])}`)
-    if (oldNoEOF && line === oldLast) lines.push(NO_NEWLINE)
-  }
-  for (let i = 0; i < block.newLines; i++) {
-    const line = block.newStart + i
-    lines.push(`+${chomp(meta.additionLines[line - 1])}`)
-    if (newNoEOF && line === newLast) lines.push(NO_NEWLINE)
-  }
-  for (let i = 0; i < trail; i++) {
-    const oldLine = block.oldStart + block.oldLines + i
-    lines.push(` ${chomp(meta.deletionLines[oldLine - 1])}`)
-    const newLine = block.newStart + block.newLines + i
-    if ((oldNoEOF && oldLine === oldLast) || (newNoEOF && newLine === newLast)) {
-      lines.push(NO_NEWLINE)
-    }
-  }
-
   return `${lines.join('\n')}\n`
 }
 
@@ -192,32 +253,59 @@ export function buildBlockPatch(
  * line type so old/new numbers never collide; both the content row
  * (`[data-line]`) and its gutter number cell (`[data-column-number]`) are grayed.
  * Returns '' when nothing is excluded, so the common "all included" case injects
- * no styles at all.
+ * no styles at all. The caller passes the exact lines to gray, so this works the
+ * same whether a whole block or a few of its lines are left out of the commit.
  */
-export function buildExcludedDiffCss(
-  blocks: ChangeBlock[],
-  isExcluded: (blockIndex: number) => boolean
-): string {
-  const selectors: string[] = []
-  const addLines = (type: 'change-addition' | 'change-deletion', start: number, count: number) => {
-    for (let n = start; n < start + count; n++) {
-      selectors.push(
-        `[data-line-type="${type}"]:is([data-line="${n}"],[data-column-number="${n}"])`
-      )
-    }
-  }
-  for (const block of blocks) {
-    if (!isExcluded(block.index)) continue
-    addLines('change-addition', block.newStart, block.newLines)
-    addLines('change-deletion', block.oldStart, block.oldLines)
-  }
-  if (selectors.length === 0) return ''
+export function buildExcludedDiffCss(lines: readonly ChangedLine[]): string {
+  if (lines.length === 0) return ''
+  const selectors = lines.map(
+    ({ type, lineNumber }) =>
+      `[data-line-type="${type}"]:is([data-line="${lineNumber}"],[data-column-number="${lineNumber}"])`
+  )
+  // The gutter cells of the same excluded lines: their hover checkbox shows as
+  // an empty, muted box (vs the filled accent of an included line), so hovering
+  // an excluded line reads as "unticked — click to put it back".
+  const numbers = lines.map(
+    ({ type, lineNumber }) => `[data-line-type="${type}"][data-column-number="${lineNumber}"]`
+  )
   return (
     `:is(${selectors.join(',')}){` +
     'background-color:var(--bg-panel);' +
     '--diffs-bg-addition-emphasis-override:var(--bg-panel);' +
     '--diffs-bg-deletion-emphasis-override:var(--bg-panel);' +
     '--diffs-fg-number-addition-override:var(--fg-muted);' +
-    '--diffs-fg-number-deletion-override:var(--fg-muted)}'
+    '--diffs-fg-number-deletion-override:var(--fg-muted)}' +
+    `:is(${numbers.join(',')})::after{background:transparent;border-color:var(--fg-faint)}`
   )
+}
+
+/**
+ * Normalize a working file's per-block exclusions into the `FileSelection` the
+ * commit model stores. `excludedFor` returns the line keys left out of each
+ * block (empty = whole block in; every key = whole block out). The result is
+ * collapsed to the cheap extremes so the rest of the app can short-circuit:
+ * `'all'` when every line of every block is in (a plain `git add`), `'none'`
+ * when nothing is, otherwise a map of just the contributing blocks — each with
+ * the patch for its kept lines and the exclusions to restore the checkboxes.
+ */
+export function buildFileSelection(
+  path: string,
+  meta: DisplayMeta,
+  blocks: ChangeBlock[],
+  excludedFor: (blockIndex: number) => ReadonlySet<string>
+): FileSelection {
+  const map = new Map<number, BlockSelection>()
+  let anyPartialBlock = false
+  for (const block of blocks) {
+    const lines = listBlockLines(block)
+    const excluded = excludedFor(block.index)
+    const keptCount = lines.reduce((n, l) => (excluded.has(lineKey(l)) ? n : n + 1), 0)
+    if (keptCount === 0) continue // block fully excluded — leave it out of the map
+    if (keptCount < lines.length) anyPartialBlock = true
+    const patch = buildBlockPatch(path, meta, blocks, block.index, (l) => !excluded.has(lineKey(l)))
+    map.set(block.index, { patch, excluded: new Set(excluded) })
+  }
+  if (map.size === 0) return 'none'
+  if (map.size === blocks.length && !anyPartialBlock) return 'all'
+  return map
 }
