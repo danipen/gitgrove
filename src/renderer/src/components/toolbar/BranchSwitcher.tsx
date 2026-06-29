@@ -155,6 +155,13 @@ function PrHoverCard({
       ref={ref}
       className="pr-card"
       style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: 'hidden' }}
+      // The card is portal-rendered but lives in the branch row's React subtree,
+      // so a right-click would bubble to the row's onContextMenu and open the
+      // branch menu behind it. Swallow it — the card has no menu of its own.
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
     >
       <div className="pr-card__head">
         {total} pull request{total === 1 ? '' : 's'}
