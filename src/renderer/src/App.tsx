@@ -23,6 +23,7 @@ import { AppModals, type Modal } from './components/app/AppModals'
 import { CloneDialog } from './components/app/CloneDialog'
 import type { CreateBranchRequest } from './components/app/CreateBranchDialog'
 import { CredentialDialog } from './components/app/CredentialDialog'
+import { ErrorDialog } from './components/app/ErrorDialog'
 import { GitSetup } from './components/app/GitSetup'
 import { IdentityDialog } from './components/app/IdentityDialog'
 import { LfsBanner } from './components/app/LfsBanner'
@@ -1538,7 +1539,7 @@ export function App() {
           onRevealCommit={revealCommit}
         />
       )}
-      {error && <Toast kind="error" message={error} onClose={() => setError(null)} />}
+      {error && <ErrorDialog message={error} info={appInfo} onClose={() => setError(null)} />}
       {notice && !error && (
         <Toast kind="success" message={notice} onClose={() => setNotice(null)} />
       )}
