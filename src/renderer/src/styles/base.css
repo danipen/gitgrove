@@ -64,6 +64,15 @@
   --st-added-soft: rgba(63, 185, 80, 0.14);
   /* Merged pull request — GitHub's merge purple. */
   --pr-merged: #a371f7;
+  /* PR badge pill (features/toolbar.css). Its own surface + ring, separate from
+     the shared --bg-active, so the bordered pill can be tuned per theme. The
+     stacked "multiple PRs" cue is a card behind the pill a *shade darker* than it
+     (same as light) — so it reads as a soft shadow tucked behind, not a lighter
+     halo; the lifted ring (--pr-pill-ring) keeps the lip legible on the dark
+     popover even though the fill difference is subtle. */
+  --pr-pill-bg: #262a35;
+  --pr-pill-ring: #3a3f4c;
+  --pr-stack-bg: #20242e;
 
   /* Themed chrome details */
   --scrollbar-thumb: #2c2f39;
@@ -136,6 +145,12 @@
   --st-added-soft: rgba(26, 127, 55, 0.12);
   /* Merged pull request — GitHub's merge purple. */
   --pr-merged: #8250df;
+  /* PR badge pill (see the dark palette for the rationale). Fill is lighter than
+     the shared --bg-active so the bordered pill doesn't read heavy; the stacked
+     card sits a shade darker than the pill so it reads as depth behind it. */
+  --pr-pill-bg: #e9ecf1;
+  --pr-pill-ring: #ccd2da;
+  --pr-stack-bg: #e5e9ee;
 
   /* Themed chrome details */
   --scrollbar-thumb: #c9ced7;

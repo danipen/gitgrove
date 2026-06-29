@@ -1,18 +1,28 @@
 // Grouping + importance-ordering for a branch's pull requests. A head branch can
 // carry several PRs (e.g. the same fix opened against `main` and a release
-// branch), so the badge shows the most important one and a `+N` overflow. Kept
-// pure (no React) so the ordering is unit-tested directly.
+// branch), so the badge shows the most important one and a "stacked" cue when
+// there are more. Kept pure (no React) so the ordering is unit-tested directly.
 
 import type { PullRequestInfo } from '@shared/types'
 
 /**
  * A branch's PRs as the UI holds them: the fetched, importance-ordered list plus
  * the host's `total` (which can exceed `prs.length` for a long-lived branch — it
- * drives the badge's `+N` and the hovercard's "view all" link).
+ * drives the badge's "multiple PRs" cue and the hovercard's "view all" link).
  */
 export interface BranchPrs {
   prs: PullRequestInfo[]
   total: number
+}
+
+/**
+ * Whether a branch carries more than one PR — drives the badge's "stacked" cue (a
+ * second outlined pill behind it). Keyed on the host `total`, not the fetched
+ * count, so the cue matches the hovercard's "{total} pull requests" header even
+ * when fewer PRs were fetched than exist.
+ */
+export function hasMultiplePrs(branchPrs: BranchPrs): boolean {
+  return branchPrs.total > 1
 }
 
 /**

@@ -275,9 +275,10 @@
   color: var(--st-added);
 }
 
-/* A branch's PR badge cluster — shown on the switcher's trigger pill and list
-   rows: the most important PR as a `#123` badge plus a `+N` overflow chip, with
-   the full list in a hovercard (.pr-card). styles: BranchSwitcher.tsx */
+/* A branch's PR badge — shown on the switcher's trigger pill and list rows: the
+   most important PR as a `#123` pill, with a "stacked" cue (.branch-pr--stacked)
+   when the branch has more than one, and the full list in a hovercard (.pr-card).
+   styles: BranchSwitcher.tsx */
 .branch-prs {
   display: inline-flex;
   align-items: center;
@@ -297,13 +298,30 @@
   font-weight: 500;
   padding: 1px 4px;
   border-radius: 6px;
-  background: var(--bg-active);
+  background: var(--pr-pill-bg);
   /* Muted: the number is secondary — the leading glyph is the real signal. */
   color: var(--fg-muted);
+  /* Every pill carries the same 1px ring, so a single-PR pill and the front of a
+     stacked one (.branch-pr--stacked) read as identical faces — the stack is the
+     only difference. box-shadow (not border) keeps the width/column unchanged. */
+  box-shadow: 0 0 0 1px var(--pr-pill-ring);
 }
-/* The "+N" overflow chip: a branch carries N+1 PRs; the rest are in the card. */
-.branch-pr--more {
-  gap: 0;
+/* The "multiple PRs" cue: a second outlined pill peeking out bottom-right, as if
+   the badge were a short stack printed slightly out of register. Drawn purely
+   with box-shadow (no layout/width change, so the column stays aligned). The
+   first layer re-states the base pill's 1px ring (box-shadow replaces, it doesn't
+   accumulate), then an offset card — a --pr-stack-bg fill (a shade off the pill,
+   so it reads as a card behind) capped by its own ring. Both rings are
+   load-bearing: they're the seam that separates the two rounded rects, and without
+   them the offset lip just reads as a fat edge instead of a stack. The cue also
+   leans on the ring's *edge color*, not just the fill: a fill matching the pill
+   blends into the --bg-hover row tint on hover and the depth flattens, whereas the
+   constant ring colour survives it. Offset kept small (2px) so it stays a whisper. */
+.branch-pr--stacked {
+  box-shadow:
+    0 0 0 1px var(--pr-pill-ring),
+    3px 3px 0 0 var(--pr-stack-bg),
+    3px 3px 0 1px var(--pr-pill-ring);
 }
 /* CI rollup inside the badge: ✓ passing, ✗ failing, or a pulsing dot running.
    The state glyph also carries the per-state color (also used in .pr-card, where

@@ -9,7 +9,7 @@ import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
 import { type BranchRow, buildBranchRows } from '@/lib/branch-rows'
 import { highlightMatch } from '@/lib/highlight'
 import { Icon } from '@/lib/icons'
-import type { BranchPrs } from '@/lib/pr-order'
+import { type BranchPrs, hasMultiplePrs } from '@/lib/pr-order'
 import { useListKeyNav } from '@/lib/useListKeyNav'
 
 /** Branch operations surfaced from the switcher (beyond plain checkout). */
@@ -55,13 +55,15 @@ function PrStateIcon({ pr }: { pr: PullRequestInfo }) {
 }
 
 /** The `#123` pill marking a branch's most important PR: a state glyph + the
- *  number, tinted for merged (purple) / closed (red). One badge per branch — the
- *  full list (and count) lives in the hovercard. styles: features/toolbar.css */
-function PrBadge({ pr }: { pr: PullRequestInfo }) {
+ *  number, tinted for merged (purple) / closed (red). One badge per branch; when
+ *  the branch has more than one PR (`stacked`) a second outlined pill peeks
+ *  behind it as an at-a-glance "multiple PRs" cue — the full list lives in the
+ *  hovercard. styles: features/toolbar.css */
+function PrBadge({ pr, stacked }: { pr: PullRequestInfo; stacked: boolean }) {
   const stateClass =
     pr.state === 'merged' ? ' branch-pr--merged' : pr.state === 'closed' ? ' branch-pr--closed' : ''
   return (
-    <span className={`branch-pr${stateClass}`}>
+    <span className={`branch-pr${stacked ? ' branch-pr--stacked' : ''}${stateClass}`}>
       <PrGlyph pr={pr} />#{pr.number}
     </span>
   )
@@ -262,7 +264,7 @@ function BranchPrBadges({
       onMouseEnter={onBadgeEnter}
       onMouseLeave={onBadgeLeave}
     >
-      <PrBadge pr={prs[0]} />
+      <PrBadge pr={prs[0]} stacked={hasMultiplePrs(branchPrs)} />
       {open && (
         <PrHoverCard
           anchor={ref.current}
@@ -287,8 +289,8 @@ interface Props {
    *  "View Branch on GitHub" for branches that exist on the remote. */
   githubWebUrl?: string | null
   /** Each branch's PRs (+ host total) keyed by head branch — drives the `#123`
-   *  badge cluster (one badge + a `+N` overflow) and the "Open Pull Request"
-   *  menu entries. */
+   *  badge (one pill, with a "stacked" cue when the branch has more than one PR)
+   *  and the "Open Pull Request" menu entries. */
   prByBranch?: Map<string, BranchPrs>
   /** Ask the host for PRs of the branches currently on screen. `revalidate`
    *  re-asks even cached ones (on open); without it, scrolling only fetches
