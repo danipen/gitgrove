@@ -71,7 +71,7 @@
      vanishes against the elevated popover. */
   --pr-pill-bg: #262a35;
   --pr-pill-ring: #3a3f4c;
-  --pr-stack-bg: #11131a;
+  --pr-stack-bg: #2d313d;
 
   /* Themed chrome details */
   --scrollbar-thumb: #2c2f39;
@@ -149,7 +149,7 @@
      card sits a shade darker than the pill so it reads as depth behind it. */
   --pr-pill-bg: #e9ecf1;
   --pr-pill-ring: #ccd2da;
-  --pr-stack-bg: #d7dce3;
+  --pr-stack-bg: #e5e9ee;
 
   /* Themed chrome details */
   --scrollbar-thumb: #c9ced7;

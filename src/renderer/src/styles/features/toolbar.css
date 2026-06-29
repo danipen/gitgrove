@@ -320,8 +320,8 @@
 .branch-pr--stacked {
   box-shadow:
     0 0 0 1px var(--pr-pill-ring),
-    2px 2px 0 0 var(--pr-stack-bg),
-    2px 2px 0 1px var(--pr-pill-ring);
+    3px 3px 0 0 var(--pr-stack-bg),
+    3px 3px 0 1px var(--pr-pill-ring);
 }
 /* CI rollup inside the badge: ✓ passing, ✗ failing, or a pulsing dot running.
    The state glyph also carries the per-state color (also used in .pr-card, where
