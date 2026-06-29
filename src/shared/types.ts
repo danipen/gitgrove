@@ -691,8 +691,9 @@ export interface PullRequestInfo {
 /**
  * The result of looking up PRs for a set of branches: the fetched PRs (flat —
  * the caller groups them by head ref) plus, per head ref, the host's *total* PR
- * count, which can exceed what we fetched. The total drives the badge's `+N` and
- * the hovercard's "showing X of N — view all" link for long-lived branches.
+ * count, which can exceed what we fetched. The total drives the badge's
+ * "multiple PRs" cue and the hovercard's "showing X of N — view all" link for
+ * long-lived branches.
  */
 export interface PullRequestLookup {
   prs: PullRequestInfo[]

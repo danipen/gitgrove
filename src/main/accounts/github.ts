@@ -507,9 +507,10 @@ const BRANCH_BATCH = 50
 
 // PRs to fetch per branch. A head branch can carry several PRs (the same fix
 // opened against more than one base, or a reopened-as-new), and the badge shows
-// one plus a `+N` overflow with the rest in a hovercard — so we pull a handful,
-// newest-activity first, and let the renderer rank them. More than this on a
-// single branch is unheard of; the count it shows is bounded by what's fetched.
+// one (marked "stacked" when there are more) with the rest in a hovercard — so we
+// pull a handful, newest-activity first, and let the renderer rank them. More than
+// this on a single branch is unheard of; the count it shows is bounded by what's
+// fetched.
 const PRS_PER_BRANCH = 10
 
 /**

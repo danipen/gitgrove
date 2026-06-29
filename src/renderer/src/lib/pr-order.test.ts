@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { PullRequestInfo } from '@shared/types'
-import { groupPrsByBranch, prRank } from './pr-order'
+import { groupPrsByBranch, hasMultiplePrs, prRank } from './pr-order'
 
 const pr = (over: Partial<PullRequestInfo> = {}): PullRequestInfo => ({
   number: 1,
@@ -60,5 +60,18 @@ describe('groupPrsByBranch', () => {
         .get('feature')
         ?.map((p) => p.number)
     ).toEqual([1])
+  })
+})
+
+describe('hasMultiplePrs', () => {
+  test('true only when the host total exceeds one', () => {
+    expect(hasMultiplePrs({ prs: [pr()], total: 1 })).toBe(false)
+    expect(hasMultiplePrs({ prs: [pr(), pr({ number: 2 })], total: 2 })).toBe(true)
+  })
+
+  test('keys on the host total, not the fetched count', () => {
+    // The host reports two PRs but we only fetched one — still "multiple", so the
+    // badge cue matches the hovercard's "2 pull requests" header.
+    expect(hasMultiplePrs({ prs: [pr()], total: 2 })).toBe(true)
   })
 })
