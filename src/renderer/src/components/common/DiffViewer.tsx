@@ -137,7 +137,15 @@ const LINE_CHECKBOX_CSS =
   'var(--diffs-bg-addition)}' +
   '[data-line-type="change-deletion"][data-column-number][data-hovered]{background:' +
   'linear-gradient(var(--diffs-bg-deletion-emphasis),var(--diffs-bg-deletion-emphasis)) ' +
-  'var(--diffs-bg-deletion)}'
+  'var(--diffs-bg-deletion)}' +
+  // Only changed lines are clickable (the cursor rules above), so only they get a
+  // hover highlight. Pierre's `lineHoverHighlight:'number'` tints *every* hovered
+  // number rect by overriding `--diffs-line-bg`; on a non-changed (unclickable)
+  // line, restore it to the rest value pierre already computed for that cell
+  // (`--diffs-computed-selected-line-bg`, which equals the resting `--diffs-line-bg`
+  // for every non-changed line type) so context lines show no hover affordance.
+  '[data-column-number][data-hovered]:not([data-line-type="change-addition"])' +
+  ':not([data-line-type="change-deletion"]){--diffs-line-bg:var(--diffs-computed-selected-line-bg)}'
 
 /**
  * Make the empty side of a hunk's *content* read as one continuous diagonal
