@@ -15,6 +15,7 @@
 import { readFile, stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import type { ChangedFile, FileStatus, RepoOpKind, RepoSnapshot, RepoState } from '@shared/types'
+import { locateGitLfs } from './bin'
 import { PERF } from './perf'
 import { runGit } from './read'
 import { readUndoSnapshot } from './undo'
@@ -203,6 +204,15 @@ async function readRepoState(repoPath: string, conflictedCount: number): Promise
 
 export async function getRepoSnapshot(repoPath: string): Promise<RepoSnapshot> {
   const t0 = performance.now()
+  // Put `git-lfs` on PATH *before* status runs. In an LFS repo, `git status`
+  // spawns the `filter.lfs.process` helper to clean racily-stat'd files — and a
+  // GUI-launched app inherits the login PATH, which on macOS omits Homebrew's
+  // bin, so the helper is invisible and status dies with "git-lfs: command not
+  // found". locateGitLfs probes the binary and prepends its dir to PATH; doing
+  // it here (not just in the LFS health probe, which races the first snapshot)
+  // closes that race deterministically. Cached after the first success, so
+  // every later refresh is free.
+  await locateGitLfs()
   // One status spawn carries files + branch + upstream + ahead/behind; the
   // remote list and stashes are cheap config/reflog reads, run concurrently.
   const [statusOut, remotesOut, stashes] = await Promise.all([
