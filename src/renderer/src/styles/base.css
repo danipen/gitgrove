@@ -66,12 +66,13 @@
   --pr-merged: #a371f7;
   /* PR badge pill (features/toolbar.css). Its own surface + ring, separate from
      the shared --bg-active, so the bordered pill can be tuned per theme. The
-     stacked "multiple PRs" cue needs a card-behind shade with real contrast — in
-     dark that means clearly *darker* than the pill and a lifted ring, or the lip
-     vanishes against the elevated popover. */
+     stacked "multiple PRs" cue is a card behind the pill a *shade darker* than it
+     (same as light) — so it reads as a soft shadow tucked behind, not a lighter
+     halo; the lifted ring (--pr-pill-ring) keeps the lip legible on the dark
+     popover even though the fill difference is subtle. */
   --pr-pill-bg: #262a35;
   --pr-pill-ring: #3a3f4c;
-  --pr-stack-bg: #2d313d;
+  --pr-stack-bg: #20242e;
 
   /* Themed chrome details */
   --scrollbar-thumb: #2c2f39;
