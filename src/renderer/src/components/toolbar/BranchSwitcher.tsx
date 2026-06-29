@@ -84,6 +84,7 @@ function PrHoverCard({
   githubWebUrl,
   keepOpen,
   requestClose,
+  dismiss,
   onActivate
 }: {
   anchor: HTMLElement | null
@@ -94,6 +95,8 @@ function PrHoverCard({
   keepOpen: () => void
   /** Pointer has left the safe zone — start the close countdown. */
   requestClose: () => void
+  /** Close just the card (leaving the switcher popover open) — Escape. */
+  dismiss: () => void
   /** Called after opening a PR / the list, so the switcher can dismiss itself. */
   onActivate: () => void
 }) {
@@ -148,6 +151,18 @@ function PrHoverCard({
     document.addEventListener('pointermove', onMove)
     return () => document.removeEventListener('pointermove', onMove)
   }, [anchor, keepOpen, requestClose])
+  // Escape peels just the card, leaving the switcher popover open (a second
+  // Escape then closes that). Capture-phase + stopPropagation so the popover's
+  // own window-level Escape doesn't also fire — same layering as ContextMenu.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      dismiss()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [dismiss])
   // More PRs exist than we fetched — offer the host's full, filtered list.
   const more = total > prs.length
   return createPortal(
@@ -155,6 +170,13 @@ function PrHoverCard({
       ref={ref}
       className="pr-card"
       style={pos ? { top: pos.top, left: pos.left } : { top: 0, left: 0, visibility: 'hidden' }}
+      // The card is portal-rendered but lives in the branch row's React subtree,
+      // so a right-click would bubble to the row's onContextMenu and open the
+      // branch menu behind it. Swallow it — the card has no menu of its own.
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }}
     >
       <div className="pr-card__head">
         {total} pull request{total === 1 ? '' : 's'}
@@ -236,6 +258,11 @@ function BranchPrBadges({
       setOpen(false)
     }, 200)
   }, [])
+  // Close the card now (Escape), without tearing down the switcher popover.
+  const dismiss = useCallback(() => {
+    clearTimeout(showT.current)
+    setOpen(false)
+  }, [])
   if (!branchPrs || branchPrs.prs.length === 0) return null
   const { prs, total } = branchPrs
   const onBadgeEnter = () => {
@@ -273,6 +300,7 @@ function BranchPrBadges({
           githubWebUrl={githubWebUrl}
           keepOpen={keepOpen}
           requestClose={requestClose}
+          dismiss={dismiss}
           onActivate={activate}
         />
       )}
@@ -310,10 +338,6 @@ interface Props {
  *  row like `origin/foo` maps to `foo` — a remote branch is exactly what a PR's
  *  head ref names, so it's matched and fetched under the bare name. */
 const headRef = (name: string, local: boolean) => (local ? name : name.slice(name.indexOf('/') + 1))
-
-/** Cap a PR title so a submenu of them doesn't grow unboundedly wide. */
-const truncate = (title: string, max = 52) =>
-  title.length > max ? `${title.slice(0, max - 1)}…` : title
 
 /** Fixed row height used by the virtualizer (must match the inline row height below). */
 const ROW_H = 32
@@ -457,13 +481,13 @@ export function BranchSwitcher({
     if (total === 1 && prs.length === 1) {
       const pr = prs[0]
       items.push({
-        label: `Open Pull Request #${pr.number}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
+        label: `Open Pull Request #${pr.number} on GitHub`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       })
     } else if (prs.length > 0) {
       const submenu: ContextMenuItem[] = prs.map((pr) => ({
-        label: `#${pr.number} ${truncate(pr.title)}${pr.state === 'open' ? '' : ` (${pr.state})`}`,
+        label: `Open Pull Request #${pr.number} on GitHub`,
         icon: <Icon.Github size={15} />,
         onClick: () => window.gitgrove.openExternal(pr.url)
       }))
@@ -478,7 +502,7 @@ export function BranchSwitcher({
           }
         )
       }
-      items.push({ label: `Pull Requests (${total})`, icon: <Icon.Github size={15} />, submenu })
+      items.push({ label: `Pull Requests (${total})`, icon: <Icon.PrOpen size={15} />, submenu })
     }
 
     if (githubWebUrl && isPublished(name)) {
