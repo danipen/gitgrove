@@ -167,6 +167,27 @@ const GUTTER_POLISH_CSS =
   '[data-deletions] [data-line-annotation]){background-color:transparent;background-image:none}'
 
 /**
+ * Pull the staging bar across the gutter↔content seam so its checkbox lands *in*
+ * the gutter, lined up with the per-line ✓ checks — the way pierre's own "N
+ * unmodified lines" separator spans the whole row, rather than a panel floating to
+ * the right of a blank gutter. The `.stage-bar` is slotted into the *content* cell,
+ * which sits under the sticky gutter (`z-index:3`), so two moves make it reach left:
+ * (1) give each side a query container so the slotted bar can size itself to the
+ * side's *visible* width with `100cqi` and offset itself left into the gutter (the
+ * geometry lives in `.stage-bar`, changes.css); (2) lift the annotation row above
+ * the gutter — `[data-content]` isn't a stacking context, so a z-index on the
+ * annotation cell wins against the gutter within the shared `[data-code]` context.
+ * Only the bar's own side — additions in split, the single column in unified; the
+ * deletions mirror stays empty (cleared to hatch by GUTTER_POLISH_CSS above). The
+ * bar paints its own `--bg-panel` across the gutter (no separate fill needed), and
+ * because it's sized from the visible width it stays put while long lines scroll
+ * under it — the gutter checkbox never drifts out of alignment on horizontal scroll.
+ */
+const STAGE_BAR_SPAN_CSS =
+  '[data-code]{container-type:inline-size}' +
+  ':is([data-additions],[data-unified]) [data-line-annotation]{position:relative;z-index:4}'
+
+/**
  * Human description of an LFS object's size across the diff: a single size,
  * or "old → new" when the change replaced the object. Sizes are of the real
  * LFS content, not the pointer file.
@@ -382,7 +403,7 @@ function DiffViewerImpl({
       // below), not the whole line.
       lineHoverHighlight: 'number' as const,
       onLineNumberClick,
-      unsafeCSS: `${LINE_CHECKBOX_CSS}${GUTTER_POLISH_CSS}${buildExcludedDiffCss(excludedLines)}`
+      unsafeCSS: `${LINE_CHECKBOX_CSS}${GUTTER_POLISH_CSS}${STAGE_BAR_SPAN_CSS}${buildExcludedDiffCss(excludedLines)}`
     }
   }, [blocks, diffOptions, onLineNumberClick, selection])
 

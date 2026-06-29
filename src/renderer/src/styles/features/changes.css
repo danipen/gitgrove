@@ -406,14 +406,25 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 3px 10px;
-  margin: 1px 0;
+  /* Left padding lines the checkbox up with the per-line ✓ checks (their 9px gutter
+     inset, set in DiffViewer's LINE_CHECKBOX_CSS). */
+  padding: 3px 10px 3px 9px;
   font-family: var(--font-ui);
   font-size: 11px;
   color: var(--fg-muted);
   background: var(--bg-panel);
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+  /* Span the bar across the gutter↔content seam so the checkbox sits in the gutter
+     by the line checks. `100cqi` is the side's *visible* width (DiffViewer makes the
+     side a query container in STAGE_BAR_SPAN_CSS), and the negative inline-start margin
+     slides the bar left by exactly the gutter width — left edge landing on the gutter's
+     left, right edge staying at the visible edge. Sizing off the visible width (not the
+     scrollable content) keeps the bar — and its gutter checkbox — pinned while long
+     lines scroll under it. */
+  box-sizing: border-box;
+  width: 100cqi;
+  margin-inline-start: calc(100% - 100cqi);
 }
 /* The bar is always the neutral panel gray — never tinted by state. Staging is
    kind-neutral (additions and deletions go in alike), so a colored wash would either
