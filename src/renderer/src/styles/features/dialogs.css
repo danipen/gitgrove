@@ -340,6 +340,45 @@
   color: var(--st-deleted);
   background: rgba(240, 97, 109, 0.14);
 }
+/* ── Error dialog (ErrorDialog.tsx) ───────────────────────────────────────── */
+/* The full git stderr, shown verbatim: monospace, selectable, and scrollable so
+   a huge multi-line error stays readable inside a fixed-height box instead of
+   stretching the modal off-screen. */
+.errdlg__detail {
+  margin: 0 0 4px;
+  max-height: 240px;
+  overflow: auto;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  /* Preserve git's own wrapping but still break the odd very long token (a URL,
+     a path) rather than forcing a horizontal scrollbar across the whole box. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.errdlg__detail:focus-visible {
+  outline: none;
+  border-color: var(--accent-border);
+}
+/* Report on the left, Copy + Dismiss on the right: the reporting affordance is
+   visually separated from the everyday "I've read it, move on" actions. */
+.errdlg__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 18px;
+}
+.errdlg__actions-right {
+  display: flex;
+  gap: 8px;
+}
 /* ── Interactive rebase editor ───────────────────────────────────────────── */
 .irebase {
   display: flex;
