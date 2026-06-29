@@ -262,9 +262,9 @@ export function buildExcludedDiffCss(lines: readonly ChangedLine[]): string {
     ({ type, lineNumber }) =>
       `[data-line-type="${type}"]:is([data-line="${lineNumber}"],[data-column-number="${lineNumber}"])`
   )
-  // The gutter cells of the same excluded lines: their hover checkbox shows as
-  // an empty, muted box (vs the filled accent of an included line), so hovering
-  // an excluded line reads as "unticked — click to put it back".
+  // The gutter cells of the same excluded lines: drop their "included" check (it
+  // rides the cell's ::after), so a missing tick reads as "left out — click the
+  // number to put it back".
   const numbers = lines.map(
     ({ type, lineNumber }) => `[data-line-type="${type}"][data-column-number="${lineNumber}"]`
   )
@@ -275,7 +275,9 @@ export function buildExcludedDiffCss(lines: readonly ChangedLine[]): string {
     '--diffs-bg-deletion-emphasis-override:var(--bg-panel);' +
     '--diffs-fg-number-addition-override:var(--fg-muted);' +
     '--diffs-fg-number-deletion-override:var(--fg-muted)}' +
-    `:is(${numbers.join(',')})::after{background:transparent;border-color:var(--fg-faint)}`
+    `:is(${numbers.join(',')})::after{display:none}` +
+    // Hover an excluded line's number rect: strong gray, not the add/del color.
+    `:is(${numbers.join(',')})[data-hovered]{background:var(--bg-active)}`
   )
 }
 

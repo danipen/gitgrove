@@ -98,28 +98,39 @@ function excludedKeysFor(
 
 /**
  * The per-line staging affordance, injected into pierre's shadow DOM via its
- * `unsafeCSS` option: every *changed* line's gutter number cell becomes a
- * clickable checkbox (the click is handled by `onLineNumberClick`). At rest the
- * gutter just reads as line numbers — included lines are their normal color,
- * excluded ones gray (via `buildExcludedDiffCss`). Hover a changed row and its
- * number swaps for a checkbox: a filled accent square when the line is in the
- * commit, an empty box when it's been left out — so reaching for the gutter
- * turns it into "tick the lines you want" without ever crowding the digits.
- * GitGrove's custom properties inherit through the shadow boundary, so the box
- * tracks the theme like the rest of the diff.
+ * `unsafeCSS` option. Only a *changed* line is toggleable, so only its gutter
+ * number gets the clickable cursor (pierre marks every number interactive once
+ * `onLineNumberClick` is wired — we reset the rest back to the default arrow).
+ * A check sits in a fixed column at the left of the gutter whenever the line is
+ * in the commit, and vanishes once it's left out (excluded lines hide it via
+ * `buildExcludedDiffCss` and gray their row). Every number cell reserves that
+ * column with `padding-inline-start`, so the right-aligned number never reaches
+ * the check whatever its width and the check stays put as digit counts change.
+ * The check inherits the line-number color (green for additions, red for
+ * deletions). Hovering the row brightens the check and lifts the number rect
+ * with the hover tint, so the gutter feels clickable — a tick you can flip.
+ * (Pierre draws its change-indicator bar as the cell's own `::before`, so the
+ * check rides the cell's `::after` to leave that bar untouched.)
  */
 const CHANGED_NUM =
   ':is([data-line-type="change-addition"],[data-line-type="change-deletion"])[data-column-number]'
 const LINE_CHECKBOX_CSS =
-  `${CHANGED_NUM}{position:relative;cursor:pointer}` +
-  // The checkbox, centered where the line number sits. Hidden until the row is
-  // hovered; a filled accent square means "in the commit".
-  `${CHANGED_NUM}::after{content:"";position:absolute;inset-inline-start:50%;inset-block-start:50%;` +
-  'width:12px;height:12px;transform:translate(-50%,-50%);border:1.5px solid var(--accent);' +
-  'border-radius:3px;background:var(--accent);opacity:0;transition:opacity .1s ease}' +
+  // Reserve the check column on every number cell so numbers stay aligned and
+  // never collide with it; only changed numbers are clickable. Knob: the
+  // padding is the column width.
+  '[data-column-number]{cursor:default;position:relative;padding-inline-start:23px}' +
+  `${CHANGED_NUM}{cursor:pointer}` +
+  // The "in the commit" check, anchored at a fixed spot in that column. Dim at
+  // rest so a calm gutter still reads as numbers; full on hover.
+  `${CHANGED_NUM}::after{content:"✓";position:absolute;inset-inline-start:9px;inset-block-start:50%;` +
+  'transform:translateY(-50%);font-size:1.1em;line-height:1;font-weight:700;' +
+  'opacity:.55;transition:opacity .1s ease}' +
+  // Hover: emphasize the check and deepen the number rect so it feels clickable.
+  // An included line goes to its strong add/del color; an excluded one to strong
+  // gray (set in buildExcludedDiffCss, which wins by source order).
   `${CHANGED_NUM}[data-hovered]::after{opacity:1}` +
-  // Swap the number out for the box while hovering, so the two never overlap.
-  `${CHANGED_NUM}[data-hovered] [data-line-number-content]{opacity:0}`
+  `[data-line-type="change-addition"][data-column-number][data-hovered]{background:var(--diffs-bg-addition-emphasis)}` +
+  `[data-line-type="change-deletion"][data-column-number][data-hovered]{background:var(--diffs-bg-deletion-emphasis)}`
 
 /**
  * Human description of an LFS object's size across the diff: a single size,
@@ -333,7 +344,9 @@ function DiffViewerImpl({
     }
     return {
       ...diffOptions,
-      lineHoverHighlight: 'both' as const,
+      // Highlight only the line-number rect on hover (we restyle it ourselves
+      // below), not the whole line.
+      lineHoverHighlight: 'number' as const,
       onLineNumberClick,
       unsafeCSS: `${LINE_CHECKBOX_CSS}${buildExcludedDiffCss(excludedLines)}`
     }
