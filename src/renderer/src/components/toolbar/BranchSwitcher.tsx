@@ -84,6 +84,7 @@ function PrHoverCard({
   githubWebUrl,
   keepOpen,
   requestClose,
+  dismiss,
   onActivate
 }: {
   anchor: HTMLElement | null
@@ -94,6 +95,8 @@ function PrHoverCard({
   keepOpen: () => void
   /** Pointer has left the safe zone — start the close countdown. */
   requestClose: () => void
+  /** Close just the card (leaving the switcher popover open) — Escape. */
+  dismiss: () => void
   /** Called after opening a PR / the list, so the switcher can dismiss itself. */
   onActivate: () => void
 }) {
@@ -148,6 +151,18 @@ function PrHoverCard({
     document.addEventListener('pointermove', onMove)
     return () => document.removeEventListener('pointermove', onMove)
   }, [anchor, keepOpen, requestClose])
+  // Escape peels just the card, leaving the switcher popover open (a second
+  // Escape then closes that). Capture-phase + stopPropagation so the popover's
+  // own window-level Escape doesn't also fire — same layering as ContextMenu.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.stopPropagation()
+      dismiss()
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [dismiss])
   // More PRs exist than we fetched — offer the host's full, filtered list.
   const more = total > prs.length
   return createPortal(
@@ -243,6 +258,11 @@ function BranchPrBadges({
       setOpen(false)
     }, 200)
   }, [])
+  // Close the card now (Escape), without tearing down the switcher popover.
+  const dismiss = useCallback(() => {
+    clearTimeout(showT.current)
+    setOpen(false)
+  }, [])
   if (!branchPrs || branchPrs.prs.length === 0) return null
   const { prs, total } = branchPrs
   const onBadgeEnter = () => {
@@ -280,6 +300,7 @@ function BranchPrBadges({
           githubWebUrl={githubWebUrl}
           keepOpen={keepOpen}
           requestClose={requestClose}
+          dismiss={dismiss}
           onActivate={activate}
         />
       )}
