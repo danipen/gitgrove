@@ -37,6 +37,15 @@ export function SyncButton({
   const [confirmForce, setConfirmForce] = useState(false)
   const anchor = useRef<HTMLButtonElement>(null)
 
+  // Hold the main button's width steady the instant it's clicked. At rest the
+  // sub can be long ("Diverged from origin"); while an op runs it shrinks to a
+  // terse "from origin"/"to origin", which would otherwise pull the pill's edge
+  // in from under the cursor. `begin` snapshots the resting width at the click —
+  // before the op starts — and we pin it for the duration of the run. Running
+  // content is always shorter than resting, so the pinned width never clips.
+  const mainRef = useRef<HTMLButtonElement>(null)
+  const restWidth = useRef<number | null>(null)
+
   // Nothing to sync with: no remotes configured, or detached HEAD.
   if (!sync || sync.remotes.length === 0 || detached) return null
 
@@ -136,6 +145,14 @@ export function SyncButton({
       <Icon.Download size={15} />
     )
 
+  // Snapshot the main button's resting width, then dispatch. Every action path
+  // (primary click, menu item, force-push confirm) goes through here so the
+  // pill is pinned from a known resting size whichever way the op was started.
+  const begin = (action: SyncAction) => {
+    if (mainRef.current) restWidth.current = mainRef.current.offsetWidth
+    onAction(action)
+  }
+
   // Each item carries a one-line explanation under its label — the same
   // title+sub pattern as the conflict-resolve menu — so the choice is clear
   // without reaching for the git docs. The sub comes from `describe` (shared
@@ -147,7 +164,7 @@ export function SyncButton({
       onClick={() => {
         setOpen(false)
         if (action === 'force-push') setConfirmForce(true)
-        else onAction(action)
+        else begin(action)
       }}
     >
       <span className="icon-muted" style={{ display: 'flex' }}>
@@ -164,10 +181,16 @@ export function SyncButton({
     <>
       <div className="sync">
         <button
+          ref={mainRef}
           className="pill sync__main"
           disabled={busy}
           data-tip={describe(primary)}
-          onClick={() => onAction(primary)}
+          style={
+            running !== null && restWidth.current !== null
+              ? { width: restWidth.current }
+              : undefined
+          }
+          onClick={() => begin(primary)}
         >
           {/* Determinate fill while the running action reports progress. */}
           {running !== null && progress !== null && (
@@ -248,7 +271,7 @@ export function SyncButton({
           confirmLabel="Force push"
           onConfirm={() => {
             setConfirmForce(false)
-            onAction('force-push')
+            begin('force-push')
           }}
           onCancel={() => setConfirmForce(false)}
         />
