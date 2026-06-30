@@ -66,12 +66,20 @@ export function CreateBranchDialog({
   const [changes, setChanges] = useState<BranchChangesAction>('bring')
   const [checkout, setCheckout] = useState(true)
 
+  // The dialog reflects the repo as it was when it opened. Creating the branch
+  // checks it out, which updates `current` (and can empty the working tree)
+  // while this dialog is still on screen mid-submit; reacting to that would
+  // briefly flip the base picker open just as the dialog closes. Freeze the
+  // repo-derived inputs so the layout never shifts under the user.
+  const [repo] = useState(() => ({ current, detached, defaultBranch, dirtyCount, opInFlight }))
+
   // The base picker only earns its space when there's a real choice: no
   // explicit commit base, a known default branch, and the user isn't on it.
-  const showBase = !from && !detached && defaultBranch !== null && defaultBranch !== current
+  const showBase =
+    !from && !repo.detached && repo.defaultBranch !== null && repo.defaultBranch !== repo.current
   // Moving changes needs a branch to leave them on (not detached) and a
   // working tree no operation owns; without a checkout nothing moves at all.
-  const showChanges = dirtyCount > 0 && checkout && !detached && !opInFlight
+  const showChanges = repo.dirtyCount > 0 && checkout && !repo.detached && !repo.opInFlight
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -81,7 +89,8 @@ export function CreateBranchDialog({
       return
     }
     onSubmit(name.trim(), {
-      from: from ?? (showBase && base === 'default' ? (defaultBranch ?? undefined) : undefined),
+      from:
+        from ?? (showBase && base === 'default' ? (repo.defaultBranch ?? undefined) : undefined),
       checkout,
       changes: showChanges ? changes : undefined
     })
@@ -123,11 +132,11 @@ export function CreateBranchDialog({
               />
               <span className="option-card__text">
                 <span className="option-card__title">
-                  <code>{defaultBranch}</code>
+                  <code>{repo.defaultBranch}</code>
                 </span>
                 <span className="option-card__sub">
                   The default branch — the usual place to start something new, independent of{' '}
-                  <code>{current}</code>.
+                  <code>{repo.current}</code>.
                 </span>
               </span>
             </label>
@@ -141,7 +150,7 @@ export function CreateBranchDialog({
               />
               <span className="option-card__text">
                 <span className="option-card__title">
-                  <code>{current}</code>
+                  <code>{repo.current}</code>
                 </span>
                 <span className="option-card__sub">
                   Your current branch — pick this to build on its work.
@@ -153,9 +162,11 @@ export function CreateBranchDialog({
 
         {showChanges && (
           <>
-            <p className="option-cards__label">Your {pluralize(dirtyCount, 'pending change')}</p>
+            <p className="option-cards__label">
+              Your {pluralize(repo.dirtyCount, 'pending change')}
+            </p>
             <PendingChangesChoice
-              current={current}
+              current={repo.current}
               destination={name.trim() ? <code>{name.trim()}</code> : 'the new branch'}
               value={changes}
               busy={busy}
