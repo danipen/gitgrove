@@ -87,25 +87,30 @@ export function SyncButton({
 
   // One plain-language description per action, the single source of truth shared
   // by the dropdown items and the main button's hover tooltip — so the two can
-  // never drift out of sync.
+  // never drift out of sync. These deliberately say "the remote" / "your branch"
+  // rather than interpolating the upstream ref: the toolbar pill and the
+  // "Sync with origin" header already name both, and a long branch
+  // (origin/readd/unity-version-control-benchmarks) only gets ellipsis-clipped
+  // here, eating the useful tail of the sentence. The exact ref still appears
+  // where it matters — the force-push confirm dialog.
   const describe = (action: SyncAction): string => {
     switch (action) {
       case 'fetch':
         return 'Check the remote for new commits — nothing is merged'
       case 'pull':
         return sync.behind > 0
-          ? `Merge ${pluralize(sync.behind, 'incoming commit')} into ${branch}`
-          : `Merge ${sync.upstream}'s changes into ${branch}`
+          ? `Merge ${pluralize(sync.behind, 'incoming commit')} into your branch`
+          : "Merge the remote's changes into your branch"
       case 'pull-rebase':
         return 'Replay your commits on top — no merge commit'
       case 'push':
         return sync.ahead > 0
-          ? `Send ${pluralize(sync.ahead, 'commit')} to ${sync.upstream}`
-          : `Upload your local commits to ${sync.upstream}`
+          ? `Send ${pluralize(sync.ahead, 'commit')} to the remote`
+          : 'Upload your local commits to the remote'
       case 'publish':
-        return `Create ${branch} on ${remote} and start tracking it`
+        return `Create this branch on ${remote} and start tracking it`
       case 'force-push':
-        return `Careful — overwrites ${sync.upstream} with your history`
+        return 'Careful — overwrites the remote with your history'
     }
   }
 
