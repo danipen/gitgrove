@@ -37,6 +37,15 @@ export function SyncButton({
   const [confirmForce, setConfirmForce] = useState(false)
   const anchor = useRef<HTMLButtonElement>(null)
 
+  // Hold the main button's width steady the instant it's clicked. At rest the
+  // sub can be long ("Diverged from origin"); while an op runs it shrinks to a
+  // terse "from origin"/"to origin", which would otherwise pull the pill's edge
+  // in from under the cursor. `begin` snapshots the resting width at the click —
+  // before the op starts — and we pin it for the duration of the run. Running
+  // content is always shorter than resting, so the pinned width never clips.
+  const mainRef = useRef<HTMLButtonElement>(null)
+  const restWidth = useRef<number | null>(null)
+
   // Nothing to sync with: no remotes configured, or detached HEAD.
   if (!sync || sync.remotes.length === 0 || detached) return null
 
@@ -70,11 +79,17 @@ export function SyncButton({
 
   // A one-line read of where the branch stands relative to its remote, shown
   // under the action so the button explains itself at a glance. While an op is
-  // running we surface the upstream it's talking to instead of a stale state.
+  // running we show its direction against the short remote name ("from origin" /
+  // "to origin") rather than the full upstream ref — a long branch
+  // (origin/readd/unity-version-control-benchmarks) would otherwise slam the
+  // pill to its max width and clip mid-ref.
   const remote = sync.remotes[0]
+  const outbound = running === 'push' || running === 'publish' || running === 'force-push'
   const sub =
     running !== null
-      ? (sync.upstream ?? remote)
+      ? outbound
+        ? `to ${remote}`
+        : `from ${remote}`
       : primary === 'publish'
         ? `Publish to ${remote}`
         : primary === 'pull'
@@ -87,25 +102,30 @@ export function SyncButton({
 
   // One plain-language description per action, the single source of truth shared
   // by the dropdown items and the main button's hover tooltip — so the two can
-  // never drift out of sync.
+  // never drift out of sync. These deliberately say "the remote" / "your branch"
+  // rather than interpolating the upstream ref: the toolbar pill and the
+  // "Sync with origin" header already name both, and a long branch
+  // (origin/readd/unity-version-control-benchmarks) only gets ellipsis-clipped
+  // here, eating the useful tail of the sentence. The exact ref still appears
+  // where it matters — the force-push confirm dialog.
   const describe = (action: SyncAction): string => {
     switch (action) {
       case 'fetch':
         return 'Check the remote for new commits — nothing is merged'
       case 'pull':
         return sync.behind > 0
-          ? `Merge ${pluralize(sync.behind, 'incoming commit')} into ${branch}`
-          : `Merge ${sync.upstream}'s changes into ${branch}`
+          ? `Merge ${pluralize(sync.behind, 'incoming commit')} into your branch`
+          : "Merge the remote's changes into your branch"
       case 'pull-rebase':
         return 'Replay your commits on top — no merge commit'
       case 'push':
         return sync.ahead > 0
-          ? `Send ${pluralize(sync.ahead, 'commit')} to ${sync.upstream}`
-          : `Upload your local commits to ${sync.upstream}`
+          ? `Send ${pluralize(sync.ahead, 'commit')} to the remote`
+          : 'Upload your local commits to the remote'
       case 'publish':
-        return `Create ${branch} on ${remote} and start tracking it`
+        return `Create this branch on ${remote} and start tracking it`
       case 'force-push':
-        return `Careful — overwrites ${sync.upstream} with your history`
+        return 'Careful — overwrites the remote with your history'
     }
   }
 
@@ -125,6 +145,14 @@ export function SyncButton({
       <Icon.Download size={15} />
     )
 
+  // Snapshot the main button's resting width, then dispatch. Every action path
+  // (primary click, menu item, force-push confirm) goes through here so the
+  // pill is pinned from a known resting size whichever way the op was started.
+  const begin = (action: SyncAction) => {
+    if (mainRef.current) restWidth.current = mainRef.current.offsetWidth
+    onAction(action)
+  }
+
   // Each item carries a one-line explanation under its label — the same
   // title+sub pattern as the conflict-resolve menu — so the choice is clear
   // without reaching for the git docs. The sub comes from `describe` (shared
@@ -136,7 +164,7 @@ export function SyncButton({
       onClick={() => {
         setOpen(false)
         if (action === 'force-push') setConfirmForce(true)
-        else onAction(action)
+        else begin(action)
       }}
     >
       <span className="icon-muted" style={{ display: 'flex' }}>
@@ -153,10 +181,16 @@ export function SyncButton({
     <>
       <div className="sync">
         <button
+          ref={mainRef}
           className="pill sync__main"
           disabled={busy}
           data-tip={describe(primary)}
-          onClick={() => onAction(primary)}
+          style={
+            running !== null && restWidth.current !== null
+              ? { width: restWidth.current }
+              : undefined
+          }
+          onClick={() => begin(primary)}
         >
           {/* Determinate fill while the running action reports progress. */}
           {running !== null && progress !== null && (
@@ -237,7 +271,7 @@ export function SyncButton({
           confirmLabel="Force push"
           onConfirm={() => {
             setConfirmForce(false)
-            onAction('force-push')
+            begin('force-push')
           }}
           onCancel={() => setConfirmForce(false)}
         />
