@@ -21,7 +21,7 @@ import { pluralize, splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { conflictActionLabels } from '@/lib/merge'
 import { usePersistentState } from '@/lib/persist'
-import { pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
+import { PIERRE_SURFACE_CSS, pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
 
 interface Props {
   repoPath: string
@@ -96,7 +96,9 @@ export function ConflictPanel({
         hunkSeparators: 'line-info-basic',
         lineDiffType: 'word',
         disableFileHeader: true,
-        stickyHeader: false
+        stickyHeader: false,
+        // Lift the editor surface to our app background (see PIERRE_SURFACE_CSS).
+        unsafeCSS: PIERRE_SURFACE_CSS
       }) satisfies BaseDiffOptions,
     [theme]
   )

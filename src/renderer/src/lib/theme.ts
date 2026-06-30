@@ -11,17 +11,24 @@ import { useCallback, useEffect, useState } from 'react'
 export type ThemePref = 'system' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
-// The @pierre/diffs syntax theme for each resolved UI theme. We use VS Code's
-// stock Light+/Dark+ — an industry-standard palette (the editor default, also
-// adopted by Avalonia and others) most developers already read code in. They
-// also sit flush with our chrome: `light-plus` is #fff (= our light --bg), and
-// `dark-plus` is #1e1e1e — a hair off our dark --bg (#1b1c20), where stock
-// `pierre-dark`'s near-black #0a0a0a read far darker than the rest of the UI.
-// Centralized so every pierre surface (diff, blame, conflicts) picks the same
-// theme — change it here, not per component.
-export function pierreThemeFor(theme: ResolvedTheme): 'light-plus' | 'dark-plus' {
-  return theme === 'light' ? 'light-plus' : 'dark-plus'
+export function pierreThemeFor(theme: ResolvedTheme): 'pierre-light' | 'pierre-dark' {
+  return theme === 'light' ? 'pierre-light' : 'pierre-dark'
 }
+
+// Pin pierre's editor surface to our app background. The pierre themes hardcode
+// a near-black editor background (#0a0a0a) that reads far darker than the rest
+// of the dark UI; pierre derives every diff tint (context, addition, deletion,
+// separators, the empty-side hatch) from one variable — `--diffs-bg` — via
+// color-mix. Re-seed just that variable, plus the host fill, with our own
+// `--bg` (the same surface the commit fields and list filters sit on), and the
+// whole palette re-mixes to match the UI while pierre's syntax tokens and git
+// add/del colors (separate variables) stay exactly as the theme authored them.
+//
+// Fed through pierre's `unsafeCSS`, which lands in its last cascade layer
+// (`@layer unsafe`), so it beats the theme's own `:host` background inside the
+// shadow root. `--bg` inherits across the shadow boundary, so it tracks the
+// active theme (light's #fff already equals our light --bg, so it's a no-op).
+export const PIERRE_SURFACE_CSS = ':host{--diffs-bg:var(--bg);background-color:var(--bg)}'
 
 /** A selectable theme: its label, one-line description and trigger glyph.
  *  Centralized so the toolbar switcher and Settings → Appearance show identical

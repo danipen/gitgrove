@@ -16,7 +16,7 @@ import {
 } from '@/lib/blame'
 import { splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
-import { pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
+import { PIERRE_SURFACE_CSS, pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import { Avatar } from './Avatar'
 
@@ -257,7 +257,9 @@ export function BlamePane({
       // Drop Pierre's default top inset (DEFAULT_CODE_VIEW_LAYOUT adds
       // paddingTop + an above-first-item gap) so the source starts flush at the
       // top — no empty band above line 1. Keep a little bottom breathing room.
-      layout: { paddingTop: 0, paddingBottom: 8, gap: 0 }
+      layout: { paddingTop: 0, paddingBottom: 8, gap: 0 },
+      // Lift the editor surface to our app background (see PIERRE_SURFACE_CSS).
+      unsafeCSS: PIERRE_SURFACE_CSS
     }),
     [theme]
   )
