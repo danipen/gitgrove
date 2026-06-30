@@ -26,21 +26,28 @@
 /* ── Dark theme (default) ─────────────────────────────────────────────────── */
 :root,
 :root[data-theme='dark'] {
-  /* Surfaces */
-  --bg: #0c0d10;
-  --bg-panel: #121319;
-  --bg-elevated: #181a22;
-  --bg-hover: #1e2129;
-  --bg-active: #262a35;
-  --border: #23262f;
-  --border-strong: #2f333e;
+  /* Surfaces — lifted off pure black. The reference desktop apps (VS Code, Chrome,
+     Calendar) sit their darkest reading surface around #1e1e1e, not near-black; a
+     comfortable dark theme reads as a deep neutral grey, not a void. The ramp keeps
+     its old steps (bg < panel < elevated < hover < active) but starts higher, with
+     only a faint cool cast so it stays calm and warm rather than icy. */
+  --bg: #16171b;
+  --bg-panel: #212329;
+  --bg-elevated: #282a32;
+  --bg-hover: #2f323c;
+  --bg-active: #383c47;
+  --border: #31343e;
+  --border-strong: #3d414c;
   /* Checkerboard square behind transparent image regions (image diff viewer). */
   --img-checker: rgba(255, 255, 255, 0.07);
 
   /* Text */
   --fg: #e7e9ee;
   --fg-muted: #9aa0ad;
-  --fg-faint: #6b707c;
+  /* Secondary text (commit times, toolbar pill captions, file-history dates).
+     Kept quieter than --fg-muted but lifted to clear ~WCAG-AA on the (lifted)
+     dark surfaces — at the old #6b707c it fell to ~3:1 and read too dim. */
+  --fg-faint: #868b97;
   /* Directory prefix on a file path: softer than the filename, but legible.
      Tuned per theme — dark needs more lift to stay readable on the dark panel;
      light needs to stay faint enough to read clearly softer than the name. */
@@ -52,6 +59,12 @@
   --accent-border: rgba(91, 140, 255, 0.5);
   --on-accent: #0b0d12;
   --accent-glow: rgba(91, 140, 255, 0.25);
+  /* Destructive-action surface (danger button fill). Deliberately deeper than
+     --st-deleted: the status red is tuned to read as *text* on dark surfaces
+     (light enough for that), which is too light to carry white button text —
+     so the button gets its own darker red that clears AA on white (#da3633 ≈
+     4.6:1). The two reds serve opposite contrast needs, hence the split token. */
+  --danger: #da3633;
 
   /* Git status colors */
   --st-added: #3fb950;
@@ -70,19 +83,19 @@
      (same as light) — so it reads as a soft shadow tucked behind, not a lighter
      halo; the lifted ring (--pr-pill-ring) keeps the lip legible on the dark
      popover even though the fill difference is subtle. */
-  --pr-pill-bg: #262a35;
-  --pr-pill-ring: #3a3f4c;
-  --pr-stack-bg: #20242e;
+  --pr-pill-bg: #383c47;
+  --pr-pill-ring: #4b505c;
+  --pr-stack-bg: #30333d;
 
   /* Themed chrome details */
-  --scrollbar-thumb: #2c2f39;
-  --scrollbar-thumb-hover: #3a3e4a;
-  --toolbar-grad-top: #14161d;
-  --toolbar-grad-bottom: #101218;
-  --welcome-grad-top: #16181f;
-  --welcome-grad-bottom: #0c0d10;
-  --commit-divider: rgba(35, 38, 47, 0.6);
-  --popover-shadow: 0 16px 48px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  --scrollbar-thumb: #3a3e48;
+  --scrollbar-thumb-hover: #4a4f5a;
+  --toolbar-grad-top: #25282f;
+  --toolbar-grad-bottom: #1d1f25;
+  --welcome-grad-top: #24262e;
+  --welcome-grad-bottom: #1b1c20;
+  --commit-divider: rgba(60, 64, 74, 0.6);
+  --popover-shadow: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 0, 0, 0.25);
 
   /* @pierre/trees overrides (custom properties pierce the shadow root).
      The library defaults use light-dark(), which the shadow root resolves to
@@ -133,6 +146,10 @@
   --accent-border: rgba(47, 109, 246, 0.45);
   --on-accent: #ffffff;
   --accent-glow: rgba(47, 109, 246, 0.22);
+  /* Danger button fill (see dark palette). On light it matches the status red
+     — white already clears AA on it (~5.4:1) — but stays its own token so the
+     two themes' danger surfaces are tuned independently. */
+  --danger: #cf222e;
 
   /* Git status colors — tuned darker for contrast on light surfaces */
   --st-added: #1a7f37;

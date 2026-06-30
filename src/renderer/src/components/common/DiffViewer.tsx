@@ -25,7 +25,7 @@ import {
   listBlockLines,
   listChangeBlocks
 } from '@/lib/staging'
-import type { ResolvedTheme } from '@/lib/theme'
+import { PIERRE_SURFACE_CSS, pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import { ConfirmDialog } from './Dialog'
 import { useStagingDrag } from './useStagingDrag'
@@ -279,7 +279,7 @@ function DiffViewerImpl({
   const diffOptions = useMemo(
     () =>
       ({
-        theme: theme === 'light' ? 'pierre-light' : 'pierre-dark',
+        theme: pierreThemeFor(theme),
         themeType: theme,
         diffStyle: mode,
         overflow: wrap ? 'wrap' : 'scroll',
@@ -287,7 +287,9 @@ function DiffViewerImpl({
         hunkSeparators: 'line-info-basic',
         lineDiffType: 'word',
         disableFileHeader: true,
-        stickyHeader: false
+        stickyHeader: false,
+        // Lift the editor surface to our app background (see PIERRE_SURFACE_CSS).
+        unsafeCSS: PIERRE_SURFACE_CSS
       }) satisfies BaseDiffOptions,
     [theme, mode, wrap]
   )
@@ -395,7 +397,7 @@ function DiffViewerImpl({
       onLineNumberClick,
       // Drag-paint: each line the pointer crosses mid-stroke (see useStagingDrag).
       onLineEnter,
-      unsafeCSS: `${LINE_CHECKBOX_CSS}${GUTTER_POLISH_CSS}${STAGE_BAR_SPAN_CSS}${buildExcludedDiffCss(excludedLines)}`
+      unsafeCSS: `${PIERRE_SURFACE_CSS}${LINE_CHECKBOX_CSS}${GUTTER_POLISH_CSS}${STAGE_BAR_SPAN_CSS}${buildExcludedDiffCss(excludedLines)}`
     }
   }, [blocks, diffOptions, onLineNumberClick, onLineEnter, selection])
 
