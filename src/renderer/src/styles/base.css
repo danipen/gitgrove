@@ -31,7 +31,7 @@
      comfortable dark theme reads as a deep neutral grey, not a void. The ramp keeps
      its old steps (bg < panel < elevated < hover < active) but starts higher, with
      only a faint cool cast so it stays calm and warm rather than icy. */
-  --bg: #1b1c20;
+  --bg: #16171b;
   --bg-panel: #212329;
   --bg-elevated: #282a32;
   --bg-hover: #2f323c;
