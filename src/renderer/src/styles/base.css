@@ -44,7 +44,10 @@
   /* Text */
   --fg: #e7e9ee;
   --fg-muted: #9aa0ad;
-  --fg-faint: #6b707c;
+  /* Secondary text (commit times, toolbar pill captions, file-history dates).
+     Kept quieter than --fg-muted but lifted to clear ~WCAG-AA on the (lifted)
+     dark surfaces — at the old #6b707c it fell to ~3:1 and read too dim. */
+  --fg-faint: #868b97;
   /* Directory prefix on a file path: softer than the filename, but legible.
      Tuned per theme — dark needs more lift to stay readable on the dark panel;
      light needs to stay faint enough to read clearly softer than the name. */
