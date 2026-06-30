@@ -59,6 +59,12 @@
   --accent-border: rgba(91, 140, 255, 0.5);
   --on-accent: #0b0d12;
   --accent-glow: rgba(91, 140, 255, 0.25);
+  /* Destructive-action surface (danger button fill). Deliberately deeper than
+     --st-deleted: the status red is tuned to read as *text* on dark surfaces
+     (light enough for that), which is too light to carry white button text —
+     so the button gets its own darker red that clears AA on white (#da3633 ≈
+     4.6:1). The two reds serve opposite contrast needs, hence the split token. */
+  --danger: #da3633;
 
   /* Git status colors */
   --st-added: #3fb950;
@@ -140,6 +146,10 @@
   --accent-border: rgba(47, 109, 246, 0.45);
   --on-accent: #ffffff;
   --accent-glow: rgba(47, 109, 246, 0.22);
+  /* Danger button fill (see dark palette). On light it matches the status red
+     — white already clears AA on it (~5.4:1) — but stays its own token so the
+     two themes' danger surfaces are tuned independently. */
+  --danger: #cf222e;
 
   /* Git status colors — tuned darker for contrast on light surfaces */
   --st-added: #1a7f37;

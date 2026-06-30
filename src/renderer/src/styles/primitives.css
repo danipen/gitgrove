@@ -769,8 +769,8 @@
   color: var(--fg);
 }
 .btn-danger {
-  background: var(--st-deleted);
-  border-color: var(--st-deleted);
+  background: var(--danger);
+  border-color: var(--danger);
   color: #fff;
   box-shadow: none;
 }
