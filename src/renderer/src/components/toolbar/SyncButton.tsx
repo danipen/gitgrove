@@ -70,11 +70,17 @@ export function SyncButton({
 
   // A one-line read of where the branch stands relative to its remote, shown
   // under the action so the button explains itself at a glance. While an op is
-  // running we surface the upstream it's talking to instead of a stale state.
+  // running we show its direction against the short remote name ("from origin" /
+  // "to origin") rather than the full upstream ref — a long branch
+  // (origin/readd/unity-version-control-benchmarks) would otherwise slam the
+  // pill to its max width and clip mid-ref.
   const remote = sync.remotes[0]
+  const outbound = running === 'push' || running === 'publish' || running === 'force-push'
   const sub =
     running !== null
-      ? (sync.upstream ?? remote)
+      ? outbound
+        ? `to ${remote}`
+        : `from ${remote}`
       : primary === 'publish'
         ? `Publish to ${remote}`
         : primary === 'pull'
