@@ -25,7 +25,7 @@ import {
   listBlockLines,
   listChangeBlocks
 } from '@/lib/staging'
-import type { ResolvedTheme } from '@/lib/theme'
+import { pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import { ConfirmDialog } from './Dialog'
 import { useStagingDrag } from './useStagingDrag'
@@ -279,7 +279,7 @@ function DiffViewerImpl({
   const diffOptions = useMemo(
     () =>
       ({
-        theme: theme === 'light' ? 'pierre-light' : 'pierre-dark',
+        theme: pierreThemeFor(theme),
         themeType: theme,
         diffStyle: mode,
         overflow: wrap ? 'wrap' : 'scroll',

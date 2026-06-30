@@ -11,6 +11,18 @@ import { useCallback, useEffect, useState } from 'react'
 export type ThemePref = 'system' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
+// The @pierre/diffs syntax theme for each resolved UI theme. We use VS Code's
+// stock Light+/Dark+ — an industry-standard palette (the editor default, also
+// adopted by Avalonia and others) most developers already read code in. They
+// also sit flush with our chrome: `light-plus` is #fff (= our light --bg), and
+// `dark-plus` is #1e1e1e — a hair off our dark --bg (#1b1c20), where stock
+// `pierre-dark`'s near-black #0a0a0a read far darker than the rest of the UI.
+// Centralized so every pierre surface (diff, blame, conflicts) picks the same
+// theme — change it here, not per component.
+export function pierreThemeFor(theme: ResolvedTheme): 'light-plus' | 'dark-plus' {
+  return theme === 'light' ? 'light-plus' : 'dark-plus'
+}
+
 /** A selectable theme: its label, one-line description and trigger glyph.
  *  Centralized so the toolbar switcher and Settings → Appearance show identical
  *  copy. `icon` is typed against the icons module without importing it, keeping

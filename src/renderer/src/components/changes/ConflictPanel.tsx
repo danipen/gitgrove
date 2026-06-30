@@ -21,7 +21,7 @@ import { pluralize, splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { conflictActionLabels } from '@/lib/merge'
 import { usePersistentState } from '@/lib/persist'
-import type { ResolvedTheme } from '@/lib/theme'
+import { pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
 
 interface Props {
   repoPath: string
@@ -89,7 +89,7 @@ export function ConflictPanel({
   const diffOptions = useMemo(
     () =>
       ({
-        theme: theme === 'light' ? 'pierre-light' : 'pierre-dark',
+        theme: pierreThemeFor(theme),
         themeType: theme,
         diffStyle: 'split',
         diffIndicators: 'bars',

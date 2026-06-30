@@ -16,7 +16,7 @@ import {
 } from '@/lib/blame'
 import { splitPath } from '@/lib/format'
 import { Icon } from '@/lib/icons'
-import type { ResolvedTheme } from '@/lib/theme'
+import { pierreThemeFor, type ResolvedTheme } from '@/lib/theme'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import { Avatar } from './Avatar'
 
@@ -247,7 +247,7 @@ export function BlamePane({
 
   const codeOptions = useMemo<CodeViewOptions<undefined>>(
     () => ({
-      theme: theme === 'light' ? 'pierre-light' : 'pierre-dark',
+      theme: pierreThemeFor(theme),
       themeType: theme,
       overflow: 'scroll',
       disableFileHeader: true,
