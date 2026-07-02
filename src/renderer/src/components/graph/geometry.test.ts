@@ -11,7 +11,8 @@ import {
   hitTest,
   neighborNode,
   nodeX,
-  nodeY
+  nodeY,
+  rowEndpoint
 } from './geometry'
 import { type GraphInput, layoutGraph } from './layout'
 
@@ -151,6 +152,54 @@ describe('graph geometry', () => {
     expect(mid).toBeLessThan(1)
     expect(captionAlpha(0.85)).toBe(0)
     expect(captionAlpha(0.2)).toBe(0)
+  })
+
+  test('Home/End targets: the oldest and newest commit of a node’s row', () => {
+    const layout = sampleLayout()
+    const m = layout.nodeByHash.get('m')
+    const b = layout.nodeByHash.get('b')
+    const f = layout.nodeByHash.get('f')
+    if (!m || !b || !f) throw new Error('missing node')
+    expect(rowEndpoint(layout, m, 'first').commit.hash).toBe('a')
+    expect(rowEndpoint(layout, b, 'last').commit.hash).toBe('m')
+    // Alone on its row: both endpoints are the node itself.
+    expect(rowEndpoint(layout, f, 'first').commit.hash).toBe('f')
+    expect(rowEndpoint(layout, f, 'last').commit.hash).toBe('f')
+  })
+
+  test('Home/End stay inside the branch when two chains pack one lane', () => {
+    // feat1 (f1–f2) lives early, feat2 (g1–g2) much later — far enough apart
+    // that the packer parks both on lane 1. Home/End must walk the BRANCH,
+    // never cross into the neighbor chain sharing the lane.
+    const input: GraphInput = {
+      commits: [
+        commit('m', ['j', 'g2'], 'HEAD -> main'),
+        commit('g2', ['g1'], 'feat2'),
+        commit('g1', ['j']),
+        commit('j', ['i']),
+        commit('i', ['h']),
+        commit('h', ['e']),
+        commit('e', ['d']),
+        commit('d', ['c']),
+        commit('c', ['b', 'f2']),
+        commit('f2', ['f1'], 'feat1'),
+        commit('f1', ['a']),
+        commit('b', ['a']),
+        commit('a', [])
+      ],
+      remotes: [],
+      headBranch: 'main',
+      detached: false,
+      defaultBranch: 'main'
+    }
+    const layout = layoutGraph(input)
+    const f1 = layout.nodeByHash.get('f1')
+    const g2 = layout.nodeByHash.get('g2')
+    if (!f1 || !g2) throw new Error('missing node')
+    // The premise: both feature chains share a packed lane.
+    expect(f1.row).toBe(g2.row)
+    expect(rowEndpoint(layout, g2, 'first').commit.hash).toBe('g1')
+    expect(rowEndpoint(layout, f1, 'last').commit.hash).toBe('f2')
   })
 
   test('contentSize reserves a column for the WIP node', () => {

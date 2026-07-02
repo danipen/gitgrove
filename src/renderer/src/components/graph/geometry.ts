@@ -230,6 +230,28 @@ export function hitTest(
   return null
 }
 
+/** The oldest ('first', leftmost) or newest ('last', rightmost) commit of a
+ *  node's BRANCH — the Home/End keyboard targets. A packed row position can
+ *  host several chains, so the walk is bounded by the node's own container
+ *  span (its GraphRow), never the whole lane. Returns the node itself when
+ *  it's alone in its container. */
+export function rowEndpoint(
+  layout: GraphLayout,
+  node: GraphNode,
+  edge: 'first' | 'last'
+): GraphNode {
+  const container = layout.rows.find(
+    (r) => r.index === node.row && r.startColumn <= node.column && node.column <= r.endColumn
+  )
+  let best = node
+  for (const n of layout.nodes) {
+    if (n.row !== node.row) continue
+    if (container && (n.column < container.startColumn || n.column > container.endColumn)) continue
+    if (edge === 'first' ? n.column < best.column : n.column > best.column) best = n
+  }
+  return best
+}
+
 /**
  * Keyboard navigation target from `node`: left/right walk the same row (older/
  * newer), up/down jump to the column-nearest node one row away.

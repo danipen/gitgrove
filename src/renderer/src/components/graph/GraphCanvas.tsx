@@ -20,6 +20,7 @@ import {
   NODE_R,
   nodeX,
   nodeY,
+  rowEndpoint,
   toWorldX,
   toWorldY,
   type View
@@ -558,9 +559,20 @@ export function GraphCanvas({
       fit()
       return
     }
-    if (e.key === 'Home') {
+    if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault()
-      jumpToHead()
+      const current = s.selectedHash ? s.layout.nodeByHash.get(s.selectedHash) : null
+      if (current) {
+        // Within the selected commit's branch: Home → its oldest commit,
+        // End → its newest.
+        const target = rowEndpoint(s.layout, current, e.key === 'Home' ? 'first' : 'last')
+        onSelectNode(target)
+        reveal(target.commit.hash)
+      } else if (e.key === 'Home') {
+        // Nothing selected: Home keeps its classic meaning — frame the
+        // home changeset.
+        jumpToHead()
+      }
       return
     }
     if (
