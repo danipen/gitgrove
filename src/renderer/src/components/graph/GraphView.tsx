@@ -78,9 +78,10 @@ export function GraphView({
   // View shaping (persisted): what makes busy trunk-based repos readable.
   const [structureOnly, setStructureOnly] = usePersistentState('gg.graphStructureOnly', false)
   const [hideMerged, setHideMerged] = usePersistentState('gg.graphHideMerged', false)
-  /** Backport twins (default on): the opt-out lives in the View popover for
-   *  anyone who finds the dots noisy — never an opt-in, or nobody finds it. */
-  const [twins, setTwins] = usePersistentState('gg.graphTwins', true)
+  /** Backport twins stay on unless hidden: phrased as a hide-option (like
+   *  hideMerged) so the popover's default state is all-unchecked and the View
+   *  chip only counts real changes — never an opt-in, or nobody finds it. */
+  const [hideTwins, setHideTwins] = usePersistentState('gg.graphHideTwins', false)
   const [search, setSearch] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
@@ -129,9 +130,9 @@ export function GraphView({
   // patch-id pipeline — a repo without release lines pays nothing. An empty
   // set (opted out) short-circuits the pipeline entirely.
   const linkable = useMemo(() => {
-    if (!twins) return new Set<number>()
+    if (hideTwins) return new Set<number>()
     return linkableChains(layout.rows, input.defaultBranch, releaseOverrides)
-  }, [twins, layout, input, releaseOverrides])
+  }, [hideTwins, layout, input, releaseOverrides])
   const links = useBackportLinks(repoPath, layout, linkable)
 
   const authors = useMemo((): AuthorOption[] => {
@@ -332,8 +333,8 @@ export function GraphView({
         onStructureOnly={setStructureOnly}
         hideMerged={hideMerged}
         onHideMerged={setHideMerged}
-        twins={twins}
-        onTwins={setTwins}
+        hideTwins={hideTwins}
+        onHideTwins={setHideTwins}
         focus={focus}
         onFocusHops={(hops) => focus && focusOn(focus.name, hops)}
         onExitFocus={exitFocus}
