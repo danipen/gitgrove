@@ -14,6 +14,7 @@ import { avatarImageFor } from './avatars'
 import {
   CAPSULE_HALF_H,
   CAPSULE_PAD,
+  CAPTION_HOME_MAX_SCREEN_W,
   CAPTION_MAX_SCREEN_W,
   CAPTION_SLOT_AIR,
   captionAlpha,
@@ -491,18 +492,118 @@ function drawNodes(
     ctx.beginPath()
     ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
     ctx.stroke()
-    if (isSelected || node.isHead) {
-      // Outer ring: accent — "you are here" (HEAD) and "this is picked".
+    if (isSelected) {
+      // Outer accent ring: "this is picked" — selection only. The home
+      // changeset wears the house badge below instead, so being at home
+      // never *looks* like a selection.
       ctx.lineWidth = 2
       ctx.strokeStyle = palette.accent
       ctx.beginPath()
       ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2)
       ctx.stroke()
     }
+    if (node.isHead) drawHomeBadge(ctx, scene, x, y)
 
     if (showText) drawNodeText(ctx, scene, node, x, y, labelBoxes)
     ctx.globalAlpha = 1
   }
+}
+
+/** "You are here": a small accent house pinned to the home changeset's
+ *  shoulder. A badge, not a ring — the outer accent ring means "selected",
+ *  and the two states must never look alike. It behaves like a map pin:
+ *  drawn in SCREEN space with a size floor, so it stays findable zoomed far
+ *  out (exactly when "where is home?" matters most) and never balloons
+ *  zoomed in. */
+function drawHomeBadge(
+  ctx: CanvasRenderingContext2D,
+  scene: SceneState,
+  x: number,
+  y: number
+): void {
+  const { view, dpr, palette } = scene
+  // Tracks the zoom: grows with the nodes when zoomed in, clamped on both
+  // ends so it stays findable yet never balloons.
+  const r = Math.min(13, Math.max(4, 8 * view.scale))
+  const nodeScreenR = NODE_R * view.scale
+  // Once the badge would outgrow the node it marks, the metaphor breaks (an
+  // empty ring dwarfing a 5px node reads as a glitch). Below that point the
+  // marker BECOMES the node: a solid accent dot in its place — avatars are
+  // an unreadable blur at these zooms, and a filled dot in the home spot is
+  // exactly how a map marks "you are here" at country scale.
+  if (r >= nodeScreenR) {
+    const cx = x * view.scale + view.x
+    const cy = y * view.scale + view.y
+    ctx.save()
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.beginPath()
+    ctx.arc(cx, cy, Math.max(3, nodeScreenR + 1.5), 0, Math.PI * 2)
+    ctx.fillStyle = palette.accent
+    ctx.fill()
+    // Hairline background rim so the dot separates from the branch spine.
+    ctx.lineWidth = 1
+    ctx.strokeStyle = palette.bg
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+  // Anchored to the node's top-right shoulder; as the node shrinks the badge
+  // converges onto it, pin-style. Snapped to the half-device-pixel grid: the
+  // glyph is mirror-symmetric, but antialiasing renders it symmetric only
+  // when its axis lands on the grid — measured: a 0.3px fractional anchor
+  // skews mirrored pixel coverage by up to ~33% (a lopsided roof), while
+  // 0 and 0.5 offsets rasterize exactly.
+  const snap = (v: number) => Math.round(v * dpr * 2) / (dpr * 2)
+  const sx = snap(x * view.scale + view.x + NODE_R * view.scale * 0.8)
+  const sy = snap(y * view.scale + view.y - NODE_R * view.scale * 0.8)
+  ctx.save()
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  // Below this the house is antialiasing soup: a solid accent mini-pin on
+  // the shoulder instead — filled, never a hollow ring, which reads broken.
+  if (r < 5.5) {
+    ctx.beginPath()
+    ctx.arc(sx, sy, r * 0.8, 0, Math.PI * 2)
+    ctx.fillStyle = palette.accent
+    ctx.fill()
+    ctx.lineWidth = 1
+    ctx.strokeStyle = palette.bg
+    ctx.stroke()
+    ctx.restore()
+    return
+  }
+  // Plastic-style badge: a LIGHT disc with an accent ring and an accent
+  // glyph. Dark-on-light stays crisp at badge sizes where a light glyph on
+  // a solid accent disc turns to mush.
+  ctx.beginPath()
+  ctx.arc(sx, sy, r, 0, Math.PI * 2)
+  ctx.fillStyle = palette.labelBg
+  ctx.fill()
+  ctx.lineWidth = Math.max(1, r * 0.2)
+  ctx.strokeStyle = palette.accent
+  ctx.stroke()
+  // The home glyph — the SAME single-outline house as Icon.Home in
+  // lib/icons.tsx (walls, roof, door notched into the bottom edge),
+  // recentered and scaled so the house spans about the disc's radius —
+  // badge glyphs need more surrounding air than a bare toolbar icon.
+  // Keep the two in sync: one symbol, two sizes.
+  const s = r / 13
+  ctx.strokeStyle = palette.accent
+  ctx.lineWidth = Math.max(1.1, 1.7 * s)
+  ctx.lineJoin = 'round'
+  ctx.lineCap = 'round'
+  ctx.beginPath()
+  ctx.moveTo(sx - 6.5 * s, sy + 6.5 * s)
+  ctx.lineTo(sx - 6.5 * s, sy - 2 * s)
+  ctx.lineTo(sx, sy - 6.5 * s)
+  ctx.lineTo(sx + 6.5 * s, sy - 2 * s)
+  ctx.lineTo(sx + 6.5 * s, sy + 6.5 * s)
+  ctx.lineTo(sx + 1.7 * s, sy + 6.5 * s)
+  ctx.lineTo(sx + 1.7 * s, sy + 2.8 * s)
+  ctx.lineTo(sx - 1.7 * s, sy + 2.8 * s)
+  ctx.lineTo(sx - 1.7 * s, sy + 6.5 * s)
+  ctx.closePath()
+  ctx.stroke()
+  ctx.restore()
 }
 
 /** Caption text (commit subjects, the WIP "uncommitted") drawn in SCREEN space
@@ -522,14 +623,15 @@ function drawCaption(
    *  capsule edge (captionCenterOffset), so the margin between capsule and
    *  text is identical at every zoom instead of scaling with it. */
   rowCenterY: number,
-  maxWorldWidth: number
+  maxWorldWidth: number,
+  maxScreenCap = CAPTION_MAX_SCREEN_W
 ): number {
   const { view, dpr, palette } = scene
   // All-or-nothing (see geometry.ts): the whole layer fades below the zoom
   // where the tightest slot goes unreadable — never caption by caption.
   const reveal = captionAlpha(view.scale)
   if (reveal === 0) return 0
-  const maxScreenWidth = Math.min(maxWorldWidth * view.scale, CAPTION_MAX_SCREEN_W)
+  const maxScreenWidth = Math.min(maxWorldWidth * view.scale, maxScreenCap)
   if (maxScreenWidth <= 0) return 0
   ctx.save()
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -565,10 +667,22 @@ function drawNodeText(
   if (wip && wip.row === node.row && wip.column > node.column) {
     gap = Math.min(gap, wip.column - node.column)
   }
-  const maxWidth = Math.min(gap * COL_W - CAPTION_SLOT_AIR, COL_W * 3.4)
+  // The home changeset skips the cosmetic 3.4-column cap and gets a roomier
+  // screen cap: its subject is the one users look for most, and truncating it
+  // beside empty canvas reads as a bug. Real neighbors still bound it (gap).
+  const slot = gap * COL_W - CAPTION_SLOT_AIR
+  const maxWidth = node.isHead ? slot : Math.min(slot, COL_W * 3.4)
   captionWidths.set(
     node.commit.hash,
-    drawCaption(ctx, scene, node.commit.subject, x - NODE_R, y, maxWidth)
+    drawCaption(
+      ctx,
+      scene,
+      node.commit.subject,
+      x - NODE_R,
+      y,
+      maxWidth,
+      node.isHead ? CAPTION_HOME_MAX_SCREEN_W : CAPTION_MAX_SCREEN_W
+    )
   )
   const tags = node.refs.filter((r) => r.isTag)
   if (tags.length > 0) {

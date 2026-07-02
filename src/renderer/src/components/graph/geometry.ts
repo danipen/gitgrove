@@ -51,6 +51,10 @@ export const CAPTION_SLOT_AIR = 10
  *    the empty canvas where edges run, instead of staying by its node. */
 export const CAPTION_MIN_SCREEN_W = 34
 export const CAPTION_MAX_SCREEN_W = 160
+/** The home changeset ("you are here") earns a fuller caption: its subject is
+ *  the one users look for most, so its cap is roomier — still bounded by real
+ *  neighbors (the gap to the next node, the WIP node), never cosmetic. */
+export const CAPTION_HOME_MAX_SCREEN_W = 260
 /** Captions are ALL-OR-NOTHING across the graph: the layer is fully on at the
  *  zoom where the TIGHTEST standard slot — two adjacent commits, one column
  *  apart — reaches CAPTION_MIN_SCREEN_W (zoom 1, by construction), and fades

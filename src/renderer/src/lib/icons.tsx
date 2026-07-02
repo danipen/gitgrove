@@ -140,6 +140,19 @@ export const Icon = {
       <path d="M18 10.4c0 4-4 3.6-6 5.2" />
     </Svg>
   ),
+  /* The home changeset ("you are here") — the SAME stroked glyph the graph
+     draws on the HEAD node's badge (render.ts drawHomeBadge): an outlined
+     house with an open-bottom door, identical proportions. Keep the two in
+     sync — they must read as one symbol. */
+  Home: (p: IconProps) => (
+    <Svg {...p}>
+      {/* One continuous outline — walls, roof, and the door as a notch cut
+          into the bottom edge. Closed so every corner joins cleanly. Sized
+          to span ~18 of the 24-unit box, like the neighboring icons — a
+          smaller path renders optically small next to them. */}
+      <path d="M3.2 21.3V9.8L12 3.7l8.8 6.1v11.5h-6.5v-5h-4.6v5Z" />
+    </Svg>
+  ),
   Repo: (p: IconProps) => (
     <Svg {...p}>
       <path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H18a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H6.5A1.5 1.5 0 0 1 5 18.5z" />

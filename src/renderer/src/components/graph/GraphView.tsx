@@ -278,11 +278,11 @@ export function GraphView({
             <button
               type="button"
               className="icon-btn"
-              aria-label="Go to current commit"
-              data-tip="Go to current commit (Home)"
+              aria-label="Go to home changeset"
+              data-tip="Go to home changeset (Home)"
               onClick={() => controls.current?.jumpToHead()}
             >
-              <Icon.Branch size={15} />
+              <Icon.Home size={15} />
             </button>
             <button
               type="button"
