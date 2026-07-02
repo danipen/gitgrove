@@ -84,6 +84,31 @@ export function parseRawNumstat(out: string): ChangedFile[] {
   return files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0))
 }
 
+/**
+ * The files changed across a commit RANGE (`base` → `head`) — the Graph tab's
+ * branch-changes view. A null `base` (a branch starting at a root commit)
+ * diffs against the empty tree. Same one-spawn raw+numstat parse as
+ * getCommitFiles.
+ */
+export async function getRangeFiles(
+  repoPath: string,
+  base: string | null,
+  head: string
+): Promise<ChangedFile[]> {
+  const out = await runGit(repoPath, [
+    'diff-tree',
+    '--no-commit-id',
+    '-M',
+    '-r',
+    '-z',
+    '--raw',
+    '--numstat',
+    base ?? EMPTY_TREE,
+    head
+  ])
+  return parseRawNumstat(out)
+}
+
 export async function getCommitFiles(repoPath: string, hash: string): Promise<ChangedFile[]> {
   // Diff against the first parent so merge commits report only what the merge
   // introduced on top of the mainline rather than the union of every parent.

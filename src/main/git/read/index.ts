@@ -16,8 +16,9 @@ export {
   resolveRepoRoot,
   runGit
 } from './core'
-export { getCommitDiff, getWorkingDiff } from './diff'
-export { getCommitFiles, parseRawNumstat } from './files'
+export { getCommitDiff, getRangeDiff, getWorkingDiff } from './diff'
+export { getCommitFiles, getRangeFiles, parseRawNumstat } from './files'
+export { getGraphLog } from './graph'
 export { getCommitIndex, getFileHistory, getLog, getUnpushedCommits } from './log'
 export {
   countConflictMarkers,

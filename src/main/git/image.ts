@@ -141,18 +141,32 @@ export async function loadCommitImageSides(
   file: ChangedFile,
   hasParent: boolean
 ): Promise<ImageDiffSides | null> {
+  return loadRefImageSides(repoPath, hasParent ? `${hash}^` : null, hash, file)
+}
+
+/**
+ * Image sides between two arbitrary refs — the commit case above (`hash^` →
+ * `hash`) and the Graph tab's branch-changes range (`base` → `head`). A null
+ * `oldRef` means no old side exists (root commit / chain start).
+ */
+export async function loadRefImageSides(
+  repoPath: string,
+  oldRef: string | null,
+  newRef: string,
+  file: ChangedFile
+): Promise<ImageDiffSides | null> {
   const mime = imageMimeType(file.path)
   if (!mime) return null
-  const hasOld = file.status !== 'added' && hasParent
+  const hasOld = file.status !== 'added' && oldRef !== null
   const hasNew = file.status !== 'deleted'
   const [oldSide, newSide] = await Promise.all([
-    hasOld
-      ? showFileBuffer(repoPath, `${hash}^`, file.oldPath ?? file.path).then((b) =>
+    oldRef !== null && hasOld
+      ? showFileBuffer(repoPath, oldRef, file.oldPath ?? file.path).then((b) =>
           asContents(b, mime)
         )
       : Promise.resolve(null),
     hasNew
-      ? showFileBuffer(repoPath, hash, file.path).then((b) => asContents(b, mime))
+      ? showFileBuffer(repoPath, newRef, file.path).then((b) => asContents(b, mime))
       : Promise.resolve(null)
   ])
   if (hasOld && hasNew) return packModifiedSides(oldSide, newSide)

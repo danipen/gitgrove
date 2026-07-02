@@ -5,6 +5,7 @@ import type {
   CredentialPromptRequest,
   DeviceCodeInfo,
   DiffArea,
+  GraphLogOptions,
   LogOptions,
   OpProgress,
   RemoteRepoPage,
@@ -31,14 +32,19 @@ const api: GitGroveApi = {
   unpushedCommits: (repoPath) => ipcRenderer.invoke(IPC.unpushedCommits, repoPath),
   checkout: (repoPath, branch, opts) => ipcRenderer.invoke(IPC.checkout, repoPath, branch, opts),
   log: (repoPath, options?: LogOptions) => ipcRenderer.invoke(IPC.log, repoPath, options),
+  graphLog: (repoPath, options?: GraphLogOptions) =>
+    ipcRenderer.invoke(IPC.graphLog, repoPath, options),
   commitIndex: (repoPath, hash) => ipcRenderer.invoke(IPC.commitIndex, repoPath, hash),
   fileHistory: (repoPath, path, ref) => ipcRenderer.invoke(IPC.fileHistory, repoPath, path, ref),
   blame: (repoPath, path, ref) => ipcRenderer.invoke(IPC.blame, repoPath, path, ref),
   commitFiles: (repoPath, hash) => ipcRenderer.invoke(IPC.commitFiles, repoPath, hash),
+  rangeFiles: (repoPath, base, head) => ipcRenderer.invoke(IPC.rangeFiles, repoPath, base, head),
   workingDiff: (repoPath, file: ChangedFile, area?: DiffArea) =>
     ipcRenderer.invoke(IPC.workingDiff, repoPath, file, area),
   commitDiff: (repoPath, hash, file: ChangedFile) =>
     ipcRenderer.invoke(IPC.commitDiff, repoPath, hash, file),
+  rangeDiff: (repoPath, base, head, file: ChangedFile) =>
+    ipcRenderer.invoke(IPC.rangeDiff, repoPath, base, head, file),
   discardFiles: (repoPath, files, untrackedPaths) =>
     ipcRenderer.invoke(IPC.discardFiles, repoPath, files, untrackedPaths),
   ignorePatterns: (repoPath, patterns) =>

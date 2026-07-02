@@ -4,7 +4,12 @@
 // context where it's cheap and safe.
 
 import type { ChangedFile, DiffArea, DiffPayload, FileStatus } from '@shared/types'
-import { imageMimeType, loadCommitImageSides, loadWorkingImageSides } from '../image'
+import {
+  imageMimeType,
+  loadCommitImageSides,
+  loadRefImageSides,
+  loadWorkingImageSides
+} from '../image'
 import { describeLfsPatch } from '../lfs-pointer'
 import { describeSubmodulePatch } from '../submodule-patch'
 import {
@@ -248,6 +253,65 @@ export async function getCommitDiff(
   if (payload.notice || payload.binary) return payload
 
   return attachCommitContents(payload, repoPath, hash, file, hasParent)
+}
+
+/**
+ * Diff of a file across a commit RANGE (`base` → `head`) — the Graph tab's
+ * branch-changes view: everything a branch did since it split off. A null
+ * `base` (a chain starting at a root commit) diffs against the empty tree.
+ * Same finalize/LFS/submodule/image/contents pipeline as getCommitDiff.
+ */
+export async function getRangeDiff(
+  repoPath: string,
+  base: string | null,
+  head: string,
+  file: ChangedFile
+): Promise<DiffPayload> {
+  const payloadBase = { path: file.path, oldPath: file.oldPath, status: file.status }
+  const paths = file.oldPath ? [file.path, file.oldPath] : [file.path]
+  let patch: string
+  try {
+    patch = await runGit(
+      repoPath,
+      ['diff', '--no-color', '-M', base ?? EMPTY_TREE, head, '--', ...paths],
+      [1]
+    )
+  } catch (e) {
+    if (e instanceof GitOutputTooLargeError) return tooLargeDiff(payloadBase)
+    throw e
+  }
+  const payload = finalizeDiff({ ...payloadBase, patch })
+  if (payload.lfs || payload.submodule) return payload
+
+  const mime = imageMimeType(file.path)
+  if (mime) {
+    const image = await loadRefImageSides(repoPath, base, head, file)
+    if (image) {
+      if (mime === 'image/svg+xml' && !payload.binary && !payload.notice) {
+        return { ...(await attachRangeContents(payload, repoPath, base, head, file)), image }
+      }
+      return { ...payload, notice: undefined, image }
+    }
+  }
+  if (payload.notice || payload.binary) return payload
+
+  return attachRangeContents(payload, repoPath, base, head, file)
+}
+
+/** Attach the full old/new text contents matching a range diff. */
+async function attachRangeContents(
+  payload: DiffPayload,
+  repoPath: string,
+  base: string | null,
+  head: string,
+  file: ChangedFile
+): Promise<DiffPayload> {
+  const oldContents =
+    file.status === 'added' || base === null
+      ? ''
+      : await showFile(repoPath, base, file.oldPath ?? file.path)
+  const newContents = file.status === 'deleted' ? '' : await showFile(repoPath, head, file.path)
+  return withContents(payload, oldContents, newContents)
 }
 
 /** Attach the full old/new text contents matching a commit diff. */

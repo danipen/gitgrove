@@ -1,0 +1,342 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Graph tab — the 2D branch explorer (GraphView.tsx, GraphCanvas.tsx,
+   GraphToolbar.tsx, GraphDetailPane.tsx). The diagram itself is a canvas;
+   everything here is the chrome around it: filter bar, popover pickers,
+   floating navigation, tooltip, and the sidebar detail pane.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── View shell (GraphView.tsx) ──────────────────────────────────────────── */
+.graph-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.graph-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Graph workspace column in App.tsx: diagram on top, shared diff pane below.
+   Hidden (not unmounted) on other tabs so pan/zoom/filter state survives. */
+.graph-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.graph-workspace--hidden {
+  display: none;
+}
+.graph-workspace__diff {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Canvas & tooltip (GraphCanvas.tsx) ──────────────────────────────────── */
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  outline: none;
+  overflow: hidden;
+}
+.graph-canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-border);
+}
+.graph-canvas__surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Hover card for a node; positioned above the node, never interactive. */
+.graph-tip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 8px));
+  max-width: 340px;
+  padding: 6px 9px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--popover-shadow);
+  pointer-events: none;
+  animation: pop-in 0.12s ease;
+}
+.graph-tip__subject {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.graph-tip__meta {
+  display: flex;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+/* Floating zoom/fit/home cluster, Plastic-style, bottom-right of the stage. */
+.graph-nav {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.graph-nav .icon-btn {
+  width: 28px;
+  height: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.graph-nav .icon-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* "Showing the latest N commits — Show more" pill, bottom center. */
+.graph-more {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 4px 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+/* Quiet corner spinner while a background refresh replaces the diagram. */
+.graph-refresh {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+}
+
+/* ── Filter bar (GraphToolbar.tsx) ───────────────────────────────────────── */
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.graph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.graph-chip:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.graph-chip.is-active {
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.graph-chip__value {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.graph-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 340px;
+  margin-left: auto;
+  padding: 0 6px 0 8px;
+  color: var(--fg-faint);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.graph-search.is-active {
+  border-color: var(--accent-border);
+}
+.graph-search input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.graph-search__count {
+  font-size: 11px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.graph-search__step {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── Filter popover pickers (GraphToolbar.tsx) ───────────────────────────── */
+.graph-picker {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+.graph-picker__list {
+  overflow-y: auto;
+  max-height: 280px;
+  padding: 2px;
+}
+.graph-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.graph-picker__item:hover {
+  background: var(--bg-hover);
+}
+.graph-picker__item input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+.graph-picker__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.graph-picker__hint {
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+/* "only" quick-pick: appears on row hover, selects just that item. */
+.graph-picker__only {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--accent);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  opacity: 0;
+}
+.graph-picker__item:hover .graph-picker__only,
+.graph-picker__only:focus-visible {
+  opacity: 1;
+}
+.graph-picker__only:hover {
+  text-decoration: underline;
+}
+.graph-picker__foot {
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.graph-picker__preset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+}
+.graph-picker__preset:hover {
+  background: var(--bg-hover);
+}
+.graph-picker__preset.is-active {
+  font-weight: 600;
+}
+.graph-picker__spacer {
+  width: 13px;
+}
+
+/* ── Sidebar detail pane (GraphDetailPane.tsx) ───────────────────────────── */
+.graph-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.graph-detail__head {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.graph-detail__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Branch-changes header: the icon disc where a commit shows its avatar. */
+.graph-detail__branch-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 50%;
+}
+.graph-detail__subject {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+.graph-detail__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+.graph-detail__author {
+  color: var(--fg-muted);
+  font-weight: 500;
+}
+.graph-detail__refs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.graph-detail__count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

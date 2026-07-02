@@ -26,6 +26,7 @@ import type {
   GitAvailability,
   GitIdentity,
   GlobalIdentity,
+  GraphLogOptions,
   IdentityScope,
   LfsHealth,
   LogOptions,
@@ -65,12 +66,15 @@ export const IPC = {
   unpushedCommits: 'repo:unpushed',
   checkout: 'repo:checkout',
   log: 'repo:log',
+  graphLog: 'repo:graph:log',
   commitIndex: 'repo:commit:index',
   fileHistory: 'repo:file-history',
   blame: 'repo:blame',
   commitFiles: 'repo:commit:files',
+  rangeFiles: 'repo:range:files',
   workingDiff: 'repo:diff:working',
   commitDiff: 'repo:diff:commit',
+  rangeDiff: 'repo:diff:range',
   // staging & commits
   discardFiles: 'repo:discard',
   ignorePatterns: 'repo:ignore',
@@ -253,6 +257,12 @@ export interface GitGroveApi {
     opts?: { changes?: BranchChangesAction }
   ): Promise<CheckoutResult>
   log(repoPath: string, options?: LogOptions): Promise<Commit[]>
+  /**
+   * The Graph tab's feed: commits reachable from any branch, remote or tag
+   * (plus HEAD), newest first in `--date-order` so every commit precedes its
+   * parents — the order the diagram's layout depends on.
+   */
+  graphLog(repoPath: string, options?: GraphLogOptions): Promise<Commit[]>
   /** How many commits sit between HEAD and `hash` (i.e. `hash`'s 0-based index
    *  in `git log HEAD`), so the History list can page far enough to reveal it.
    *  `-1` when `hash` isn't an ancestor of HEAD. */
@@ -262,8 +272,21 @@ export interface GitGroveApi {
   /** Per-line authorship for a file; no `ref` blames the working tree. */
   blame(repoPath: string, path: string, ref?: string): Promise<BlameLine[]>
   commitFiles(repoPath: string, hash: string): Promise<ChangedFile[]>
+  /**
+   * Files changed across `base..head` — the Graph tab's branch-changes view
+   * (everything a branch did since it split off). A null `base` means the
+   * branch starts at a root commit; the diff runs against the empty tree.
+   */
+  rangeFiles(repoPath: string, base: string | null, head: string): Promise<ChangedFile[]>
   workingDiff(repoPath: string, file: ChangedFile, area?: DiffArea): Promise<DiffPayload>
   commitDiff(repoPath: string, hash: string, file: ChangedFile): Promise<DiffPayload>
+  /** One file's diff across `base..head` — see rangeFiles. */
+  rangeDiff(
+    repoPath: string,
+    base: string | null,
+    head: string,
+    file: ChangedFile
+  ): Promise<DiffPayload>
   // ── Staging & commits ──
   /**
    * Discard changes so the chosen paths end up exactly as in HEAD: staged
