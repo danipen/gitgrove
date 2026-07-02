@@ -12,9 +12,15 @@ import { useFileFilter } from '@/components/common/FileFilter'
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
 import { AvatarStack } from '@/components/history/AvatarStack'
-import { CommitBody, CopyButton, DiffStat, RefChip } from '@/components/history/CommitSummary'
+import {
+  CommitBody,
+  CommitMeta,
+  CommitRefs,
+  CopyButton,
+  DiffStat
+} from '@/components/history/CommitSummary'
 import { coAuthorsOf } from '@/lib/coauthors'
-import { parseRefs, pluralize } from '@/lib/format'
+import { pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { useSpinDelay } from '@/lib/useSpinDelay'
 import type { BranchRange } from './useBranchRange'
@@ -33,8 +39,9 @@ interface Props {
   onOpenFileHistory: (path: string, mode: FileHistoryMode, baseRef: string | null) => void
 }
 
+// The shared commit grammar (see CommitSummary.tsx): subject → CommitMeta →
+// CommitBody → CommitRefs, arranged for the narrow sidebar.
 function CommitHead({ commit }: { commit: Commit }) {
-  const refs = parseRefs(commit.refs)
   return (
     <div className="graph-detail__head">
       <div className="graph-detail__title">
@@ -47,24 +54,11 @@ function CommitHead({ commit }: { commit: Commit }) {
           {commit.subject}
         </div>
       </div>
-      <div className="graph-detail__meta">
-        <span className="graph-detail__author">{commit.authorName}</span>
-        <span data-tip={new Date(commit.date).toLocaleString()}>{commit.relativeDate}</span>
-        <span className="commit-summary__sha">
-          <span className="commit__hash">{commit.shortHash}</span>
-          <CopyButton value={commit.hash} label="Copy commit SHA" />
-        </span>
-      </div>
+      <CommitMeta commit={commit} />
       {/* Keyed by hash: switching commits remounts the body, resetting its
           collapse state and re-probing overflow (see CommitBody). */}
       <CommitBody key={commit.hash} commit={commit} />
-      {refs.length > 0 && (
-        <div className="graph-detail__refs">
-          {refs.map((ref) => (
-            <RefChip key={ref.name} refItem={ref} />
-          ))}
-        </div>
-      )}
+      <CommitRefs key={`refs-${commit.hash}`} commit={commit} />
     </div>
   )
 }

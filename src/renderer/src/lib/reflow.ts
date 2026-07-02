@@ -1,7 +1,10 @@
-// Reflow a hard-wrapped commit message body for display in the graph's
-// expansion card. Bodies are conventionally wrapped at 72/80 columns; showing
-// them in a card that wraps at its own width double-wraps every paragraph
-// into ragged lines. Heuristic: a newline after a long-enough line, followed
+// Reflow a hard-wrapped commit message body for display. Bodies are
+// conventionally wrapped at 72/80 columns; showing them in a container that
+// wraps at its own width double-wraps every paragraph into ragged lines.
+// Shared by every commit-body presentation (History summary, Graph sidebar,
+// graph hover card — see CommitBody in CommitSummary.tsx), so one commit
+// reads identically everywhere.
+// Heuristic: a newline after a long-enough line, followed
 // by an ordinary continuation, was the wrap column — join them with a space.
 // Everything that looks deliberate survives: blank lines (paragraphs),
 // indented blocks, and bullet/numbered/quoted lines.

@@ -4,9 +4,10 @@
 // styles: styles/features/graph.css
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { CommitMeta } from '@/components/history/CommitSummary'
 import { stripCoAuthorTrailers } from '@/lib/coauthors'
+import { reflowMessage } from '@/lib/reflow'
 import { subscribeAvatars } from './avatars'
-import { reflowMessage } from './reflow'
 import {
   captionAlpha,
   captionCenterOffset,
@@ -608,7 +609,11 @@ export function GraphCanvas({
             paletteRef.current?.font ?? getComputedStyle(document.body).fontFamily
           )}
         >
+          {/* The shared commit grammar (see CommitSummary.tsx): subject →
+              meta → body. The subject is pixel-locked to the caption and the
+              body shows in full — the two differences this context forces. */}
           <div className="graph-tip__subject">{tooltip.node.commit.subject}</div>
+          <CommitMeta commit={tooltip.node.commit} />
           {stripCoAuthorTrailers(tooltip.node.commit.body) && (
             <div className="graph-tip__body">
               {/* Bodies come hard-wrapped at 72/80 columns; reflow joins the
@@ -616,11 +621,6 @@ export function GraphCanvas({
               {reflowMessage(stripCoAuthorTrailers(tooltip.node.commit.body))}
             </div>
           )}
-          <div className="graph-tip__meta">
-            <span className="commit__hash">{tooltip.node.commit.shortHash}</span>
-            <span>{tooltip.node.commit.authorName}</span>
-            <span>· {tooltip.node.commit.relativeDate}</span>
-          </div>
         </div>
       )}
     </div>

@@ -101,22 +101,19 @@
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+/* Same size as the shared CommitBody (history.css .commit-summary__body):
+   one commit body reads identically in every view. Unlike the panes it shows
+   in FULL (scrolling when long) — a "Show more" toggle inside a hover card
+   would defeat the card's purpose. */
 .graph-tip__body {
   margin-top: 5px;
   max-height: 180px;
   overflow-y: auto;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.5;
   color: var(--fg-muted);
   white-space: pre-wrap;
   overflow-wrap: break-word;
-}
-.graph-tip__meta {
-  display: flex;
-  gap: 6px;
-  margin-top: 5px;
-  font-size: 11px;
-  color: var(--fg-faint);
 }
 
 /* Floating zoom/fit/home cluster, Plastic-style, bottom-right of the stage. */
@@ -396,22 +393,15 @@
   font-size: 11.5px;
   color: var(--fg-faint);
 }
-.graph-detail__author {
-  color: var(--fg-muted);
-  font-weight: 500;
-}
-/* CommitBody reuse (history/CommitSummary.tsx): History indents the body
-   under its 34px avatar column; the sidebar head has no such column, so the
-   body spans the pane's full width. graph.css loads after history.css, so
-   this override wins. */
-.graph-detail .commit-summary__body-wrap {
+/* Shared commit widgets (history/CommitSummary.tsx): History indents body
+   and refs under its 34px avatar column; the sidebar head has no such column,
+   so they span the pane's full width. graph.css loads after history.css, so
+   these overrides win. */
+.graph-detail .commit-summary__body-wrap,
+.graph-detail .commit-summary__refs {
   margin-left: 0;
 }
-
-.graph-detail__refs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+.graph-detail .commit-summary__refs {
   margin-top: 8px;
 }
 .graph-detail__count {
