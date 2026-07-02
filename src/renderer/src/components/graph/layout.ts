@@ -108,6 +108,19 @@ export interface GraphInput {
    * never leaves anonymous debris rows behind.
    */
   visibleBranches?: ReadonlySet<string> | null
+  /**
+   * Drop branches whose tip is already merged into another branch, plus the
+   * deleted-branch chains — the noise of a busy trunk-based repo. The default
+   * and checked-out branches always stay.
+   */
+  hideMerged?: boolean
+  /**
+   * Keep only the commits that shape the diagram — branch tips and starts,
+   * merges (and what they merged), tagged/decorated commits, HEAD — and
+   * collapse the linear runs between them. Plastic's "relevant changes only":
+   * what makes a 100k-commit repo readable.
+   */
+  structureOnly?: boolean
 }
 
 /** Columns reserved left of a chain's first node so its label never overlaps
@@ -200,6 +213,19 @@ export function layoutGraph(input: GraphInput): GraphLayout {
 
   const headHash = commits.find((c) => isHeadDecoration(c.refs))?.hash ?? null
 
+  // Every non-first parent: the commits merges pulled in. Drives hideMerged
+  // (a tip that is a merge source has been merged), structureOnly (merge
+  // sources are structure), unnamed-chain naming, and the merge lead-out each
+  // chain's packing interval reserves.
+  const mergeSources = new Set<string>()
+  const mergeChildOf = new Map<string, Commit>()
+  for (const c of commits) {
+    for (const parent of c.parents.slice(1)) {
+      mergeSources.add(parent)
+      if (!mergeChildOf.has(parent)) mergeChildOf.set(parent, c)
+    }
+  }
+
   // ── Claim commits into chains by walking first parents down from each tip ──
   const chains: Chain[] = []
   const chainOf = new Map<string, number>()
@@ -217,6 +243,14 @@ export function layoutGraph(input: GraphInput): GraphLayout {
 
   for (const group of groupTips(input)) {
     if (visibleBranches && !visibleBranches.has(group.base)) continue
+    if (
+      input.hideMerged &&
+      group.base !== input.defaultBranch &&
+      group.base !== input.headBranch &&
+      mergeSources.has(group.tips[0].hash)
+    ) {
+      continue
+    }
     const hasLocalRef = group.tips.some((t) => !t.isRemote)
     // The newest tip's walk usually passes through the older ones (local behind
     // remote). A genuinely diverged older tip starts its own row, same name.
@@ -236,16 +270,9 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   }
 
   // ── Unclaimed commits: deleted-branch chains, named from their merge ──────
-  // (Filtering drops them instead — they belong to branches filtered out.)
-  if (!visibleBranches) {
-    // Merge commit for each non-first parent, to recover the branch name git
-    // recorded in the stock "Merge branch 'x'" subject.
-    const mergeChildOf = new Map<string, Commit>()
-    for (const c of commits) {
-      for (const parent of c.parents.slice(1)) {
-        if (!mergeChildOf.has(parent)) mergeChildOf.set(parent, c)
-      }
-    }
+  // (Filtering drops them instead — they belong to branches filtered out;
+  // hideMerged drops them too: a deleted branch is merged by definition.)
+  if (!visibleBranches && !input.hideMerged) {
     for (const c of commits) {
       if (chainOf.has(c.hash)) continue
       const mergeChild = mergeChildOf.get(c.hash)
@@ -254,8 +281,37 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     }
   }
 
+  // ── Structure-only: collapse the linear runs between structural commits ───
+  // A commit survives when it shapes the graph: chain tip or start, merge,
+  // merge source, fork point (a commit some branch grew from), decorated
+  // (branch/tag labels), or HEAD. Everything between two survivors on a chain
+  // is dropped; edge building below bridges across the gap.
+  let structural: ReadonlySet<string> | null = null
+  if (input.structureOnly) {
+    const oldestOf: (Commit | null)[] = chains.map(() => null)
+    for (const c of commits) {
+      const id = chainOf.get(c.hash)
+      if (id !== undefined) oldestOf[id] = c // newest-first walk: last hit wins
+    }
+    const structuralHashes = new Set<string>(chains.map((chain) => chain.tipHash))
+    for (const oldest of oldestOf) {
+      if (!oldest) continue
+      structuralHashes.add(oldest.hash)
+      const forkPoint = oldest.parents[0]
+      if (forkPoint) structuralHashes.add(forkPoint)
+    }
+    for (const c of commits) {
+      if (c.parents.length > 1 || c.refs !== '' || mergeSources.has(c.hash)) {
+        structuralHashes.add(c.hash)
+      }
+    }
+    structural = structuralHashes
+  }
+
   // ── Columns: dense re-pack of the kept commits, oldest at column 0 ────────
-  const kept = commits.filter((c) => chainOf.has(c.hash))
+  const kept = commits.filter(
+    (c) => chainOf.has(c.hash) && (structural === null || structural.has(c.hash))
+  )
   const columnOf = new Map<string, number>()
   kept.forEach((c, i) => columnOf.set(c.hash, kept.length - 1 - i))
 
@@ -297,7 +353,17 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // Occupied intervals per row (rows 1+); n chains → tiny arrays, linear scan.
   const occupied: { start: number; end: number }[][] = []
   for (const id of others) {
-    const interval = { start: span[id].start - LABEL_PAD_COLUMNS, end: span[id].end + 1 }
+    // Reserve the chain's whole visual footprint: the label pad and the fork
+    // lead-in to the left, the merge lead-out to the right (the orthogonal
+    // connector runs along the row — see render.ts) — so no other chain on
+    // the row ever sits underneath those runs.
+    const forkColumn = columnOf.get(span[id].oldest?.parents[0] ?? '')
+    const mergeChild = mergeChildOf.get(chains[id].tipHash)
+    const mergeColumn = mergeChild ? columnOf.get(mergeChild.hash) : undefined
+    const interval = {
+      start: Math.min(span[id].start - LABEL_PAD_COLUMNS, forkColumn ?? Number.MAX_SAFE_INTEGER),
+      end: Math.max(span[id].end + 1, mergeColumn ?? -1)
+    }
     let row = 0
     while (true) {
       const taken = occupied[row]
@@ -347,24 +413,37 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   }
 
   // ── Edges: child → each in-window parent ──────────────────────────────────
+  // With structure-only, a survivor's first parent may be a dropped interior
+  // commit — bridge along first parents to the nearest surviving ancestor
+  // (always on the same chain, since chain starts survive).
+  const resolveParent = (hash: string): string => {
+    let p = hash
+    while (structural && !structural.has(p)) {
+      const c = commitByHash.get(p)
+      if (!c || !chainOf.has(p) || c.parents.length === 0) return p
+      p = c.parents[0]
+    }
+    return p
+  }
   const edges: GraphEdge[] = []
   for (const node of nodes) {
     node.commit.parents.forEach((parent, parentIdx) => {
-      const target = nodeByHash.get(parent)
+      const resolved = resolveParent(parent)
+      const target = nodeByHash.get(resolved)
       if (!target) {
         node.truncated = true
         return
       }
       // "line" means same CHAIN (covered by the row spine) — packed rows can
       // host several chains, so a same-row fork must still draw as a fork.
-      const sameChain = chainOf.get(node.commit.hash) === chainOf.get(parent)
+      const sameChain = chainOf.get(node.commit.hash) === chainOf.get(resolved)
       const kind: GraphEdgeKind = parentIdx > 0 ? 'merge' : sameChain ? 'line' : 'fork'
       edges.push({
         kind,
         // Merges carry the source branch's color, forks the new branch's.
         color: kind === 'merge' ? target.color : node.color,
         fromHash: node.commit.hash,
-        toHash: parent,
+        toHash: resolved,
         fromColumn: node.column,
         fromRow: node.row,
         toColumn: target.column,

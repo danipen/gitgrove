@@ -35,6 +35,12 @@ interface Props {
   onAuthorFilter: (next: Set<string> | null) => void
   datePreset: DatePresetId
   onDatePreset: (preset: DatePresetId) => void
+  /** Keep only structure-shaping commits (collapse linear runs). */
+  structureOnly: boolean
+  onStructureOnly: (value: boolean) => void
+  /** Omit branches already merged into another branch. */
+  hideMerged: boolean
+  onHideMerged: (value: boolean) => void
   search: string
   onSearch: (query: string) => void
   /** Search hits: total and the 0-based current one (-1 when none active). */
@@ -160,13 +166,17 @@ export function GraphToolbar({
   onAuthorFilter,
   datePreset,
   onDatePreset,
+  structureOnly,
+  onStructureOnly,
+  hideMerged,
+  onHideMerged,
   search,
   onSearch,
   matchCount,
   matchIndex,
   onMatchStep
 }: Props) {
-  const [open, setOpen] = useState<'branches' | 'authors' | 'date' | null>(null)
+  const [open, setOpen] = useState<'branches' | 'authors' | 'date' | 'view' | null>(null)
   const anchors = useRef<Record<string, HTMLButtonElement | null>>({})
   const anchorFor = (id: string) => (el: HTMLButtonElement | null) => {
     anchors.current[id] = el
@@ -203,6 +213,15 @@ export function GraphToolbar({
         active={open === 'date' || datePreset !== 'all'}
         onClick={() => setOpen(open === 'date' ? null : 'date')}
         refCb={anchorFor('date')}
+      />
+      <Chip
+        label="View"
+        value={
+          structureOnly || hideMerged ? `${Number(structureOnly) + Number(hideMerged)}` : null
+        }
+        active={open === 'view' || structureOnly || hideMerged}
+        onClick={() => setOpen(open === 'view' ? null : 'view')}
+        refCb={anchorFor('view')}
       />
 
       <div className={`graph-search${searching ? ' is-active' : ''}`}>
@@ -298,6 +317,43 @@ export function GraphToolbar({
               {preset.label}
             </button>
           ))}
+        </div>
+      </Popover>
+      <Popover
+        anchor={anchors.current.view ?? null}
+        open={open === 'view'}
+        onClose={close}
+        width={320}
+      >
+        <div className="graph-picker">
+          <label className="graph-picker__opt">
+            <input
+              type="checkbox"
+              checked={structureOnly}
+              onChange={(e) => onStructureOnly(e.target.checked)}
+            />
+            <span>
+              <span className="graph-picker__opt-title">Structure only</span>
+              <span className="graph-picker__opt-desc">
+                Show only the commits that shape the diagram — branch starts and tips, merges,
+                tags — and collapse the linear runs between them.
+              </span>
+            </span>
+          </label>
+          <label className="graph-picker__opt">
+            <input
+              type="checkbox"
+              checked={hideMerged}
+              onChange={(e) => onHideMerged(e.target.checked)}
+            />
+            <span>
+              <span className="graph-picker__opt-title">Hide merged branches</span>
+              <span className="graph-picker__opt-desc">
+                Omit branches already merged into another branch. The current and default
+                branches always show.
+              </span>
+            </span>
+          </label>
         </div>
       </Popover>
     </div>

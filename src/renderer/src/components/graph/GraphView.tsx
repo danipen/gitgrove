@@ -11,6 +11,7 @@ import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMe
 import type { BranchAction } from '@/components/toolbar/BranchSwitcher'
 import { filterTerms } from '@/lib/commitFilter'
 import { Icon } from '@/lib/icons'
+import { usePersistentState } from '@/lib/persist'
 import { GraphCanvas, type GraphCanvasHandle } from './GraphCanvas'
 import { type AuthorOption, DATE_PRESETS, type DatePresetId, GraphToolbar } from './GraphToolbar'
 import { collectBranchNames, type GraphNode, type GraphRow, layoutGraph } from './layout'
@@ -63,6 +64,9 @@ export function GraphView({
   const [branchFilter, setBranchFilter] = useState<Set<string> | null>(null)
   const [authorFilter, setAuthorFilter] = useState<Set<string> | null>(null)
   const [datePreset, setDatePreset] = useState<DatePresetId>('all')
+  // View shaping (persisted): what makes busy trunk-based repos readable.
+  const [structureOnly, setStructureOnly] = usePersistentState('gg.graphStructureOnly', false)
+  const [hideMerged, setHideMerged] = usePersistentState('gg.graphHideMerged', false)
   const [search, setSearch] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
@@ -89,8 +93,8 @@ export function GraphView({
   )
   const branches = useMemo(() => collectBranchNames(input), [input])
   const layout = useMemo(
-    () => layoutGraph({ ...input, visibleBranches: branchFilter }),
-    [input, branchFilter]
+    () => layoutGraph({ ...input, visibleBranches: branchFilter, hideMerged, structureOnly }),
+    [input, branchFilter, hideMerged, structureOnly]
   )
 
   const authors = useMemo((): AuthorOption[] => {
@@ -215,6 +219,10 @@ export function GraphView({
         onAuthorFilter={setAuthorFilter}
         datePreset={datePreset}
         onDatePreset={setDatePreset}
+        structureOnly={structureOnly}
+        onStructureOnly={setStructureOnly}
+        hideMerged={hideMerged}
+        onHideMerged={setHideMerged}
         search={search}
         onSearch={setSearch}
         matchCount={matchCount}
@@ -305,19 +313,21 @@ export function GraphView({
             </button>
           </div>
         )}
-        {limitHit && !empty && (
-          <div className="graph-more">
-            Showing the latest {commits.length.toLocaleString()} commits
-            <button
-              type="button"
-              className="btn-ghost btn-ghost--sm"
-              disabled={loading}
-              onClick={showMore}
-            >
-              {loading ? 'Loading…' : 'Show more'}
-            </button>
-          </div>
-        )}
+        <div className="graph-notices">
+          {limitHit && !empty && (
+            <div className="graph-more">
+              Showing the latest {commits.length.toLocaleString()} commits
+              <button
+                type="button"
+                className="btn-ghost btn-ghost--sm"
+                disabled={loading}
+                onClick={showMore}
+              >
+                {loading ? 'Loading…' : 'Show more'}
+              </button>
+            </div>
+          )}
+        </div>
         {loading && loaded && <div className="graph-refresh spinner spinner--sm" />}
       </div>
       {menu && (

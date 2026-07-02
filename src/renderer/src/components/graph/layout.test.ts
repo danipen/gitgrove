@@ -252,6 +252,75 @@ describe('layoutGraph', () => {
     expect(rowNamed(build(), 'feature').color).toBe(slot)
   })
 
+  test('hideMerged drops merged and deleted branches, never HEAD or default', () => {
+    const commits = [
+      commit('w', ['m'], 'wip'),
+      commit('m', ['b', 'f2'], 'HEAD -> main', "Merge branch 'gone'"),
+      commit('f2', ['f1'], 'feature'),
+      commit('f1', ['a']),
+      commit('b', ['a']),
+      commit('a', [])
+    ]
+    // feature's tip f2 was merged by m; wip's tip was not; 'gone' chains are
+    // unnamed (merged by definition) and vanish with the flag.
+    const layout = layoutGraph(input(commits, { hideMerged: true }))
+    expect(layout.rows.map((r) => r.name).sort()).toEqual(['main', 'wip'])
+    // The merge's second parent fell away → truncated marker, like filtering.
+    expect(layout.nodeByHash.get('m')?.truncated).toBe(true)
+  })
+
+  test('structureOnly collapses linear runs and bridges the gaps', () => {
+    // main: a ─ b ─ c ─ m(merge)     feature: f1 ─ f2 ─ f3
+    const layout = layoutGraph(
+      input(
+        [
+          commit('m', ['c', 'f3'], 'HEAD -> main'),
+          commit('f3', ['f2'], 'feature'),
+          commit('f2', ['f1']),
+          commit('f1', ['a']),
+          commit('c', ['b']),
+          commit('b', ['a']),
+          commit('a', [])
+        ],
+        { structureOnly: true }
+      )
+    )
+    // Interior commits vanish: b, c (plain run on main) and f2 (run on feature).
+    expect(layout.nodeByHash.get('b')).toBe(undefined)
+    expect(layout.nodeByHash.get('c')).toBe(undefined)
+    expect(layout.nodeByHash.get('f2')).toBe(undefined)
+    // Survivors: root/fork point a, merge m, feature start f1 and tip f3.
+    expect(layout.columnCount).toBe(4)
+    // Bridged edges: m's first parent resolves through c,b to a (same-chain
+    // line — no truncated stub), f3 bridges to f1, and the structure edges
+    // (fork f1→a, merge m→f3) survive intact.
+    expect(layout.nodeByHash.get('m')?.truncated).toBe(false)
+    const kinds = layout.edges.map((e) => e.kind).sort()
+    expect(kinds).toEqual(['fork', 'line', 'line', 'merge'])
+  })
+
+  test('packing reserves the merge lead-out so connector runs stay clear', () => {
+    // early sits at column 2 but merges two columns later at m1 (column 4):
+    // its connector runs along the row to column 4. late's reservation starts
+    // at column 4 — without the lead-out they'd share row 1 and the connector
+    // would run under late's footprint; with it, late moves down a row.
+    const layout = layoutGraph(
+      input([
+        commit('m2', ['c5', 'y'], 'HEAD -> main', "Merge branch 'late'"),
+        commit('y', ['c5'], 'late'),
+        commit('c5', ['c4']),
+        commit('c4', ['m1']),
+        commit('m1', ['c3', 'x'], '', "Merge branch 'early'"),
+        commit('c3', ['c1']),
+        commit('x', ['c1'], 'early'),
+        commit('c1', ['a']),
+        commit('a', [])
+      ])
+    )
+    expect(rowNamed(layout, 'early').index).toBe(1)
+    expect(rowNamed(layout, 'late').index).toBe(2)
+  })
+
   test('collectBranchNames lists base names in claim priority order', () => {
     const names = collectBranchNames(
       input(

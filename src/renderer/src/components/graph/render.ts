@@ -312,24 +312,39 @@ function drawEdges(
     // With a filter active, an edge stays lit only between two matches;
     // everything else recedes with the dimmed nodes it connects.
     const lit = !matches || (matches.has(edge.fromHash) && matches.has(edge.toHash))
-    ctx.globalAlpha = lit ? 0.8 : 0.12
     // Parent (older, left) → child (newer, right).
     const px = nodeX(edge.toColumn)
     const py = nodeY(edge.toRow)
     const cx = nodeX(edge.fromColumn)
     const cy = nodeY(edge.fromRow)
     ctx.strokeStyle = branchStroke(palette, edge.color)
+    ctx.globalAlpha = lit ? 0.8 : 0.12
     ctx.beginPath()
     if (py === cy) {
       // Same-row hop (criss-cross merge / packed-row fork): a shallow arc.
       ctx.moveTo(px, py - NODE_R)
       ctx.quadraticCurveTo((px + cx) / 2, py - CAPSULE_HALF_H - 14, cx, cy - NODE_R)
+    } else if (edge.kind === 'fork') {
+      // Orthogonal, Plastic-style: drop straight down/up the fork column,
+      // then run along the child's row into its first commit. Long runs
+      // travel along lanes or columns — never diagonally across the canvas.
+      // The elbow sweeps wide (up to ~2/3 of each leg) so the turn reads as
+      // one soft curve rather than a hard pipe corner.
+      const dir = Math.sign(cy - py)
+      const r = Math.min(120, Math.abs(cx - px) * 0.66, Math.abs(cy - py) * 0.66)
+      ctx.moveTo(px, py + dir * NODE_R)
+      ctx.lineTo(px, cy - dir * r)
+      ctx.quadraticCurveTo(px, cy, px + r, cy)
+      ctx.lineTo(cx - NODE_R, cy)
     } else {
-      // An S-curve that leaves and lands horizontally, so it reads as part of
-      // both spines rather than a stray diagonal.
-      const bend = Math.min(Math.max(Math.abs(cx - px) * 0.5, 18), COL_W * 2.2)
-      ctx.moveTo(px, py)
-      ctx.bezierCurveTo(px + bend, py, cx - bend, cy, cx, cy)
+      // Merge: run along the source branch's row (its lead-out — the packing
+      // reserved this stretch), then straight into the merge commit's column.
+      const dir = Math.sign(cy - py)
+      const r = Math.min(120, Math.abs(cx - px) * 0.66, Math.abs(cy - py) * 0.66)
+      ctx.moveTo(px + NODE_R, py)
+      ctx.lineTo(cx - r, py)
+      ctx.quadraticCurveTo(cx, py, cx, py + dir * r)
+      ctx.lineTo(cx, cy - dir * NODE_R)
     }
     ctx.stroke()
   }
