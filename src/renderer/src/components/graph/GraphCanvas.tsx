@@ -37,6 +37,9 @@ import {
   readPalette,
   SUBJECT_FONT
 } from './render'
+import { usePanInertia } from './usePanInertia'
+import { useZoomAnimation } from './useZoomAnimation'
+import { isDiscreteWheel, wheelZoomFactor } from './zoom'
 
 /** Imperative controls the toolbar's zoom/fit/home buttons drive. */
 export interface GraphCanvasHandle {
@@ -255,10 +258,13 @@ export function GraphCanvas({
         : clamp(view.y, height - ch - OVERSCROLL / 2, HEADER_H + 8)
   }, [])
 
-  const zoomAt = useCallback(
-    (screenX: number, screenY: number, factor: number) => {
+  /** Sets an absolute scale keeping the anchor screen point over the same
+   *  world point — the shared primitive under pinch, wheel glide and the
+   *  zoom buttons. */
+  const applyScaleAt = useCallback(
+    (screenX: number, screenY: number, scale: number) => {
       const view = viewRef.current
-      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, view.scale * factor))
+      const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale))
       if (next === view.scale) return
       view.x = screenX - ((screenX - view.x) / view.scale) * next
       view.y = screenY - ((screenY - view.y) / view.scale) * next
@@ -270,8 +276,45 @@ export function GraphCanvas({
     [clampView, invalidate]
   )
 
+  // Discrete zoom steps (mouse-wheel notches, toolbar, +/- keys) glide toward
+  // their target instead of landing as hard jumps — see zoom.ts for the
+  // momentum model. Pinch stays 1:1 and bypasses this entirely.
+  const zoomAnim = useZoomAnimation(applyScaleAt, () => viewRef.current.scale)
+
+  /** Immediate (unanimated) zoom by a factor — the pinch path. */
+  const zoomAt = useCallback(
+    (screenX: number, screenY: number, factor: number) => {
+      zoomAnim.stop()
+      applyScaleAt(screenX, screenY, viewRef.current.scale * factor)
+    },
+    [zoomAnim, applyScaleAt]
+  )
+
+  /** Pans by a screen delta and reports the clamped, actually-applied move —
+   *  the shared primitive under drags, wheel scrolling and the drag fling. */
+  const panBy = useCallback(
+    (dx: number, dy: number) => {
+      const view = viewRef.current
+      const x0 = view.x
+      const y0 = view.y
+      view.x += dx
+      view.y += dy
+      clampView()
+      invalidate()
+      return { dx: view.x - x0, dy: view.y - y0 }
+    },
+    [clampView, invalidate]
+  )
+
+  // A mouse drag stops dead on release; trackpad panning coasts because the
+  // OS bakes inertia into its wheel stream. This levels the two: the drag's
+  // release velocity keeps the view gliding — see pan.ts for the model.
+  const panInertia = usePanInertia(panBy)
+
   const centerOn = useCallback(
     (column: number, row: number, xRatio = 0.5) => {
+      zoomAnim.stop()
+      panInertia.cancel()
       const view = viewRef.current
       const { width, height } = sizeRef.current
       view.x = width * xRatio - nodeX(column) * view.scale
@@ -279,10 +322,12 @@ export function GraphCanvas({
       clampView()
       invalidate()
     },
-    [clampView, invalidate]
+    [zoomAnim, panInertia, clampView, invalidate]
   )
 
   const fit = useCallback(() => {
+    zoomAnim.stop()
+    panInertia.cancel()
     const { width, height } = sizeRef.current
     const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip !== null)
     const view = viewRef.current
@@ -295,7 +340,7 @@ export function GraphCanvas({
     view.y = HEADER_H + 8
     clampView()
     invalidate()
-  }, [clampView, invalidate])
+  }, [zoomAnim, panInertia, clampView, invalidate])
 
   const jumpToHead = useCallback(() => {
     const s = sceneRef.current
@@ -324,10 +369,20 @@ export function GraphCanvas({
     [centerOn]
   )
 
+  // Every animated zoom entry point takes over the view — stop a drag fling
+  // first so the anchor point doesn't slide while the scale glides.
+  const zoomStepAt = useCallback(
+    (anchorX: number, anchorY: number, factor: number) => {
+      panInertia.cancel()
+      zoomAnim.zoomStep(anchorX, anchorY, factor)
+    },
+    [panInertia, zoomAnim]
+  )
+
   useEffect(() => {
     controls.current = {
-      zoomIn: () => zoomAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 1.25),
-      zoomOut: () => zoomAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 0.8),
+      zoomIn: () => zoomStepAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 1.25),
+      zoomOut: () => zoomStepAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 0.8),
       fit,
       jumpToHead,
       reveal
@@ -335,7 +390,7 @@ export function GraphCanvas({
     return () => {
       controls.current = null
     }
-  }, [controls, zoomAt, fit, jumpToHead, reveal])
+  }, [controls, zoomStepAt, fit, jumpToHead, reveal])
 
   // Backing-store sizing, DPR-aware; re-runs on wrapper resize.
   useEffect(() => {
@@ -439,6 +494,8 @@ export function GraphCanvas({
     if (inTip(e)) return
     if (e.button !== 0 && e.button !== 1) return
     wrapRef.current?.focus()
+    // Touching down catches a gliding fling — classic grab-to-stop.
+    panInertia.cancel()
     panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, panned: false }
   }
 
@@ -470,6 +527,7 @@ export function GraphCanvas({
       // Released off-window: buttons bitmask is the only reliable signal.
       if (e.buttons === 0) {
         panRef.current = null
+        panInertia.cancel()
         setCursor('default')
         return
       }
@@ -477,17 +535,18 @@ export function GraphCanvas({
       const dy = e.clientY - pan.y
       if (!pan.panned && Math.abs(dx) + Math.abs(dy) > 3) {
         pan.panned = true
+        // Grabbing the canvas takes over the view — freeze any zoom glide.
+        zoomAnim.stop()
         wrapRef.current?.setPointerCapture(e.pointerId)
         setCursor('grabbing')
         setHover(null, null)
       }
       if (pan.panned) {
-        viewRef.current.x += dx
-        viewRef.current.y += dy
+        panBy(dx, dy)
+        // Feed the fling estimator — release velocity comes from these.
+        panInertia.sample(e.clientX, e.clientY)
         pan.x = e.clientX
         pan.y = e.clientY
-        clampView()
-        invalidate()
       }
       return
     }
@@ -518,6 +577,8 @@ export function GraphCanvas({
     if (!pan || pan.id !== e.pointerId) return
     if (pan.panned) {
       wrapRef.current?.releasePointerCapture(e.pointerId)
+      // A flick keeps gliding; a parked release does nothing (pan.ts decides).
+      panInertia.release()
       return
     }
     if (e.button !== 0) return
@@ -551,7 +612,7 @@ export function GraphCanvas({
     if (hit?.type === 'label') onRowDoubleClick(hit.row)
     else if (!hit) {
       const rect = wrapRef.current?.getBoundingClientRect()
-      if (rect) zoomAt(e.clientX - rect.left, e.clientY - rect.top, 1.4)
+      if (rect) zoomStepAt(e.clientX - rect.left, e.clientY - rect.top, 1.4)
     }
   }
 
@@ -560,15 +621,23 @@ export function GraphCanvas({
     if (inTip(e)) return
     const rect = wrapRef.current?.getBoundingClientRect()
     if (!rect) return
+    // Any wheel input takes over the view from a running drag fling.
+    panInertia.cancel()
     if (e.ctrlKey || e.metaKey) {
-      // Pinch (Chromium reports it as ctrl+wheel) and explicit zoom.
-      zoomAt(e.clientX - rect.left, e.clientY - rect.top, Math.exp(-e.deltaY * 0.01))
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      if (isDiscreteWheel(e.deltaY, e.deltaMode)) {
+        // A mouse-wheel notch is one big step — glide toward it (zoom.ts).
+        zoomAnim.zoomStep(x, y, wheelZoomFactor(e.deltaY, e.deltaMode))
+      } else {
+        // Trackpad pinch (Chromium reports it as ctrl+wheel): a smooth
+        // stream of tiny deltas — apply 1:1, a glide would lag the fingers.
+        zoomAt(x, y, Math.exp(-e.deltaY * 0.01))
+      }
     } else {
-      viewRef.current.x -= e.deltaX
-      viewRef.current.y -= e.deltaY
-      clampView()
+      zoomAnim.stop()
+      panBy(-e.deltaX, -e.deltaY)
       setTooltip(null)
-      invalidate()
     }
   }
 
@@ -596,12 +665,12 @@ export function GraphCanvas({
     }
     if (e.key === '+' || e.key === '=') {
       e.preventDefault()
-      zoomAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 1.25)
+      zoomStepAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 1.25)
       return
     }
     if (e.key === '-') {
       e.preventDefault()
-      zoomAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 0.8)
+      zoomStepAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 0.8)
       return
     }
     if (e.key === '0') {
