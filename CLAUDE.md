@@ -2,7 +2,7 @@
 
 A fast, beautiful desktop git client. Electron + React 19 + TypeScript, diffs by
 `@pierre/diffs`. The whole point: **full power of git, silly-simple UI** — one window,
-two tabs, no ceremony.
+three tabs (Changes, History, Graph), no ceremony.
 
 ## Principles (the bar every change is held to)
 
@@ -54,9 +54,11 @@ before adding git calls — its conventions are load-bearing:
 handlers), `menu.ts`, `watcher.ts` (pushes `repo:changed`), `updater.ts`, `store.ts`.
 
 **Renderer (`src/renderer/src/`)** — `App.tsx` (shared state + the cross-feature
-orchestration spine that wires the two tabs together); `components/` (one component — or
+orchestration spine that wires the tabs together); `components/` (one component — or
 the hook that drives just that feature — per file) grouped by feature: `changes/`,
-`history/`, `toolbar/`, `app/` (shell screens + app-level dialogs) and `common/` (shared
+`history/`, `graph/` (the Graph tab's 2D branch explorer: pure layout in `layout.ts`,
+canvas drawing in `render.ts`, interactions in `GraphCanvas.tsx` — keep layout logic
+pure and tested), `toolbar/`, `app/` (shell screens + app-level dialogs) and `common/` (shared
 widgets and primitives — same-folder imports stay relative, cross-folder go through `@/`);
 `lib/` (the **shared tier**: pure logic + hooks reused by 2+ features — a hook used by
 exactly one feature lives in that feature's folder, not here. `lib/staging.ts` is the
@@ -102,7 +104,8 @@ reuse** so "common vs specific" is answerable by *which file a rule lives in*:
 - `primitives.css` — **common**: widgets reused by 2+ features (popover, tooltip, menus,
   buttons, modal shell, toast, segmented, icon-btn, avatar, resizers, virtual list, …).
 - `features/*.css` — **specific**: one file per feature folder (`toolbar`, `history`,
-  `diff`, `blame`, `changes`, `conflict`, `screens`, `banners`, `dialogs`, `image-diff`).
+  `graph`, `diff`, `blame`, `changes`, `conflict`, `screens`, `banners`, `dialogs`,
+  `image-diff`).
 
 Rules for keeping it maintainable:
 

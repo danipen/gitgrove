@@ -2,7 +2,7 @@
 // history, blame, a commit's changed files, and the working/commit diffs.
 
 import { IPC } from '@shared/ipc'
-import type { ChangedFile, DiffArea, LogOptions } from '@shared/types'
+import type { ChangedFile, DiffArea, GraphLogOptions, LogOptions } from '@shared/types'
 import { ipcMain } from 'electron'
 import {
   getBlame,
@@ -10,12 +10,22 @@ import {
   getCommitFiles,
   getCommitIndex,
   getFileHistory,
+  getGraphLog,
   getLog,
+  getPatchIds,
+  getRangeDiff,
+  getRangeFiles,
   getWorkingDiff
 } from '../git/read'
 
 export function registerHistoryHandlers(): void {
   ipcMain.handle(IPC.log, (_e, repoPath: string, options?: LogOptions) => getLog(repoPath, options))
+  ipcMain.handle(IPC.graphLog, (_e, repoPath: string, options?: GraphLogOptions) =>
+    getGraphLog(repoPath, options)
+  )
+  ipcMain.handle(IPC.graphPatchIds, (_e, repoPath: string, hashes: string[]) =>
+    getPatchIds(repoPath, hashes)
+  )
   ipcMain.handle(IPC.commitIndex, (_e, repoPath: string, hash: string) =>
     getCommitIndex(repoPath, hash)
   )
@@ -27,6 +37,14 @@ export function registerHistoryHandlers(): void {
   )
   ipcMain.handle(IPC.commitFiles, (_e, repoPath: string, hash: string) =>
     getCommitFiles(repoPath, hash)
+  )
+  ipcMain.handle(IPC.rangeFiles, (_e, repoPath: string, base: string | null, head: string) =>
+    getRangeFiles(repoPath, base, head)
+  )
+  ipcMain.handle(
+    IPC.rangeDiff,
+    (_e, repoPath: string, base: string | null, head: string, file: ChangedFile) =>
+      getRangeDiff(repoPath, base, head, file)
   )
   ipcMain.handle(IPC.workingDiff, (_e, repoPath: string, file: ChangedFile, area?: DiffArea) =>
     getWorkingDiff(repoPath, file, area)

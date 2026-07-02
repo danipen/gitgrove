@@ -9,13 +9,15 @@
      3. primitives  shared widgets — must precede every feature that reuses them
    then features, ordered so a file that restyles another's element comes after
    it: diff before blame (reuses .diff-head__*) and image-diff (.diff-body);
-   changes before dialogs (.stash-item__main override).
+   changes before dialogs (.stash-item__main override); graph after history
+   (its detail pane reuses .ref-chip / .commit__hash / .commit-summary__sha).
    ───────────────────────────────────────────────────────────────────────── */
 @import './base.css';
 @import './layout.css';
 @import './primitives.css';
 @import './features/toolbar.css';
 @import './features/history.css';
+@import './features/graph.css';
 @import './features/diff.css';
 @import './features/blame.css';
 @import './features/changes.css';

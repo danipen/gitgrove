@@ -247,7 +247,7 @@
 /* Commit metadata is informational text — let the user select & copy it
    (the app body sets user-select:none for a native feel). */
 .commit-summary__subject,
-.commit-summary__byline,
+.commit-meta,
 .commit-summary__body-wrap,
 .commit-summary__sha .commit__hash {
   user-select: text;
@@ -260,14 +260,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.commit-summary__byline {
-  margin-top: 2px;
+/* Shared commit byline (CommitMeta in CommitSummary.tsx): author (and
+   co-authors) · relative date · sha + copy. One composition and one type
+   treatment for the History summary, the Graph sidebar and the graph hover
+   card — like ref-chip/copy-btn, a shared commit widget living here. */
+.commit-meta {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
+  margin-top: 3px;
   font-size: 12px;
   color: var(--fg-faint);
 }
-.commit-summary__author {
+.commit-meta__author {
   color: var(--fg-muted);
   font-weight: 500;
 }

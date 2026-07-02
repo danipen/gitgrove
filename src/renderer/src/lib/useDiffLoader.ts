@@ -74,11 +74,20 @@ export function useDiffLoader(
     [getRepoPath, load]
   )
 
+  /** A file's diff across `base..head` — the Graph tab's branch-changes view. */
+  const loadRangeDiff = useCallback(
+    (base: string | null, head: string, file: ChangedFile) => {
+      const repoPath = getRepoPath()
+      if (repoPath) load(() => window.gitgrove.rangeDiff(repoPath, base, head, file))
+    },
+    [getRepoPath, load]
+  )
+
   /** Empty the pane and invalidate any in-flight load so it can't repopulate it. */
   const clearDiff = useCallback(() => {
     req.current++
     setDiff(null)
   }, [])
 
-  return { diff, diffRef, diffLoading, loadWorkingDiff, loadCommitDiff, clearDiff }
+  return { diff, diffRef, diffLoading, loadWorkingDiff, loadCommitDiff, loadRangeDiff, clearDiff }
 }

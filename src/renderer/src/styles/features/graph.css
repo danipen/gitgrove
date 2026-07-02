@@ -1,0 +1,485 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   Graph tab — the 2D branch explorer (GraphView.tsx, GraphCanvas.tsx,
+   GraphToolbar.tsx, GraphDetailPane.tsx). The diagram itself is a canvas;
+   everything here is the chrome around it: filter bar, popover pickers,
+   floating navigation, tooltip, and the sidebar detail pane.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── View shell (GraphView.tsx) ──────────────────────────────────────────── */
+.graph-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+.graph-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Graph workspace column in App.tsx: diagram on top, shared diff pane below.
+   Hidden (not unmounted) on other tabs so pan/zoom/filter state survives. */
+.graph-workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.graph-workspace--hidden {
+  display: none;
+}
+.graph-workspace__diff {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Canvas & tooltip (GraphCanvas.tsx) ──────────────────────────────────── */
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  outline: none;
+  overflow: hidden;
+  /* The canvas owns its touch gestures (drag-to-pan). Without this Chromium
+     claims a touch drag for native scrolling and kills it with an immediate
+     pointercancel — see GraphCanvas onPointerCancel. */
+  touch-action: none;
+}
+.graph-canvas:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent-border);
+}
+.graph-canvas__surface {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The commit-message expansion card: anchored ON the hovered caption so the
+   truncated text appears to complete itself in place (Plastic-style). It's
+   interactive — the full message can be selected and, when long, scrolled. */
+.graph-tip {
+  /* Fixed, on the popover rung (65) of the z ladder (base.css): the stage
+     clips its children (overflow: hidden) and the diff pane sits below it,
+     so an absolute card gets cut off at the stage edge. Fixed escapes the
+     clip — but it means no ancestor of .graph-canvas may gain a transform/
+     filter/contain, or the card's viewport coordinates break. */
+  position: fixed;
+  z-index: 65;
+  width: max-content;
+  /* Fallback cap; tipPosition (GraphCanvas.tsx) sets the effective max-width
+     inline — 420px on large windows, a quarter of smaller ones. */
+  max-width: 420px;
+  padding: 6px 9px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--popover-shadow);
+  user-select: text;
+  cursor: auto;
+  /* Pure fade, no translate: the subject's first line sits pixel-exactly on
+     the canvas caption, so the card must not move while appearing. */
+  animation: graph-tip-in 0.14s ease;
+}
+@keyframes graph-tip-in {
+  from {
+    opacity: 0;
+  }
+}
+/* The subject sits ON the caption's glyphs and must be indistinguishable from
+   them: same size, weight AND color as the canvas caption (render.ts
+   SUBJECT_FONT/SUBJECT_WEIGHT, palette.subject = --fg-muted). Any emphasis
+   comes from the card itself — a brighter or heavier subject reads as the
+   text "jumping" on hover. Size, line-height and the card's padding/border
+   are mirrored by tipPosition in GraphCanvas.tsx — keep them in sync.
+   pre-wrap matches canvas fillText, which never collapses runs of spaces. */
+.graph-tip__subject {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+/* Same size as the shared CommitBody (history.css .commit-summary__body):
+   one commit body reads identically in every view. Unlike the panes it shows
+   in FULL (scrolling when long) — a "Show more" toggle inside a hover card
+   would defeat the card's purpose. */
+.graph-tip__body {
+  margin-top: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+/* Floating zoom/fit/home cluster, Plastic-style, bottom-right of the stage. */
+.graph-nav {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.graph-nav .icon-btn {
+  width: 28px;
+  height: 28px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+.graph-nav .icon-btn:hover {
+  background: var(--bg-hover);
+}
+
+/* Bottom-center notice stack: branch cap + commit depth pills. */
+.graph-notices {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+}
+.graph-more {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 4px 12px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  pointer-events: auto;
+}
+
+/* Quiet corner spinner while a background refresh replaces the diagram. */
+.graph-refresh {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+}
+
+/* ── Filter bar (GraphToolbar.tsx) ───────────────────────────────────────── */
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.graph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.graph-chip:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+.graph-chip.is-active {
+  color: var(--fg);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.graph-chip__value {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+/* The twin dot's explanation, inside the hover card (GraphCanvas.tsx): where
+   else this change lives. Same hue as the dot on the node — the ::before dot
+   IS the legend: seeing both together is what teaches the mark. */
+.graph-tip__twins {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--pr-merged);
+}
+.graph-tip__twins::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+/* Each twin's branch name jumps to that commit (select + reveal). */
+.graph-tip__twin-link {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  font-weight: 600;
+  background: none;
+  border: none;
+}
+.graph-tip__twin-link:hover {
+  text-decoration: underline;
+}
+
+/* Focus lens chip (GraphToolbar.tsx): seed + hop-depth button and the exit
+   button share one pill; the divider keeps the two hit targets legible. */
+.graph-focus {
+  padding: 0;
+  overflow: hidden;
+}
+/* Keep the active accent tint under the child buttons' own hover states. */
+.graph-focus:hover {
+  background: var(--accent-soft);
+}
+.graph-focus__seed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px 3px 10px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+.graph-focus__seed:hover {
+  background: var(--bg-hover);
+}
+.graph-focus__exit {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 8px 0 6px;
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  border-left: 1px solid var(--accent-border);
+}
+.graph-focus__exit:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
+.graph-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  max-width: 340px;
+  margin-left: auto;
+  padding: 0 6px 0 8px;
+  color: var(--fg-faint);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.graph-search.is-active {
+  border-color: var(--accent-border);
+}
+.graph-search input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+.graph-search__count {
+  font-size: 11px;
+  color: var(--fg-faint);
+  white-space: nowrap;
+}
+.graph-search__step {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── Filter popover pickers (GraphToolbar.tsx) ───────────────────────────── */
+.graph-picker {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+.graph-picker__list {
+  overflow-y: auto;
+  max-height: 280px;
+  padding: 2px;
+}
+.graph-picker__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.graph-picker__item:hover {
+  background: var(--bg-hover);
+}
+.graph-picker__item input[type='checkbox'] {
+  accent-color: var(--accent);
+}
+.graph-picker__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.graph-picker__hint {
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+/* "only" quick-pick: appears on row hover, selects just that item. */
+.graph-picker__only {
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--accent);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  opacity: 0;
+}
+.graph-picker__item:hover .graph-picker__only,
+.graph-picker__only:focus-visible {
+  opacity: 1;
+}
+.graph-picker__only:hover {
+  text-decoration: underline;
+}
+.graph-picker__foot {
+  padding: 6px 8px 2px;
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+}
+.graph-picker__preset {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  text-align: left;
+  color: var(--fg);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+}
+.graph-picker__preset:hover {
+  background: var(--bg-hover);
+}
+.graph-picker__preset.is-active {
+  font-weight: 600;
+}
+.graph-picker__spacer {
+  width: 13px;
+}
+/* View-options rows: a checkbox with a title + explanation underneath. */
+.graph-picker__opt {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.graph-picker__opt:hover {
+  background: var(--bg-hover);
+}
+.graph-picker__opt input[type='checkbox'] {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+.graph-picker__opt-title {
+  display: block;
+  font-weight: 600;
+}
+.graph-picker__opt-desc {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--fg-muted);
+}
+
+/* ── Sidebar detail pane (GraphDetailPane.tsx) ───────────────────────────── */
+.graph-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.graph-detail__head {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.graph-detail__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* Branch-changes header: the icon disc where a commit shows its avatar. */
+.graph-detail__branch-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 50%;
+}
+.graph-detail__subject {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: text;
+}
+.graph-detail__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--fg-faint);
+}
+/* Shared commit widgets (history/CommitSummary.tsx): History indents body
+   and refs under its 34px avatar column; the sidebar head has no such column,
+   so they span the pane's full width. graph.css loads after history.css, so
+   these overrides win. */
+.graph-detail .commit-summary__body-wrap,
+.graph-detail .commit-summary__refs {
+  margin-left: 0;
+}
+.graph-detail .commit-summary__refs {
+  margin-top: 8px;
+}
+.graph-detail__count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

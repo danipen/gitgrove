@@ -40,6 +40,9 @@ import { type DiffMode, DiffViewer } from './components/common/DiffViewer'
 import { Resizer } from './components/common/Resizer'
 import { Toast } from './components/common/Toast'
 import { TooltipLayer } from './components/common/TooltipLayer'
+import { GraphDetailPane } from './components/graph/GraphDetailPane'
+import { GraphView } from './components/graph/GraphView'
+import { useBranchRange } from './components/graph/useBranchRange'
 import { CommitSummary } from './components/history/CommitSummary'
 import { commitMenuItems } from './components/history/commitMenuItems'
 import { FileHistoryOverlay, type FileHistoryTarget } from './components/history/FileHistoryOverlay'
@@ -66,7 +69,7 @@ import { usePullRequests } from './lib/usePullRequests'
 import { type MissingRepoInfo, useRepoRecovery } from './lib/useRepoRecovery'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
-type Tab = 'changes' | 'history'
+type Tab = 'changes' | 'history' | 'graph'
 
 export function App() {
   const [repo, setRepo] = useState<RepoSummary | null>(null)
@@ -137,6 +140,13 @@ export function App() {
   const bodyRef = useRef<HTMLDivElement>(null)
   const [diffMode, setDiffMode] = usePersistentState<DiffMode>('gg.diffMode', 'split')
   const [diffWrap, setDiffWrap] = usePersistentState('gg.diffWrap', false)
+  // The Graph tab's diff pane height (diagram above, diff below).
+  const [graphDiffHeight, setGraphDiffHeight] = usePersistentState('gg.graphDiffHeight', 320)
+  const graphDiffRef = useRef<HTMLDivElement>(null)
+  // Bumped whenever history may have changed (refresh, checkout, branch ops);
+  // the Graph tab refetches when visible and marks itself stale otherwise.
+  const [graphNonce, setGraphNonce] = useState(0)
+  const bumpGraph = useCallback(() => setGraphNonce((n) => n + 1), [])
   const { pref: themePref, resolved: theme, setPref: setThemePref } = useTheme()
 
   const repoRef = useRef<RepoSummary | null>(null)
@@ -203,10 +213,8 @@ export function App() {
   const updates = useUpdateBanner(aboutOpen, fail)
 
   const getRepoPath = useCallback(() => repoRef.current?.path, [])
-  const { diff, diffRef, diffLoading, loadWorkingDiff, loadCommitDiff, clearDiff } = useDiffLoader(
-    getRepoPath,
-    fail
-  )
+  const { diff, diffRef, diffLoading, loadWorkingDiff, loadCommitDiff, loadRangeDiff, clearDiff } =
+    useDiffLoader(getRepoPath, fail)
 
   // Determinate progress of the op this window started — see useOpProgress.
   const opProgress = useOpProgress(busy, busyRef, getRepoPath)
@@ -372,6 +380,27 @@ export function App() {
     resetDetail
   } = useCommitDetail({ getRepoPath, fail, loadCommitDiff, diffRef, clearDiff })
 
+  // The Graph tab's branch-changes selection (label click → base..tip diff) —
+  // see useBranchRange. Mutually exclusive with the commit selection.
+  const {
+    range: branchRange,
+    rangeFiles,
+    rangeFilesLoading,
+    rangeSelPath,
+    openRange,
+    selectRangeFile,
+    resetRange
+  } = useBranchRange({ getRepoPath, fail, loadRangeDiff, clearDiff })
+
+  /** Select a commit, dismissing any open branch-changes view. */
+  const selectCommitOnly = useCallback(
+    (commit: Commit) => {
+      resetRange()
+      selectCommit(commit)
+    },
+    [resetRange, selectCommit]
+  )
+
   /**
    * Reveal a commit in the History tab from elsewhere (the blame gutter's commit
    * link): close any overlay, switch to History, and select the commit. If it
@@ -400,7 +429,7 @@ export function App() {
           ? commitsRef.current.find((c) => c.hash === hash)
           : null
       if (loaded) {
-        selectCommit(loaded)
+        selectCommitOnly(loaded)
         return
       }
       // Otherwise we may have to page the log deep to reach it (a super-old
@@ -419,12 +448,12 @@ export function App() {
           list = await loadLog(repoPath, undefined, { minCount: index + 1 }).catch(() => list)
         }
         const target = list.find((c) => c.hash === hash)
-        if (target) selectCommit(target)
+        if (target) selectCommitOnly(target)
       } finally {
         setRevealingCommit(null)
       }
     },
-    [loadLog, selectCommit, clearLogSearch, setRevealingCommit]
+    [loadLog, selectCommitOnly, clearLogSearch, setRevealingCommit]
   )
 
   // ── Tab switching keeps the right pane in sync with the active selection ───
@@ -439,23 +468,34 @@ export function App() {
         if (changeSel) selectWorkingFile(changeSel, undefined, { force: true })
         else clearDiff()
       } else {
-        // First visit to History: fetch the log on demand.
-        const repoPath = repoRef.current?.path
-        if (repoPath && !logLoaded && !commitsLoading) loadLog(repoPath).catch(fail)
-        if (selectedCommit && commitSelPath)
+        // History and Graph share the commit selection; re-point the diff
+        // pane at it. The graph's own data loads inside GraphView on demand,
+        // and its branch-changes selection wins there when open.
+        if (next === 'history') {
+          // First visit to History: fetch the log on demand.
+          const repoPath = repoRef.current?.path
+          if (repoPath && !logLoaded && !commitsLoading) loadLog(repoPath).catch(fail)
+        }
+        if (next === 'graph' && branchRange) {
+          if (rangeSelPath) selectRangeFile(rangeSelPath, { force: true })
+          else clearDiff()
+        } else if (selectedCommit && commitSelPath) {
           selectCommitFile(commitSelPath, selectedCommit.hash, undefined, { force: true })
-        else clearDiff()
+        } else clearDiff()
       }
     },
     [
       changeSel,
       commitSelPath,
       selectedCommit,
+      branchRange,
+      rangeSelPath,
       logLoaded,
       commitsLoading,
       loadLog,
       selectWorkingFile,
       selectCommitFile,
+      selectRangeFile,
       clearDiff,
       fail
     ]
@@ -478,6 +518,9 @@ export function App() {
       // part of a refresh — the switcher reloads it lazily when opened.
       const refreshLog = logLoadedRef.current && tabRef.current === 'history'
       if (logLoadedRef.current && !refreshLog) markLogStale()
+      // The Graph tab follows the same rule on its own: a nonce bump refetches
+      // while it's visible and marks it stale otherwise.
+      bumpGraph()
       const [files] = await Promise.all([
         loadSnapshot(repoPath),
         refreshLog ? loadLog(repoPath, undefined, { keepCount: true }) : Promise.resolve(null),
@@ -515,7 +558,8 @@ export function App() {
     autoSelect,
     failOrRecover,
     loadGithubData,
-    markLogStale
+    markLogStale,
+    bumpGraph
   ])
 
   const refreshRef = useRef(refresh)
@@ -632,6 +676,7 @@ export function App() {
       resetLog()
       clearLogSearch()
       resetDetail()
+      resetRange()
       setChangeSel(null)
       setSelections(new Map())
       clearDiff()
@@ -674,6 +719,7 @@ export function App() {
       resetLog,
       clearLogSearch,
       resetDetail,
+      resetRange,
       setSelections
     ]
   )
@@ -749,10 +795,13 @@ export function App() {
         )
         setBranch(result.branch)
         resetDetail()
+        resetRange()
         setChangeSel(null)
         setSelections(new Map())
         resetLog()
         clearDiff()
+        // This path bypasses refresh(), so nudge the graph itself.
+        bumpGraph()
         // The new branch invalidates the log; reload it now only if History is
         // showing, otherwise leave it for the next time the tab is opened.
         if (tabRef.current === 'history') loadLog(repoPath).catch(fail)
@@ -777,7 +826,18 @@ export function App() {
         setCheckingOut(null)
       }
     },
-    [loadSnapshot, loadLog, autoSelect, clearDiff, fail, resetLog, resetDetail, setSelections]
+    [
+      loadSnapshot,
+      loadLog,
+      autoSelect,
+      clearDiff,
+      fail,
+      resetLog,
+      resetDetail,
+      resetRange,
+      setSelections,
+      bumpGraph
+    ]
   )
 
   /**
@@ -1406,6 +1466,12 @@ export function App() {
             >
               <Icon.History size={15} /> History
             </button>
+            <button
+              className={`tab${tab === 'graph' ? ' is-active' : ''}`}
+              onClick={() => switchTab('graph')}
+            >
+              <Icon.Branch size={15} /> Graph
+            </button>
           </div>
           <div className="sidebar__body">
             {/* Both panes stay mounted — only the active one is shown — so a
@@ -1457,13 +1523,29 @@ export function App() {
                 onLoadMore={loadMoreLog}
                 revealing={revealingCommit}
                 selectedCommit={selectedCommit}
-                onSelectCommit={selectCommit}
+                onSelectCommit={selectCommitOnly}
                 commitFiles={commitFiles}
                 commitFilesLoading={commitFilesLoading}
                 selectedFilePath={commitSelPath}
                 onSelectFile={(p) => selectedCommit && selectCommitFile(p, selectedCommit.hash)}
                 onFileSelectionChange={setCommitSelCount}
                 commitMenuFor={commitMenuFor}
+                onOpenFileHistory={openFileHistory}
+              />
+            </div>
+            <div className={`sidebar__pane${tab === 'graph' ? '' : ' sidebar__pane--hidden'}`}>
+              <GraphDetailPane
+                repoPath={repo.path}
+                commit={selectedCommit}
+                range={branchRange}
+                files={branchRange ? rangeFiles : commitFiles}
+                filesLoading={branchRange ? rangeFilesLoading : commitFilesLoading}
+                selectedFilePath={branchRange ? rangeSelPath : commitSelPath}
+                onSelectFile={(p) => {
+                  if (branchRange) selectRangeFile(p)
+                  else if (selectedCommit) selectCommitFile(p, selectedCommit.hash)
+                }}
+                onFileSelectionChange={setCommitSelCount}
                 onOpenFileHistory={openFileHistory}
               />
             </div>
@@ -1480,50 +1562,120 @@ export function App() {
         />
 
         <div className="workspace">
-          {conflictFile ? (
-            <ConflictPanel
-              key={conflictFile.path}
+          {/* Kept mounted (hidden) across tab switches — and while the
+              conflict panel takes over — so the diagram's pan/zoom and filter
+              state survive; same policy as the sidebar panes. Its diff pane
+              mounts only while Graph shows. Keyed by repo: a repo switch gets
+              a fresh view framed on its own HEAD. */}
+          <div
+            key={repo.path}
+            className={`graph-workspace${tab === 'graph' ? '' : ' graph-workspace--hidden'}`}
+          >
+            <GraphView
               repoPath={repo.path}
-              file={conflictFile}
-              ours={branch?.current ?? 'current branch'}
-              theirs={mergeSourceFromDetail(repoState?.detail)}
+              active={tab === 'graph'}
+              refreshNonce={graphNonce}
               theme={theme}
-              busy={busy}
-              runOp={runOp}
+              branch={branch}
+              remotes={sync?.remotes ?? []}
+              changesCount={changes.length}
+              selectedCommit={selectedCommit}
+              onSelectCommit={(commit) => {
+                if (commit) {
+                  selectCommitOnly(commit)
+                } else {
+                  resetDetail()
+                  resetRange()
+                  clearDiff()
+                }
+              }}
+              selectedBranchTip={branchRange?.head ?? null}
+              onSelectBranch={(row) => {
+                resetDetail()
+                clearDiff()
+                openRange({ name: row.name, base: row.baseHash, head: row.tipHash })
+              }}
+              commitMenuFor={commitMenuFor}
+              onCheckoutBranch={checkout}
+              onBranchAction={onBranchAction}
+              onOpenChanges={() => switchTab('changes')}
               onError={fail}
             />
-          ) : (
-            <>
-              {tab === 'history' && selectedCommit && (
-                <CommitSummary
-                  key={selectedCommit.hash}
-                  commit={selectedCommit}
-                  files={commitFiles}
-                  filesLoading={commitFilesLoading}
+            {tab === 'graph' && (selectedCommit || branchRange) && (
+              <>
+                <Resizer
+                  orientation="y"
+                  invert
+                  size={graphDiffHeight}
+                  min={160}
+                  max={800}
+                  onPreview={(h) => graphDiffRef.current?.style.setProperty('height', `${h}px`)}
+                  onCommit={setGraphDiffHeight}
                 />
-              )}
-              <DiffViewer
-                diff={diff}
-                loading={diffLoading}
-                mode={diffMode}
-                wrap={diffWrap}
+                <div
+                  className="graph-workspace__diff"
+                  ref={graphDiffRef}
+                  style={{ height: graphDiffHeight }}
+                >
+                  <DiffViewer
+                    diff={diff}
+                    loading={diffLoading}
+                    mode={diffMode}
+                    wrap={diffWrap}
+                    theme={theme}
+                    selectedCount={commitSelCount}
+                    onModeChange={setDiffMode}
+                    onWrapChange={setDiffWrap}
+                  />
+                </div>
+              </>
+            )}
+          </div>
+          {tab !== 'graph' &&
+            (conflictFile ? (
+              <ConflictPanel
+                key={conflictFile.path}
+                repoPath={repo.path}
+                file={conflictFile}
+                ours={branch?.current ?? 'current branch'}
+                theirs={mergeSourceFromDetail(repoState?.detail)}
                 theme={theme}
-                selectedCount={tab === 'changes' ? changeSelCount : commitSelCount}
-                onModeChange={setDiffMode}
-                onWrapChange={setDiffWrap}
-                selectionActions={
-                  tab === 'changes' && changeSel
-                    ? {
-                        selection: selections.get(changeSel) ?? 'all',
-                        onChange: (sel) => setFileSelection(changeSel, sel),
-                        onDiscard: discardHunk,
-                        busy
-                      }
-                    : undefined
-                }
+                busy={busy}
+                runOp={runOp}
+                onError={fail}
               />
-            </>
-          )}
+            ) : (
+              <>
+                {tab === 'history' && selectedCommit && (
+                  <CommitSummary
+                    key={selectedCommit.hash}
+                    commit={selectedCommit}
+                    files={commitFiles}
+                    filesLoading={commitFilesLoading}
+                  />
+                )}
+                <DiffViewer
+                  diff={diff}
+                  loading={diffLoading}
+                  mode={diffMode}
+                  wrap={diffWrap}
+                  theme={theme}
+                  selectedCount={tab === 'changes' ? changeSelCount : commitSelCount}
+                  onModeChange={setDiffMode}
+                  onWrapChange={setDiffWrap}
+                  selectionActions={
+                    tab === 'changes' && changeSel
+                      ? {
+                          selection: selections.get(changeSel) ?? 'all',
+                          onChange: (sel) => setFileSelection(changeSel, sel),
+                          onDiscard: discardHunk,
+                          busy
+                        }
+                      : undefined
+                  }
+                />
+              </>
+            ))}
         </div>
       </div>
 

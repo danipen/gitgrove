@@ -16,8 +16,9 @@ export {
   resolveRepoRoot,
   runGit
 } from './core'
-export { getCommitDiff, getWorkingDiff } from './diff'
-export { getCommitFiles, parseRawNumstat } from './files'
+export { getCommitDiff, getRangeDiff, getWorkingDiff } from './diff'
+export { getCommitFiles, getRangeFiles, parseRawNumstat } from './files'
+export { getGraphLog } from './graph'
 export { getCommitIndex, getFileHistory, getLog, getUnpushedCommits } from './log'
 export {
   countConflictMarkers,
@@ -26,4 +27,5 @@ export {
   getMergeToolName,
   parseMergeTreeNames
 } from './merge'
+export { getPatchIds } from './patch-ids'
 export { getRemoteCloneUrl, getRemoteWebUrl, toWebUrl } from './remotes'

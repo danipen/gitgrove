@@ -453,6 +453,18 @@ export interface LogOptions {
 }
 
 /**
+ * Options for the Graph tab's all-branches log. Unlike LogOptions there's no
+ * ref (the graph always shows every branch, remote and tag) and no skip (the
+ * diagram is one continuous window, extended by raising the limit).
+ */
+export interface GraphLogOptions {
+  /** Cap on the number of commits fed to the diagram. */
+  limit?: number
+  /** Only commits younger than this (any `git log --since` date expression). */
+  since?: string
+}
+
+/**
  * One side of an image diff, shipped ready to paint: a `data:` URL the
  * renderer feeds straight to an <img> (no file:// access from the sandboxed
  * renderer, no temp files), plus the encoded size for the info bar.
