@@ -87,7 +87,17 @@ const TIP_BORDER = 1
 const TIP_PAD_X = 9
 const TIP_PAD_Y = 6
 const TIP_SUBJECT_LINE_HEIGHT = 1.45
+/** Reading-measure bounds for the card: 420px ≈ 66 chars/line at 12px (the
+ *  top of the comfortable range), 300px ≈ 48 (still an easy read). */
 const TIP_MAX_WIDTH = 420
+const TIP_MIN_WIDTH = 300
+
+/** The card's width cap: TIP_MAX_WIDTH on large windows, but never more than
+ *  a quarter of the window — a fixed 420px card occludes a third of the graph
+ *  on a laptop. Floored at TIP_MIN_WIDTH so the text column stays readable. */
+function tipMaxWidth(): number {
+  return Math.min(TIP_MAX_WIDTH, Math.max(TIP_MIN_WIDTH, Math.round(window.innerWidth / 4)))
+}
 
 /** Places the card so its subject's first line rasterizes on the caption's
  *  exact glyphs. The caption anchors at a canvas 'middle' baseline; a DOM line
@@ -104,14 +114,16 @@ function tipPosition(tip: Tooltip, stage: DOMRect | undefined, fontFamily: strin
   const halfLeading = (lineBox - (m.ascent + m.descent)) / 2
   const baselineY = tip.y + m.middleToBaseline
   const stageWidth = stage?.width ?? 0
+  const maxWidth = tipMaxWidth()
   return {
+    maxWidth,
     // Clamped so the card never runs off the stage's right edge (alignment
     // yields to visibility there, by design).
     left:
       (stage?.left ?? 0) +
       Math.max(
         8,
-        Math.min(tip.x - TIP_BORDER - TIP_PAD_X, stageWidth - TIP_MAX_WIDTH - 2 * TIP_BORDER - 8)
+        Math.min(tip.x - TIP_BORDER - TIP_PAD_X, stageWidth - maxWidth - 2 * TIP_BORDER - 8)
       ),
     top: (stage?.top ?? 0) + baselineY - TIP_BORDER - TIP_PAD_Y - halfLeading - m.ascent
   }

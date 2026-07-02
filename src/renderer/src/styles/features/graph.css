@@ -67,6 +67,8 @@
   position: fixed;
   z-index: 65;
   width: max-content;
+  /* Fallback cap; tipPosition (GraphCanvas.tsx) sets the effective max-width
+     inline — 420px on large windows, a quarter of smaller ones. */
   max-width: 420px;
   padding: 6px 9px;
   background: var(--bg-elevated);
