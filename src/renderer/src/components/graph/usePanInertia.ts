@@ -10,10 +10,18 @@ import { decayFling, flingVelocity, type PanSample, pushPanSample } from './pan'
 const MAX_FRAME_MS = 64
 
 export interface PanInertia {
-  /** Feed the drag's pointer positions (screen px) while panning. */
-  sample(x: number, y: number): void
+  /** Feed the drag's pointer positions (screen px). Pass the event's own
+   *  timeStamp when available: coalesced pointer events all *dispatch* in one
+   *  frame, but carry the hardware timestamps the velocity math needs. */
+  sample(x: number, y: number, t?: number): void
   /** The drag ended — fling if the release was a flick, else do nothing. */
   release(): void
+  /** The drag's event stream was cut before the release could be observed
+   *  (Chromium drops non-primary-button capture at the window edge, so an
+   *  off-window release only surfaces when the cursor re-enters). Fling with
+   *  the velocity the drag carried when the stream went silent — a flick
+   *  that sails out of the window must coast, same as on a touch screen. */
+  releaseDetached(): void
   /** The user (or another gesture) took over — stop dead and forget. */
   cancel(): void
 }
@@ -61,21 +69,42 @@ export function usePanInertia(
     frameRef.current = requestAnimationFrame(step)
   }, [])
 
-  const sample = useCallback((x: number, y: number) => {
-    pushPanSample(samplesRef.current, { x, y, t: performance.now() })
+  const sample = useCallback((x: number, y: number, t = performance.now()) => {
+    // Event timeStamps and performance.now() share a timebase in Chromium,
+    // so hardware-stamped samples and the release clock compare directly.
+    pushPanSample(samplesRef.current, { x, y, t })
   }, [])
 
+  const launch = useCallback(
+    (velocity: { vx: number; vy: number } | null) => {
+      samplesRef.current = []
+      if (!velocity) return
+      velocityRef.current = velocity
+      lastFrameRef.current = performance.now()
+      if (frameRef.current === null) frameRef.current = requestAnimationFrame(step)
+    },
+    [step]
+  )
+
   const release = useCallback(() => {
-    const velocity = flingVelocity(samplesRef.current, performance.now())
-    samplesRef.current = []
-    if (!velocity) return
-    velocityRef.current = velocity
-    lastFrameRef.current = performance.now()
-    if (frameRef.current === null) frameRef.current = requestAnimationFrame(step)
-  }, [step])
+    // Measured against the wall clock: pausing before lifting parks the view.
+    launch(flingVelocity(samplesRef.current, performance.now()))
+  }, [launch])
+
+  const releaseDetached = useCallback(() => {
+    // The wall clock lies here — the release event arrived late because the
+    // stream was cut, not because the pointer parked. Measure at the moment
+    // of the last sample we actually saw.
+    const samples = samplesRef.current
+    const last = samples[samples.length - 1]
+    launch(last ? flingVelocity(samples, last.t) : null)
+  }, [launch])
 
   useEffect(() => cancel, [cancel])
 
   // Stable identity, so callers can list the handle in hook deps freely.
-  return useMemo(() => ({ sample, release, cancel }), [sample, release, cancel])
+  return useMemo(
+    () => ({ sample, release, releaseDetached, cancel }),
+    [sample, release, releaseDetached, cancel]
+  )
 }

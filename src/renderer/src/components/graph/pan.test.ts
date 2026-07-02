@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import {
   decayFling,
+  FLING_MAX_SPEED,
   FLING_MIN_LAUNCH,
   FLING_MIN_SPEED,
   flingVelocity,
@@ -48,14 +49,50 @@ describe('flingVelocity', () => {
     expect(v).toBe(null)
   })
 
+  test('a short fast flick still flings: grab-point seed plus one move', () => {
+    // A whole flick can dispatch a single pointermove; the pointerdown seed
+    // provides the second sample that makes the velocity measurable.
+    const flick: PanSample[] = [
+      { x: 0, y: 0, t: 0 },
+      { x: 48, y: 0, t: 16 }
+    ]
+    const v = flingVelocity(flick, 20)
+    expect(v?.vx ?? 0).toBeCloseTo(3)
+    expect(v?.vy ?? 0).toBeCloseTo(0)
+  })
+
+  test('a violent flick is clamped to the speed ceiling', () => {
+    const violent: PanSample[] = [
+      { x: 0, y: 0, t: 0 },
+      { x: 90, y: 120, t: 12 }
+    ]
+    const v = flingVelocity(violent, 12)
+    expect(v).not.toBe(null)
+    if (!v) return
+    expect(Math.hypot(v.vx, v.vy)).toBeCloseTo(FLING_MAX_SPEED)
+    // The clamp preserves direction: 90:120 is 3:4.
+    expect(v.vy / v.vx).toBeCloseTo(120 / 90)
+  })
+
+  test('a small quick drag still flings', () => {
+    // 12px in 24ms — tiny travel, but a decisive gesture.
+    const small: PanSample[] = [
+      { x: 0, y: 0, t: 0 },
+      { x: 8, y: 0, t: 16 },
+      { x: 12, y: 0, t: 24 }
+    ]
+    const v = flingVelocity(small, 28)
+    expect(v?.vx ?? 0).toBeCloseTo(0.5)
+  })
+
   test('too little history is noise, not velocity', () => {
     expect(flingVelocity([], 0)).toBe(null)
     expect(flingVelocity([{ x: 0, y: 0, t: 0 }], 0)).toBe(null)
     const jitter: PanSample[] = [
       { x: 0, y: 0, t: 0 },
-      { x: 9, y: 0, t: 5 }
+      { x: 9, y: 0, t: 3 }
     ]
-    expect(flingVelocity(jitter, 5)).toBe(null)
+    expect(flingVelocity(jitter, 3)).toBe(null)
   })
 })
 

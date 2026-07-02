@@ -496,6 +496,9 @@ export function GraphCanvas({
     wrapRef.current?.focus()
     // Touching down catches a gliding fling — classic grab-to-stop.
     panInertia.cancel()
+    // Seed the fling estimator with the grab point: a fast flick may dispatch
+    // just one move event before release, and one sample can't make a velocity.
+    panInertia.sample(e.clientX, e.clientY, e.timeStamp)
     panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, panned: false }
   }
 
@@ -524,10 +527,14 @@ export function GraphCanvas({
     if (inTip(e)) return
     const pan = panRef.current
     if (pan && pan.id === e.pointerId) {
-      // Released off-window: buttons bitmask is the only reliable signal.
+      // Released off-window: buttons bitmask is the only reliable signal
+      // (middle-button capture drops at the window edge, so the pointerup
+      // never reached us). The flick that carried the cursor out must still
+      // coast — fling from the velocity the drag had when the stream cut.
       if (e.buttons === 0) {
         panRef.current = null
-        panInertia.cancel()
+        if (pan.panned) panInertia.releaseDetached()
+        else panInertia.cancel()
         setCursor('default')
         return
       }
@@ -543,8 +550,13 @@ export function GraphCanvas({
       }
       if (pan.panned) {
         panBy(dx, dy)
-        // Feed the fling estimator — release velocity comes from these.
-        panInertia.sample(e.clientX, e.clientY)
+        // Feed the fling estimator. Chromium coalesces pointermove to one
+        // dispatch per frame, so a fast flick is only a couple of events —
+        // the coalesced list restores the raw samples (and their hardware
+        // timestamps) the release-velocity estimate needs.
+        const moves = e.nativeEvent.getCoalescedEvents?.() ?? []
+        if (moves.length === 0) panInertia.sample(e.clientX, e.clientY, e.timeStamp)
+        else for (const m of moves) panInertia.sample(m.clientX, m.clientY, m.timeStamp)
         pan.x = e.clientX
         pan.y = e.clientY
       }
@@ -588,6 +600,18 @@ export function GraphCanvas({
     else if (hit.type === 'wip') onWipClick()
     // A branch label or its container capsule opens the branch's changes.
     else onRowClick(hit.row)
+  }
+
+  // Touch input ends an aborted gesture with pointercancel, never pointerup
+  // (e.g. the OS claims the touch). Without this the drag state would zombie
+  // until the next pointerdown. The gesture was taken from the user, so the
+  // view parks — no fling.
+  const onPointerCancel = (e: React.PointerEvent) => {
+    const pan = panRef.current
+    if (!pan || pan.id !== e.pointerId) return
+    panRef.current = null
+    panInertia.cancel()
+    setCursor('default')
   }
 
   const onContextMenu = (e: React.MouseEvent) => {
@@ -722,6 +746,7 @@ export function GraphCanvas({
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       onPointerLeave={() => setHover(null, null)}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}

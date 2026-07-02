@@ -21,6 +21,9 @@ export interface PanSample {
 export const VELOCITY_WINDOW_MS = 100
 /** px/ms below which a release is a positioning drag, not a flick. */
 export const FLING_MIN_LAUNCH = 0.15
+/** px/ms ceiling. A violent flick measured over a handful of ms can read
+ *  absurdly fast; the clamp keeps the glide vigorous, never a teleport. */
+export const FLING_MAX_SPEED = 4
 /** px/ms below which the glide has landed and the frame loop stops. */
 export const FLING_MIN_SPEED = 0.01
 /** Exponential decay time constant — the fling loses ~63% speed per τ. */
@@ -46,11 +49,16 @@ export function flingVelocity(
   const last = recent[recent.length - 1]
   if (!first || !last || first === last) return null
   const dt = last.t - first.t
-  // A couple of samples inside a few ms is noise, not a measurable velocity.
-  if (dt < 10) return null
+  // Samples are seeded from the grab point and carry hardware timestamps, so
+  // this span covers the whole recent gesture: anything under a few ms is not
+  // a human drag, just jitter. Small-but-quick flicks stay flingable.
+  if (dt < 4) return null
   const vx = (last.x - first.x) / dt
   const vy = (last.y - first.y) / dt
-  return Math.hypot(vx, vy) >= FLING_MIN_LAUNCH ? { vx, vy } : null
+  const speed = Math.hypot(vx, vy)
+  if (speed < FLING_MIN_LAUNCH) return null
+  const clamp = Math.min(1, FLING_MAX_SPEED / speed)
+  return { vx: vx * clamp, vy: vy * clamp }
 }
 
 /**
