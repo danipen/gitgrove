@@ -161,9 +161,7 @@ export async function loadRefImageSides(
   const hasNew = file.status !== 'deleted'
   const [oldSide, newSide] = await Promise.all([
     oldRef !== null && hasOld
-      ? showFileBuffer(repoPath, oldRef, file.oldPath ?? file.path).then((b) =>
-          asContents(b, mime)
-        )
+      ? showFileBuffer(repoPath, oldRef, file.oldPath ?? file.path).then((b) => asContents(b, mime))
       : Promise.resolve(null),
     hasNew
       ? showFileBuffer(repoPath, newRef, file.path).then((b) => asContents(b, mime))

@@ -208,7 +208,10 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
       if (ref.isTag || ref.name === 'HEAD') continue
       const { base, remote } = splitRef(ref.name, input.remotes)
       let tips = groups.get(base)
-      if (!tips) groups.set(base, (tips = []))
+      if (!tips) {
+        tips = []
+        groups.set(base, tips)
+      }
       tips.push({ hash: commit.hash, isRemote: remote, order })
     }
   })
@@ -355,7 +358,9 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     (c) => chainOf.has(c.hash) && (structural === null || structural.has(c.hash))
   )
   const columnOf = new Map<string, number>()
-  kept.forEach((c, i) => columnOf.set(c.hash, kept.length - 1 - i))
+  kept.forEach((c, i) => {
+    columnOf.set(c.hash, kept.length - 1 - i)
+  })
 
   // ── Chain spans + base hashes (oldest kept commit per chain) ──────────────
   const span = chains.map(() => ({
@@ -392,7 +397,9 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     .map((chain, id) => ({ id, version: releaseVersionOfChain(chain, input) }))
     .filter((entry) => entry.version !== null)
     .sort((a, b) => compareReleaseVersions(a.version ?? [], b.version ?? []))
-    .forEach((entry, rank) => releaseRank.set(entry.id, rank))
+    .forEach((entry, rank) => {
+      releaseRank.set(entry.id, rank)
+    })
   const NOT_RELEASE = Number.MAX_SAFE_INTEGER
   const others = chains
     .map((_, id) => id)
@@ -421,8 +428,10 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     let row = 0
     while (true) {
       const taken = occupied[row]
-      if (!taken || !taken.some((t) => interval.start <= t.end && t.start <= interval.end)) {
-        ;(occupied[row] ??= []).push(interval)
+      if (!taken?.some((t) => interval.start <= t.end && t.start <= interval.end)) {
+        const rowIntervals = taken ?? []
+        if (!taken) occupied[row] = rowIntervals
+        rowIntervals.push(interval)
         rowOfChain.set(id, row + 1)
         break
       }

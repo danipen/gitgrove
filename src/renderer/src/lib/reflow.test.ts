@@ -15,7 +15,8 @@ describe('reflowMessage', () => {
   })
 
   test('blank lines keep paragraphs apart', () => {
-    const body = 'First paragraph wrapped at some fairly long column here\nand continued.\n\nSecond.'
+    const body =
+      'First paragraph wrapped at some fairly long column here\nand continued.\n\nSecond.'
     expect(reflowMessage(body)).toBe(
       'First paragraph wrapped at some fairly long column here and continued.\n\nSecond.'
     )

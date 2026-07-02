@@ -77,7 +77,17 @@ describe('graph geometry', () => {
     const y = nodeY(m.row) + 24
     const clamp = Number.NEGATIVE_INFINITY
     const at = (x: number, drawnWidth: number) =>
-      hitTest(layout, x, y, () => 40, null, -1, clamp, true, () => drawnWidth)
+      hitTest(
+        layout,
+        x,
+        y,
+        () => 40,
+        null,
+        -1,
+        clamp,
+        true,
+        () => drawnWidth
+      )
     // The renderer culled the caption (drawn width 0): its band no longer hits.
     expect(at(nodeX(m.column) + 4, 0)).toBeNull()
     // Drawn 30 wide: a point over the glyphs hits, the slot's empty tail misses.
@@ -116,7 +126,18 @@ describe('graph geometry', () => {
     const x = nodeX(m.column) + 4
     const clamp = Number.NEGATIVE_INFINITY
     const at = (wy: number, scale: number) =>
-      hitTest(layout, x, wy, () => 40, null, -1, clamp, true, () => 30, scale)
+      hitTest(
+        layout,
+        x,
+        wy,
+        () => 40,
+        null,
+        -1,
+        clamp,
+        true,
+        () => 30,
+        scale
+      )
     // At zoom 1 the classic band: nodeY + 26 is the caption line's center.
     expect(at(nodeY(m.row) + 26, 1)?.type).toBe('node')
     // Zoomed in, the gap shrinks in WORLD units (constant on screen): the

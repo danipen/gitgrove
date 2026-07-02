@@ -28,8 +28,7 @@ export function useBackportLinks(
     if (linkable.size === 0) return
     const missing = layout.nodes
       .filter(
-        (node) =>
-          !node.isMerge && linkable.has(node.chain) && !cache.current.has(node.commit.hash)
+        (node) => !node.isMerge && linkable.has(node.chain) && !cache.current.has(node.commit.hash)
       )
       .map((node) => node.commit.hash)
     if (missing.length === 0) return

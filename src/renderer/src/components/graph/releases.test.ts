@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-  compareReleaseVersions,
-  releaseLineVersion,
-  releaseVersionWithOverride
-} from './releases'
+import { compareReleaseVersions, releaseLineVersion, releaseVersionWithOverride } from './releases'
 
 describe('releaseLineVersion', () => {
   test('version-shaped names are release lines', () => {

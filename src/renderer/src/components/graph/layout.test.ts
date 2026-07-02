@@ -39,11 +39,7 @@ const rowNamed = (layout: ReturnType<typeof layoutGraph>, name: string) => {
 describe('layoutGraph', () => {
   test('linear history is one row with ascending columns and line edges', () => {
     const layout = layoutGraph(
-      input([
-        commit('ccc', ['bbb'], 'HEAD -> main'),
-        commit('bbb', ['aaa']),
-        commit('aaa', [])
-      ])
+      input([commit('ccc', ['bbb'], 'HEAD -> main'), commit('bbb', ['aaa']), commit('aaa', [])])
     )
     expect(layout.rows).toHaveLength(1)
     expect(layout.rows[0].name).toBe('main')
@@ -134,14 +130,10 @@ describe('layoutGraph', () => {
 
   test('detached HEAD off every branch gets its own row', () => {
     const layout = layoutGraph(
-      input(
-        [
-          commit('m', ['a'], 'main'),
-          commit('d', ['a'], 'HEAD'),
-          commit('a', [])
-        ],
-        { detached: true, headBranch: '' }
-      )
+      input([commit('m', ['a'], 'main'), commit('d', ['a'], 'HEAD'), commit('a', [])], {
+        detached: true,
+        headBranch: ''
+      })
     )
     const head = rowNamed(layout, 'HEAD')
     expect(head.kind).toBe('detached')
@@ -180,14 +172,9 @@ describe('layoutGraph', () => {
 
   test('default branch pins to row 0 even when another branch is newer', () => {
     const layout = layoutGraph(
-      input(
-        [
-          commit('f', ['a'], 'HEAD -> feature'),
-          commit('m', ['a'], 'main'),
-          commit('a', [])
-        ],
-        { headBranch: 'feature' }
-      )
+      input([commit('f', ['a'], 'HEAD -> feature'), commit('m', ['a'], 'main'), commit('a', [])], {
+        headBranch: 'feature'
+      })
     )
     expect(layout.rows[0].name).toBe('main')
     expect(layout.rows[1].name).toBe('feature')
@@ -238,11 +225,7 @@ describe('layoutGraph', () => {
   test('mainline keeps color slot 0; other branches get stable non-zero slots', () => {
     const build = () =>
       layoutGraph(
-        input([
-          commit('m', ['a'], 'HEAD -> main'),
-          commit('f', ['a'], 'feature'),
-          commit('a', [])
-        ])
+        input([commit('m', ['a'], 'HEAD -> main'), commit('f', ['a'], 'feature'), commit('a', [])])
       )
     const first = build()
     expect(rowNamed(first, 'main').color).toBe(0)

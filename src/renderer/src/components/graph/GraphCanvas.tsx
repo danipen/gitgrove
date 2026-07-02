@@ -16,8 +16,8 @@ import {
   hitTest,
   MAX_SCALE,
   MIN_SCALE,
-  neighborNode,
   NODE_R,
+  neighborNode,
   nodeX,
   nodeY,
   rowEndpoint,
@@ -431,6 +431,7 @@ export function GraphCanvas({
   }, [layout, jumpToHead, clampView, invalidate])
 
   // Redraw on anything scene-visible; avatars invalidate as images land.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: these values aren't read by invalidate — they're the intentional redraw triggers
   useEffect(invalidate, [
     selectedHash,
     selectedBranchTip,
@@ -442,6 +443,7 @@ export function GraphCanvas({
     invalidate
   ])
   useEffect(() => subscribeAvatars(invalidate), [invalidate])
+  // biome-ignore lint/correctness/useExhaustiveDependencies: theme isn't read here — a theme change is the trigger to drop the palette cache and redraw
   useEffect(() => {
     paletteRef.current = null
     invalidate()

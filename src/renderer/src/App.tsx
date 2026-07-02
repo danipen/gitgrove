@@ -213,15 +213,8 @@ export function App() {
   const updates = useUpdateBanner(aboutOpen, fail)
 
   const getRepoPath = useCallback(() => repoRef.current?.path, [])
-  const {
-    diff,
-    diffRef,
-    diffLoading,
-    loadWorkingDiff,
-    loadCommitDiff,
-    loadRangeDiff,
-    clearDiff
-  } = useDiffLoader(getRepoPath, fail)
+  const { diff, diffRef, diffLoading, loadWorkingDiff, loadCommitDiff, loadRangeDiff, clearDiff } =
+    useDiffLoader(getRepoPath, fail)
 
   // Determinate progress of the op this window started — see useOpProgress.
   const opProgress = useOpProgress(busy, busyRef, getRepoPath)

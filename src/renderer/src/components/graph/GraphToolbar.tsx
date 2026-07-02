@@ -106,10 +106,7 @@ function Picker<T extends { id: string; label: string; hint?: string }>({
   const [query, setQuery] = useState('')
   const q = query.trim()
   const visible = useMemo(
-    () =>
-      q === ''
-        ? items
-        : items.filter((i) => i.label.toLowerCase().includes(q.toLowerCase())),
+    () => (q === '' ? items : items.filter((i) => i.label.toLowerCase().includes(q.toLowerCase()))),
     [items, q]
   )
   const toggle = (id: string) => {
@@ -195,9 +192,7 @@ export function GraphToolbar({
   matchIndex,
   onMatchStep
 }: Props) {
-  const [open, setOpen] = useState<'branches' | 'authors' | 'date' | 'view' | 'focus' | null>(
-    null
-  )
+  const [open, setOpen] = useState<'branches' | 'authors' | 'date' | 'view' | 'focus' | null>(null)
   const anchors = useRef<Record<string, HTMLButtonElement | null>>({})
   const anchorFor = (id: string) => (el: HTMLButtonElement | null) => {
     anchors.current[id] = el
@@ -207,8 +202,7 @@ export function GraphToolbar({
 
   const branchItems = useMemo(() => branches.map((b) => ({ id: b, label: b })), [branches])
   const authorItems = useMemo(
-    () =>
-      authors.map((a) => ({ id: a.email, label: a.name, hint: `${a.commits}` })),
+    () => authors.map((a) => ({ id: a.email, label: a.name, hint: `${a.commits}` })),
     [authors]
   )
 
@@ -413,8 +407,8 @@ export function GraphToolbar({
             <span>
               <span className="graph-picker__opt-title">Structure only</span>
               <span className="graph-picker__opt-desc">
-                Show only the commits that shape the diagram — branch starts and tips, merges,
-                tags — and collapse the linear runs between them.
+                Show only the commits that shape the diagram — branch starts and tips, merges, tags
+                — and collapse the linear runs between them.
               </span>
             </span>
           </label>
@@ -427,8 +421,8 @@ export function GraphToolbar({
             <span>
               <span className="graph-picker__opt-title">Hide merged branches</span>
               <span className="graph-picker__opt-desc">
-                Omit branches already merged into another branch. The current and default
-                branches always show.
+                Omit branches already merged into another branch. The current and default branches
+                always show.
               </span>
             </span>
           </label>
@@ -441,9 +435,9 @@ export function GraphToolbar({
             <span>
               <span className="graph-picker__opt-title">Hide backport twins</span>
               <span className="graph-picker__opt-desc">
-                Omit the purple dots marking changes that live on more than one line — a
-                fix on the mainline and its cherry-picked copy on a release line. Hover a
-                dotted commit to see its twins; click a branch name or press T to jump.
+                Omit the purple dots marking changes that live on more than one line — a fix on the
+                mainline and its cherry-picked copy on a release line. Hover a dotted commit to see
+                its twins; click a branch name or press T to jump.
               </span>
             </span>
           </label>

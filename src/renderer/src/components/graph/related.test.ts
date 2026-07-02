@@ -79,9 +79,7 @@ describe('relatedBranches', () => {
   })
 
   test('an isolated or absent seed is still the whole result', () => {
-    const layout = layoutGraph(
-      input([commit('m', ['a'], 'HEAD -> main'), commit('a', [])])
-    )
+    const layout = layoutGraph(input([commit('m', ['a'], 'HEAD -> main'), commit('a', [])]))
     expect(relatedBranches(layout, 'main', 1)).toEqual(new Set(['main']))
     expect(relatedBranches(layout, 'ghost', 1)).toEqual(new Set(['ghost']))
   })

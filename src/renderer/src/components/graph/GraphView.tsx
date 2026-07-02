@@ -70,9 +70,10 @@ export function GraphView({
    *  with the seed's related set, so the Branches picker can fine-tune it. */
   const [focus, setFocus] = useState<{ name: string; hops: number } | null>(null)
   // "Pin as Release Line" overrides, kept per repo under one storage key.
-  const [releasePins, setReleasePins] = usePersistentState<
-    Record<string, Record<string, boolean>>
-  >('gg.graphReleasePins', {})
+  const [releasePins, setReleasePins] = usePersistentState<Record<string, Record<string, boolean>>>(
+    'gg.graphReleasePins',
+    {}
+  )
   const [authorFilter, setAuthorFilter] = useState<Set<string> | null>(null)
   const [datePreset, setDatePreset] = useState<DatePresetId>('all')
   // View shaping (persisted): what makes busy trunk-based repos readable.
@@ -174,7 +175,6 @@ export function GraphView({
   // New search → restart at the newest hit and bring it into view.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the query change is the intentional trigger
   useEffect(() => setMatchIndex(0), [search])
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reveal is imperative; activeMatch is the trigger
   useEffect(() => {
     if (activeMatch) controls.current?.reveal(activeMatch)
   }, [activeMatch])
@@ -259,8 +259,7 @@ export function GraphView({
     }
     const isCurrent = !branch?.detached && branch?.current === row.name
     const current = branch?.current ?? 'current branch'
-    const isRelease =
-      releaseVersionWithOverride(row.name, releaseOverrides?.get(row.name)) !== null
+    const isRelease = releaseVersionWithOverride(row.name, releaseOverrides?.get(row.name)) !== null
     const items: ContextMenuItem[] = [
       changesItem,
       {

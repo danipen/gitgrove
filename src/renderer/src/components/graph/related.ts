@@ -19,7 +19,10 @@ export function relatedBranches(layout: GraphLayout, seed: string, hops: number)
   const adjacency = new Map<number, Set<number>>()
   const connect = (a: number, b: number) => {
     let peers = adjacency.get(a)
-    if (!peers) adjacency.set(a, (peers = new Set()))
+    if (!peers) {
+      peers = new Set()
+      adjacency.set(a, peers)
+    }
     peers.add(b)
   }
   for (const edge of layout.edges) {

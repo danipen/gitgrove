@@ -20,7 +20,6 @@ export { getCommitDiff, getRangeDiff, getWorkingDiff } from './diff'
 export { getCommitFiles, getRangeFiles, parseRawNumstat } from './files'
 export { getGraphLog } from './graph'
 export { getCommitIndex, getFileHistory, getLog, getUnpushedCommits } from './log'
-export { getPatchIds } from './patch-ids'
 export {
   countConflictMarkers,
   getConflictSides,
@@ -28,4 +27,5 @@ export {
   getMergeToolName,
   parseMergeTreeNames
 } from './merge'
+export { getPatchIds } from './patch-ids'
 export { getRemoteCloneUrl, getRemoteWebUrl, toWebUrl } from './remotes'

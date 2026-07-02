@@ -17,9 +17,9 @@ import {
   CAPTION_HOME_MAX_SCREEN_W,
   CAPTION_MAX_SCREEN_W,
   CAPTION_SLOT_AIR,
+  COL_W,
   captionAlpha,
   captionCenterOffset,
-  COL_W,
   columnsToNext,
   HEADER_H,
   labelRect,
@@ -77,7 +77,10 @@ const colorCache = new Map<string, string>()
 
 function cached(key: string, make: () => string): string {
   let value = colorCache.get(key)
-  if (!value) colorCache.set(key, (value = make()))
+  if (!value) {
+    value = make()
+    colorCache.set(key, value)
+  }
   return value
 }
 
@@ -365,12 +368,7 @@ function drawContainers(
   }
 }
 
-function drawEdges(
-  ctx: CanvasRenderingContext2D,
-  scene: SceneState,
-  c0: number,
-  c1: number
-): void {
+function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number, c1: number): void {
   const { palette, matches } = scene
   ctx.lineWidth = 2
   for (const edge of scene.layout.edges) {
@@ -425,7 +423,10 @@ const twinCache = new WeakMap<readonly BackportLink[], ReadonlySet<string>>()
 function twinsOf(links: readonly BackportLink[]): ReadonlySet<string> | null {
   if (links.length === 0) return null
   let twins = twinCache.get(links)
-  if (!twins) twinCache.set(links, (twins = linkedHashes(links)))
+  if (!twins) {
+    twins = linkedHashes(links)
+    twinCache.set(links, twins)
+  }
   return twins
 }
 
@@ -899,9 +900,7 @@ function drawHeader(ctx: CanvasRenderingContext2D, scene: SceneState): void {
   for (let i = 0; i < marks.length; i++) {
     const x = (nodeX(marks[i].column) - COL_W / 2) * view.scale + view.x
     const next =
-      i + 1 < marks.length
-        ? (nodeX(marks[i + 1].column) - COL_W / 2) * view.scale + view.x
-        : width
+      i + 1 < marks.length ? (nodeX(marks[i + 1].column) - COL_W / 2) * view.scale + view.x : width
     if (next < 6 || x > width) continue
     if (x >= 0) {
       ctx.strokeStyle = palette.headerLine

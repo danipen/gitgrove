@@ -77,7 +77,10 @@ export function backportLinks(
     const id = patchIds.get(node.commit.hash)
     if (!id) continue
     let group = groups.get(id)
-    if (!group) groups.set(id, (group = []))
+    if (!group) {
+      group = []
+      groups.set(id, group)
+    }
     group.push(node)
   }
   const links: BackportLink[] = []
