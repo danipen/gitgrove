@@ -250,12 +250,37 @@ function drawContainers(
     // The HEAD branch's capsule stretches to embrace the WIP node.
     const lastColumn = row.isHead && wip ? wip.column : row.endColumn
     const x1 = nodeX(lastColumn) + NODE_R + CAPSULE_PAD
+    if (selected) {
+      // Exactly the commit treatment: soft halo behind, and the accent ring
+      // drawn AROUND the capsule — its own branch-colored border stays as is.
+      ctx.beginPath()
+      ctx.roundRect(
+        x0 - 8,
+        y - CAPSULE_HALF_H - 8,
+        x1 - x0 + 16,
+        CAPSULE_HALF_H * 2 + 16,
+        CAPSULE_HALF_H + 8
+      )
+      ctx.fillStyle = palette.halo
+      ctx.fill()
+      ctx.beginPath()
+      ctx.roundRect(
+        x0 - 4,
+        y - CAPSULE_HALF_H - 4,
+        x1 - x0 + 8,
+        CAPSULE_HALF_H * 2 + 8,
+        CAPSULE_HALF_H + 4
+      )
+      ctx.strokeStyle = palette.accent
+      ctx.lineWidth = 2
+      ctx.stroke()
+    }
     ctx.beginPath()
     ctx.roundRect(x0, y - CAPSULE_HALF_H, x1 - x0, CAPSULE_HALF_H * 2, CAPSULE_HALF_H)
-    ctx.fillStyle = branchFill(palette, row.color, selected ? 0.14 : 0.06)
+    ctx.fillStyle = branchFill(palette, row.color, 0.06)
     ctx.fill()
-    ctx.strokeStyle = branchFill(palette, row.color, selected ? 0.75 : 0.28)
-    ctx.lineWidth = selected ? 1.6 : 1
+    ctx.strokeStyle = branchFill(palette, row.color, 0.28)
+    ctx.lineWidth = 1
     ctx.stroke()
     // Spine through the chain's commits, in the branch color. While a filter
     // dims commits, the structure lines recede with them — matches must pop.
