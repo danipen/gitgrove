@@ -304,7 +304,15 @@ export function GraphCanvas({
   }, [layout, jumpToHead, clampView, invalidate])
 
   // Redraw on anything scene-visible; avatars invalidate as images land.
-  useEffect(invalidate, [selectedHash, matches, activeMatch, wip, theme, invalidate])
+  useEffect(invalidate, [
+    selectedHash,
+    selectedBranchTip,
+    matches,
+    activeMatch,
+    wip,
+    theme,
+    invalidate
+  ])
   useEffect(() => subscribeAvatars(invalidate), [invalidate])
   useEffect(() => {
     paletteRef.current = null
