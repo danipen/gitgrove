@@ -14,6 +14,10 @@ import { avatarImageFor } from './avatars'
 import {
   CAPSULE_HALF_H,
   CAPSULE_PAD,
+  CAPTION_MAX_SCREEN_W,
+  CAPTION_SLOT_AIR,
+  captionAlpha,
+  captionCenterOffset,
   COL_W,
   columnsToNext,
   HEADER_H,
@@ -139,8 +143,52 @@ export interface SceneState {
 }
 
 const LABEL_FONT = 11
-const SUBJECT_FONT = 11
+/** Caption font in SCREEN px: captions render map-label style — a constant
+ *  on-screen size at any zoom. Size and weight must mirror .graph-tip__subject
+ *  in graph.css exactly: the expansion card's first line sits on the caption's
+ *  glyphs, and only a matching font makes the truncated text visibly "become"
+ *  the full message. Captions therefore draw in SCREEN space (see drawCaption)
+ *  so they rasterize at this exact pixel size, like the DOM text does. */
+export const SUBJECT_FONT = 12
+export const SUBJECT_WEIGHT = 600
 const DIM_ALPHA = 0.15
+
+/** Font metrics of the caption face, for baseline-exact DOM overlays. */
+export interface CaptionMetrics {
+  /** Font-box ascent/descent — what CSS line layout uses as the content area. */
+  ascent: number
+  descent: number
+  /** Distance from the canvas 'middle' anchor down to the alphabetic baseline. */
+  middleToBaseline: number
+}
+
+let captionMetricsCache: (CaptionMetrics & { font: string }) | null = null
+
+/** Measure the caption font once (per family): the hover card is positioned
+ *  off these metrics so its first line's baseline lands exactly on the canvas
+ *  caption's baseline — guessed offsets drift by a pixel across platforms. */
+export function captionMetrics(fontFamily: string): CaptionMetrics {
+  if (captionMetricsCache?.font === fontFamily) return captionMetricsCache
+  const ctx = document.createElement('canvas').getContext('2d')
+  if (!ctx) {
+    // No 2D context (tests): sane estimates for a 12px UI face.
+    return { ascent: SUBJECT_FONT * 0.96, descent: SUBJECT_FONT * 0.25, middleToBaseline: 3.6 }
+  }
+  ctx.font = `${SUBJECT_WEIGHT} ${SUBJECT_FONT}px ${fontFamily}`
+  ctx.textBaseline = 'alphabetic'
+  const fromBaseline = ctx.measureText('Mg')
+  ctx.textBaseline = 'middle'
+  const fromMiddle = ctx.measureText('Mg')
+  captionMetricsCache = {
+    font: fontFamily,
+    ascent: fromBaseline.fontBoundingBoxAscent,
+    descent: fromBaseline.fontBoundingBoxDescent,
+    // TextMetrics are relative to the active textBaseline, so the ascent
+    // difference IS the middle→alphabetic baseline distance.
+    middleToBaseline: fromBaseline.fontBoundingBoxAscent - fromMiddle.fontBoundingBoxAscent
+  }
+  return captionMetricsCache
+}
 
 // Measured pill-text widths, shared with hit-testing (see labelWidthFor).
 const labelWidths = new Map<string, number>()
@@ -148,6 +196,16 @@ const labelWidths = new Map<string, number>()
 /** Width of a row's label text as last measured; an estimate before first draw. */
 export function labelWidthFor(name: string): number {
   return labelWidths.get(name) ?? name.length * 6.2
+}
+
+// Caption widths (SCREEN px) as last drawn, keyed by commit hash; 0 = culled.
+const captionWidths = new Map<string, number>()
+
+/** SCREEN width a node's caption actually drew this frame — hit-testing hovers
+ *  exactly the glyphs, so a short subject's (or a culled caption's) empty slot
+ *  never pops the message card while the mouse crosses edge lines. */
+export function captionWidthFor(hash: string): number | undefined {
+  return captionWidths.get(hash)
 }
 
 const dimmed = (scene: SceneState, hash: string): boolean =>
@@ -206,6 +264,10 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: SceneState): voi
   ctx.setTransform(dpr * view.scale, 0, 0, dpr * view.scale, dpr * view.x, dpr * view.y)
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
+  // The hover card's DOM text inherits body's `text-rendering:
+  // optimizeLegibility`; mirror it so canvas captions shape with the same
+  // kerning/ligatures — different shaping shows as a shift on hover.
+  ctx.textRendering = 'optimizeLegibility'
 
   const labelBoxes = computeLabelBoxes(ctx, scene)
   drawDayLines(ctx, scene)
@@ -443,6 +505,49 @@ function drawNodes(
   }
 }
 
+/** Caption text (commit subjects, the WIP "uncommitted") drawn in SCREEN space
+ *  at the exact CSS pixel size. Under the world transform the text would shape
+ *  at a fractional size (SUBJECT_FONT / scale) and have its advances scaled
+ *  back up — close to, but measurably different from, native 12px shaping. The
+ *  hover card renders the same string as DOM text at 12px, so only shaping at
+ *  the same size keeps the two rasterizations glyph-for-glyph identical: the
+ *  caption must not move a subpixel when the card appears over it.
+ *  Returns the drawn text's SCREEN width (0 when culled) for hit-testing. */
+function drawCaption(
+  ctx: CanvasRenderingContext2D,
+  scene: SceneState,
+  text: string,
+  worldX: number,
+  /** The ROW's center y — the caption anchors a screen-fixed gap below the
+   *  capsule edge (captionCenterOffset), so the margin between capsule and
+   *  text is identical at every zoom instead of scaling with it. */
+  rowCenterY: number,
+  maxWorldWidth: number
+): number {
+  const { view, dpr, palette } = scene
+  // All-or-nothing (see geometry.ts): the whole layer fades below the zoom
+  // where the tightest slot goes unreadable — never caption by caption.
+  const reveal = captionAlpha(view.scale)
+  if (reveal === 0) return 0
+  const maxScreenWidth = Math.min(maxWorldWidth * view.scale, CAPTION_MAX_SCREEN_W)
+  if (maxScreenWidth <= 0) return 0
+  ctx.save()
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.font = `${SUBJECT_WEIGHT} ${SUBJECT_FONT}px ${palette.font}`
+  ctx.textAlign = 'left'
+  const fitted = truncate(ctx, text, maxScreenWidth)
+  let width = 0
+  if (fitted) {
+    width = ctx.measureText(fitted).width
+    ctx.globalAlpha *= reveal
+    ctx.fillStyle = palette.subject
+    const y = (rowCenterY + captionCenterOffset(view.scale)) * view.scale + view.y
+    ctx.fillText(fitted, worldX * view.scale + view.x, y)
+  }
+  ctx.restore()
+  return width
+}
+
 /** Truncated subject under the node, sized to the gap before the next node. */
 function drawNodeText(
   ctx: CanvasRenderingContext2D,
@@ -455,27 +560,16 @@ function drawNodeText(
   const { palette, wip } = scene
   let gap = columnsToNext(scene.layout, node)
   // The WIP node occupies the column after the HEAD tip but isn't a commit —
-  // its "uncommitted" caption still bounds the tip's subject. The caption is
-  // centered on the WIP column, so it reaches ~half its width further left
-  // than a node's left-aligned subject would.
-  let wipReach = 0
+  // its "uncommitted" caption bounds the tip's subject like any neighbor's
+  // (both captions are left-aligned on their node's left edge).
   if (wip && wip.row === node.row && wip.column > node.column) {
-    if (wip.column - node.column < gap) {
-      gap = wip.column - node.column
-      wipReach = 34
-    }
+    gap = Math.min(gap, wip.column - node.column)
   }
-  const maxWidth = Math.min(gap * COL_W - 10 - wipReach, COL_W * 3.4)
-  if (maxWidth >= 30) {
-    ctx.fillStyle = palette.subject
-    ctx.font = `${SUBJECT_FONT}px ${palette.font}`
-    const text = truncate(ctx, node.commit.subject, maxWidth)
-    if (text) {
-      ctx.textAlign = 'left'
-      ctx.fillText(text, x - NODE_R, y + NODE_R + 14)
-      ctx.textAlign = 'center'
-    }
-  }
+  const maxWidth = Math.min(gap * COL_W - CAPTION_SLOT_AIR, COL_W * 3.4)
+  captionWidths.set(
+    node.commit.hash,
+    drawCaption(ctx, scene, node.commit.subject, x - NODE_R, y, maxWidth)
+  )
   const tags = node.refs.filter((r) => r.isTag)
   if (tags.length > 0) {
     // A small bordered chip above the node — drawn, not a unicode glyph (those
@@ -526,8 +620,9 @@ function drawWip(ctx: CanvasRenderingContext2D, scene: SceneState): void {
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
   ctx.fillText(count > 99 ? '99+' : `+${count}`, x, y + 0.5)
-  ctx.font = `${SUBJECT_FONT}px ${palette.font}`
-  ctx.fillText('uncommitted', x, y + NODE_R + 14)
+  // Placed exactly like a commit's caption — same size, weight, capsule gap
+  // and left edge — so the WIP node reads as one more entry in the chain.
+  drawCaption(ctx, scene, 'uncommitted', x - NODE_R, y, COL_W * 3.4)
 }
 
 function drawLabels(

@@ -25,10 +25,45 @@ export const LABEL_GAP = 4
  *  itself a click target (it IS the branch). */
 export const CAPSULE_PAD = 10
 export const CAPSULE_HALF_H = 19
-/** Caption band under a node (subject text): its offset below the node's
- *  center and the band's height — the caption's hit region. */
-export const CAPTION_TOP = NODE_R + 6
+/** Caption line under a node (subject text). The capsule edge is world-space
+ *  but caption glyphs are screen-fixed (render.ts SUBJECT_FONT), so the gap
+ *  between them must be screen-fixed too — a world-space anchor sinks the
+ *  text into the capsule when zooming out and floats it far below when
+ *  zooming in. SCREEN px from the capsule's bottom edge down to the text
+ *  line's CENTER when the corridor is roomy: 12px type spans ~4.5px of ink
+ *  above its center, so 11 leaves ~6px of clear air under the capsule. */
+export const CAPTION_GAP_SCREEN = 11
+/** SCREEN height of the caption's hit band (12px type plus slop). */
 export const CAPTION_BAND_H = 20
+/** Approximate SCREEN ink extents of a caption line around its middle
+ *  baseline: cap height above, baseline and descenders below. They size the
+ *  squeeze math in captionCenterOffset. */
+const CAPTION_INK_ABOVE = 4.5
+const CAPTION_INK_BELOW = 6
+/** Horizontal air a caption leaves before the next node's slot begins. */
+export const CAPTION_SLOT_AIR = 10
+/** Caption width bounds in SCREEN px — captions draw at a fixed screen size
+ *  (render.ts SUBJECT_FONT), so their width is screen-bounded too:
+ *  - MIN (~4 characters): the least a caption can show and still mean something.
+ *  - MAX (~a 3.4-column slot at zoom 1): past it a caption would sprawl over
+ *    the empty canvas where edges run, instead of staying by its node. */
+export const CAPTION_MIN_SCREEN_W = 34
+export const CAPTION_MAX_SCREEN_W = 150
+/** Captions are ALL-OR-NOTHING across the graph: the layer is fully on at the
+ *  zoom where the TIGHTEST standard slot — two adjacent commits, one column
+ *  apart — reaches CAPTION_MIN_SCREEN_W (zoom 1, by construction), and fades
+ *  out as a whole just below it. Per-node culling made captions vanish one by
+ *  one while zooming out, which read as random. */
+export const CAPTION_FULL_ZOOM = CAPTION_MIN_SCREEN_W / (COL_W - CAPTION_SLOT_AIR)
+/** Zoom span under CAPTION_FULL_ZOOM over which the layer fades — a soft exit
+ *  instead of a hard pop while zooming through the threshold. */
+const CAPTION_FADE_SPAN = 0.15
+
+/** Caption layer opacity at a zoom level; 0 = hidden (hit-testing follows). */
+export function captionAlpha(scale: number): number {
+  const t = (scale - (CAPTION_FULL_ZOOM - CAPTION_FADE_SPAN)) / CAPTION_FADE_SPAN
+  return Math.min(1, Math.max(0, t))
+}
 
 /** Columns until the next node on the same row (∞-ish at the row tip). */
 export function columnsToNext(layout: GraphLayout, node: GraphNode): number {
@@ -42,7 +77,23 @@ export function columnsToNext(layout: GraphLayout, node: GraphNode): number {
 
 /** World width of a node's caption area (mirrors the renderer's truncation). */
 export function captionWidth(layout: GraphLayout, node: GraphNode): number {
-  return Math.min(columnsToNext(layout, node) * COL_W - 10, COL_W * 3.4)
+  return Math.min(columnsToNext(layout, node) * COL_W - CAPTION_SLOT_AIR, COL_W * 3.4)
+}
+
+/** WORLD offset from a row's center down to its caption line's center at a
+ *  zoom level. Shared by the renderer, the hover-card anchor and hit-testing.
+ *
+ *  The caption lives in a corridor between two world-space rails: its own
+ *  capsule's bottom edge above, and the next row's label band below. When the
+ *  corridor is roomy the caption hugs the capsule with the design gap; when
+ *  zooming out squeezes the corridor, the remaining slack is split evenly so
+ *  the text keeps equal air on both sides instead of invading the labels. */
+export function captionCenterOffset(scale: number): number {
+  const railBottom = ROW_H - NODE_R - LABEL_GAP - LABEL_H
+  const corridor = (railBottom - CAPSULE_HALF_H) * scale
+  const slack = corridor - CAPTION_INK_ABOVE - CAPTION_INK_BELOW
+  const air = Math.max(1, Math.min(CAPTION_GAP_SCREEN - CAPTION_INK_ABOVE, slack / 2))
+  return CAPSULE_HALF_H + (air + CAPTION_INK_ABOVE) / scale
 }
 
 /** Pan/zoom: screen = world * scale + offset. */
@@ -113,7 +164,16 @@ export function hitTest(
   /** The sticky-label clamp the renderer used this frame (world x). */
   labelLeftClampX = Number.NEGATIVE_INFINITY,
   /** Whether captions are drawn at the current zoom (they hit-test too). */
-  captions = true
+  captions = true,
+  /** World width a node's caption actually DREW this frame (the renderer
+   *  measures and caches it — render.ts captionWidthFor); 0 when culled,
+   *  undefined before the first draw (falls back to the slot estimate).
+   *  Keeps the hover target on the glyphs themselves: the empty tail of a
+   *  wide slot must not pop the message card while the mouse crosses lines. */
+  drawnCaptionWidth?: (node: GraphNode) => number | undefined,
+  /** The view's zoom — captions anchor a screen-fixed gap below the capsule,
+   *  so their world-space hit band depends on it (captionCenterOffset). */
+  scale = 1
 ): GraphHit | null {
   const slop = 4
   const row = Math.floor((wy - MARGIN_Y) / ROW_H)
@@ -141,11 +201,14 @@ export function hitTest(
   // to the caption that starts closest to the pointer.
   if (captions) {
     let best: GraphNode | null = null
+    const bandHalf = CAPTION_BAND_H / 2 / scale
     for (const node of layout.nodes) {
-      const top = nodeY(node.row) + CAPTION_TOP
-      if (wy < top || wy > top + CAPTION_BAND_H) continue
+      const center = nodeY(node.row) + captionCenterOffset(scale)
+      if (wy < center - bandHalf || wy > center + bandHalf) continue
+      const width = drawnCaptionWidth?.(node) ?? captionWidth(layout, node)
+      if (width <= 0) continue
       const x0 = nodeX(node.column) - NODE_R
-      if (wx < x0 || wx > x0 + captionWidth(layout, node)) continue
+      if (wx < x0 || wx > x0 + width) continue
       if (!best || node.column > best.column) best = node
     }
     if (best) return { type: 'node', node: best }

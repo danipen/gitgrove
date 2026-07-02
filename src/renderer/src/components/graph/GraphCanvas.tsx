@@ -8,7 +8,8 @@ import { stripCoAuthorTrailers } from '@/lib/coauthors'
 import { subscribeAvatars } from './avatars'
 import { reflowMessage } from './reflow'
 import {
-  CAPTION_TOP,
+  captionAlpha,
+  captionCenterOffset,
   contentSize,
   HEADER_H,
   hitTest,
@@ -24,11 +25,14 @@ import {
 } from './geometry'
 import type { GraphLayout, GraphNode, GraphRow } from './layout'
 import {
+  captionMetrics,
+  captionWidthFor,
   computeDayMarks,
   drawScene,
   type GraphPalette,
   labelWidthFor,
-  readPalette
+  readPalette,
+  SUBJECT_FONT
 } from './render'
 
 /** Imperative controls the toolbar's zoom/fit/home buttons drive. */
@@ -70,9 +74,41 @@ interface Props {
 const OVERSCROLL = 80
 
 interface Tooltip {
+  /** Screen x of the caption's first glyph (the card's text aligns to it). */
   x: number
+  /** Screen y of the caption's anchor (canvas 'middle' baseline). */
   y: number
   node: GraphNode
+}
+
+/** .graph-tip box metrics — must mirror graph.css, they offset the card's
+ *  first glyph from its `left`/`top`. */
+const TIP_BORDER = 1
+const TIP_PAD_X = 9
+const TIP_PAD_Y = 6
+const TIP_SUBJECT_LINE_HEIGHT = 1.45
+const TIP_MAX_WIDTH = 420
+
+/** Places the card so its subject's first line rasterizes on the caption's
+ *  exact glyphs. The caption anchors at a canvas 'middle' baseline; a DOM line
+ *  positions text by half-leading + ascent. Both are converted to the shared
+ *  alphabetic baseline with real font metrics (captionMetrics), so the hover
+ *  swap is pixel-stable — offsets eyeballed from the line height drift by a
+ *  pixel and break the "text completes itself in place" illusion. */
+function tipPosition(tip: Tooltip, viewportWidth: number, fontFamily: string) {
+  const m = captionMetrics(fontFamily)
+  const lineBox = SUBJECT_FONT * TIP_SUBJECT_LINE_HEIGHT
+  const halfLeading = (lineBox - (m.ascent + m.descent)) / 2
+  const baselineY = tip.y + m.middleToBaseline
+  return {
+    // Clamped so the card never runs off the right edge (alignment yields
+    // to visibility there, by design).
+    left: Math.max(
+      8,
+      Math.min(tip.x - TIP_BORDER - TIP_PAD_X, viewportWidth - TIP_MAX_WIDTH - 2 * TIP_BORDER - 8)
+    ),
+    top: baselineY - TIP_BORDER - TIP_PAD_Y - halfLeading - m.ascent
+  }
 }
 
 export function GraphCanvas({
@@ -342,8 +378,15 @@ export function GraphCanvas({
       s.wip ? s.wip.row : -1,
       // Match the renderer's sticky-label clamp so labels hit where they draw.
       toWorldX(view, 8),
-      // Captions only hit while they're drawn (they hide at far zoom).
-      view.scale >= 0.55
+      // Captions hit only while their layer shows (all-or-nothing by zoom)…
+      captionAlpha(view.scale) > 0,
+      // …and only over their actual glyphs, as measured at draw time.
+      (node) => {
+        const screenWidth = captionWidthFor(node.commit.hash)
+        return screenWidth === undefined ? undefined : screenWidth / view.scale
+      },
+      // The caption band rides a screen-fixed gap below the capsule.
+      view.scale
     )
   }, [])
 
@@ -400,12 +443,15 @@ export function GraphCanvas({
     }
     const hit = hitAt(e.clientX, e.clientY)
     if (hit?.type === 'node') {
-      // Anchor the expansion card exactly on the node's caption, so the
-      // truncated text appears to complete itself in place.
+      // Anchor the expansion card on the caption's exact glyph position, so
+      // the truncated text appears to complete itself in place (captions and
+      // the card's subject share one fixed on-screen font size).
       const view = viewRef.current
       setHover(hit.node.commit.hash, {
         x: (nodeX(hit.node.column) - NODE_R) * view.scale + view.x,
-        y: (nodeY(hit.node.row) + CAPTION_TOP) * view.scale + view.y,
+        // The caption's middle baseline rides a screen-fixed gap below the
+        // capsule (see geometry.ts captionCenterOffset) — mirror it exactly.
+        y: (nodeY(hit.node.row) + captionCenterOffset(view.scale)) * view.scale + view.y,
         node: hit.node
       })
       setCursor('pointer')
@@ -536,13 +582,13 @@ export function GraphCanvas({
       {tooltip && (
         <div
           className="graph-tip"
-          // Anchored over the caption (minus its own padding) so the full
-          // message appears to grow out of the truncated text in place;
-          // clamped so it never runs off the right edge.
-          style={{
-            left: Math.max(8, Math.min(tooltip.x - 9, sizeRef.current.width - 428)),
-            top: tooltip.y - 7
-          }}
+          // Baseline-aligned onto the caption's own glyphs (see tipPosition):
+          // the truncated text completes itself in place, pixel for pixel.
+          style={tipPosition(
+            tooltip,
+            sizeRef.current.width,
+            paletteRef.current?.font ?? getComputedStyle(document.body).fontFamily
+          )}
         >
           <div className="graph-tip__subject">{tooltip.node.commit.subject}</div>
           {stripCoAuthorTrailers(tooltip.node.commit.body) && (

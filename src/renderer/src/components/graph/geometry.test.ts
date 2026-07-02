@@ -1,6 +1,16 @@
 import { describe, expect, test } from 'bun:test'
 import type { Commit } from '@shared/types'
-import { contentSize, hitTest, neighborNode, nodeX, nodeY } from './geometry'
+import {
+  CAPSULE_HALF_H,
+  CAPTION_FULL_ZOOM,
+  captionAlpha,
+  captionCenterOffset,
+  contentSize,
+  hitTest,
+  neighborNode,
+  nodeX,
+  nodeY
+} from './geometry'
 import { type GraphInput, layoutGraph } from './layout'
 
 function commit(hash: string, parents: string[], refs = ''): Commit {
@@ -57,6 +67,23 @@ describe('graph geometry', () => {
     if (hit?.type === 'node') expect(hit.node.commit.hash).toBe('m')
   })
 
+  test('caption hits follow the drawn glyph width, not the slot estimate', () => {
+    const layout = sampleLayout()
+    const m = layout.nodeByHash.get('m')
+    if (!m) throw new Error('missing node')
+    const y = nodeY(m.row) + 24
+    const clamp = Number.NEGATIVE_INFINITY
+    const at = (x: number, drawnWidth: number) =>
+      hitTest(layout, x, y, () => 40, null, -1, clamp, true, () => drawnWidth)
+    // The renderer culled the caption (drawn width 0): its band no longer hits.
+    expect(at(nodeX(m.column) + 4, 0)).toBeNull()
+    // Drawn 30 wide: a point over the glyphs hits, the slot's empty tail misses.
+    const overGlyphs = at(nodeX(m.column) + 4, 30)
+    expect(overGlyphs?.type).toBe('node')
+    if (overGlyphs?.type === 'node') expect(overGlyphs.node.commit.hash).toBe('m')
+    expect(at(nodeX(m.column) + 40, 30)).toBeNull()
+  })
+
   test('the branch container capsule is a click target between its nodes', () => {
     const layout = sampleLayout()
     // Column 2 on the main row has no node (f sits on the feature row) — the
@@ -77,6 +104,51 @@ describe('graph geometry', () => {
     // Up from the feature row lands on the mainline's column-nearest node.
     expect(neighborNode(layout, f, 'ArrowUp')?.commit.hash).toBe('b')
     expect(neighborNode(layout, m, 'ArrowRight')).toBeNull()
+  })
+
+  test('the caption hit band rides a screen-fixed gap below the capsule', () => {
+    const layout = sampleLayout()
+    const m = layout.nodeByHash.get('m')
+    if (!m) throw new Error('missing node')
+    const x = nodeX(m.column) + 4
+    const clamp = Number.NEGATIVE_INFINITY
+    const at = (wy: number, scale: number) =>
+      hitTest(layout, x, wy, () => 40, null, -1, clamp, true, () => 30, scale)
+    // At zoom 1 the classic band: nodeY + 26 is the caption line's center.
+    expect(at(nodeY(m.row) + 26, 1)?.type).toBe('node')
+    // Zoomed in, the gap shrinks in WORLD units (constant on screen): the
+    // world point that hit at zoom 1 now lies below the band…
+    expect(at(nodeY(m.row) + 36, 3)).toBeNull()
+    // …while a point hugging the capsule edge hits.
+    expect(at(nodeY(m.row) + 22, 3)?.type).toBe('node')
+  })
+
+  test('a squeezed caption splits its air between capsule and next label band', () => {
+    // Roomy corridor (zoom 2): the design gap below the capsule (11 screen px
+    // to the text center — see CAPTION_GAP_SCREEN).
+    expect(captionCenterOffset(2)).toBeCloseTo(CAPSULE_HALF_H + 11 / 2)
+    // Squeezed corridor (zoom 0.9): equal screen air above the ink (4.5 up
+    // from center) and below it (6 down), and the ink stays clear of the next
+    // row's label band, 38 world px below the row center.
+    const offset = captionCenterOffset(0.9)
+    const airAbove = (offset - CAPSULE_HALF_H) * 0.9 - 4.5
+    const airBelow = (38 - offset) * 0.9 - 6
+    expect(airAbove).toBeCloseTo(airBelow)
+    expect(airBelow).toBeGreaterThan(0)
+  })
+
+  test('the caption layer is all-or-nothing: full at zoom 1, gone below the fade', () => {
+    // By construction the layer is fully on exactly when the tightest slot
+    // (adjacent commits) reaches the minimum readable width — at zoom 1.
+    expect(CAPTION_FULL_ZOOM).toBe(1)
+    expect(captionAlpha(1)).toBe(1)
+    expect(captionAlpha(3)).toBe(1)
+    // Fades as a whole just below, and is fully hidden past the fade span.
+    const mid = captionAlpha(0.925)
+    expect(mid).toBeGreaterThan(0)
+    expect(mid).toBeLessThan(1)
+    expect(captionAlpha(0.85)).toBe(0)
+    expect(captionAlpha(0.2)).toBe(0)
   })
 
   test('contentSize reserves a column for the WIP node', () => {

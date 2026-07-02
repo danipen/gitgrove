@@ -69,12 +69,28 @@
   box-shadow: var(--popover-shadow);
   user-select: text;
   cursor: auto;
-  animation: pop-in 0.12s ease;
+  /* Pure fade, no translate: the subject's first line sits pixel-exactly on
+     the canvas caption, so the card must not move while appearing. */
+  animation: graph-tip-in 0.14s ease;
 }
+@keyframes graph-tip-in {
+  from {
+    opacity: 0;
+  }
+}
+/* The subject sits ON the caption's glyphs and must be indistinguishable from
+   them: same size, weight AND color as the canvas caption (render.ts
+   SUBJECT_FONT/SUBJECT_WEIGHT, palette.subject = --fg-muted). Any emphasis
+   comes from the card itself — a brighter or heavier subject reads as the
+   text "jumping" on hover. Size, line-height and the card's padding/border
+   are mirrored by tipPosition in GraphCanvas.tsx — keep them in sync.
+   pre-wrap matches canvas fillText, which never collapses runs of spaces. */
 .graph-tip__subject {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.45;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
   overflow-wrap: break-word;
 }
 .graph-tip__body {
