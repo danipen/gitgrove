@@ -400,6 +400,14 @@
   color: var(--fg-muted);
   font-weight: 500;
 }
+/* CommitBody reuse (history/CommitSummary.tsx): History indents the body
+   under its 34px avatar column; the sidebar head has no such column, so the
+   body spans the pane's full width. graph.css loads after history.css, so
+   this override wins. */
+.graph-detail .commit-summary__body-wrap {
+  margin-left: 0;
+}
+
 .graph-detail__refs {
   display: flex;
   flex-wrap: wrap;

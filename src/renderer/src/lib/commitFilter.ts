@@ -2,7 +2,8 @@
 // loaded snapshot (the main History tab filters server-side via `git log
 // --grep`, since it pages through a far deeper history). Mirrors that search's
 // semantics: every whitespace-separated term must appear (case-insensitive
-// substring), matched against the subject and author name together.
+// substring), matched against the subject and author name together — or, like
+// the server search resolving a pasted id, as a prefix of the commit's hash.
 
 import type { Commit } from '@shared/types'
 
@@ -17,6 +18,7 @@ export function filterCommits(commits: Commit[], query: string): Commit[] {
   if (terms.length === 0) return commits
   return commits.filter((commit) => {
     const haystack = `${commit.subject} ${commit.authorName}`.toLowerCase()
-    return terms.every((term) => haystack.includes(term))
+    const hash = commit.hash.toLowerCase()
+    return terms.every((term) => haystack.includes(term) || hash.startsWith(term))
   })
 }

@@ -37,20 +37,43 @@ export function parseLog(out: string): Commit[] {
 
 export async function getLog(repoPath: string, options: LogOptions = {}): Promise<Commit[]> {
   const { ref, limit = 200, skip = 0, search } = options
+  const query = (search ?? '').trim()
   const args = ['log', '-z', `--format=${LOG_FORMAT}`, `--max-count=${limit}`]
   if (skip > 0) args.push(`--skip=${skip}`)
   // Free-text message search: every whitespace-separated word must appear
   // (`--all-match` ANDs the `--grep`s), case-insensitively (`-i`) and as literal
   // text (`-F`) so regex metacharacters a user types aren't interpreted. Matched
   // against the whole message (subject + body), like the rest of git.
-  const terms = (search ?? '').trim().split(/\s+/).filter(Boolean)
+  const terms = query.split(/\s+/).filter(Boolean)
   if (terms.length > 0) {
     args.push('-i', '-F', '--all-match')
     for (const term of terms) args.push(`--grep=${term}`)
   }
   args.push(ref?.trim() ? ref : 'HEAD')
 
-  return parseLog(await runGit(repoPath, args))
+  const commits = parseLog(await runGit(repoPath, args))
+
+  // A pasted commit id never matches `--grep` (it searches the message), so a
+  // hex-looking query also tries to resolve as a commit; a hit is surfaced
+  // first. `--quiet --verify` rejects unknown and ambiguous ids, `^{commit}`
+  // peels tags; hex-only words ("added", "cafe") just fail to resolve and
+  // cost one cheap rev-parse. First page only — paging must not re-add it.
+  if (skip === 0 && /^[0-9a-f]{4,40}$/i.test(query)) {
+    const hash = await runGit(repoPath, [
+      'rev-parse',
+      '--quiet',
+      '--verify',
+      `${query.toLowerCase()}^{commit}`
+    ]).then(
+      (out) => out.trim(),
+      () => ''
+    )
+    if (hash && !commits.some((c) => c.hash === hash)) {
+      const found = await runGit(repoPath, ['log', '-z', '-1', `--format=${LOG_FORMAT}`, hash])
+      commits.unshift(...parseLog(found))
+    }
+  }
+  return commits
 }
 
 /**

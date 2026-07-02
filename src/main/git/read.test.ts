@@ -235,6 +235,18 @@ describe('getLog', () => {
     // `.` is a regex wildcard; as a fixed string it matches nothing here.
     expect(await getLog(repo, { search: 'initial.commit' })).toEqual([])
   })
+
+  it('finds a commit by its full or abbreviated hash', async () => {
+    const initial = (await getLog(repo)).at(-1)
+    if (!initial) throw new Error('missing commit')
+    // A hash never appears in the message, so --grep alone would yield [].
+    expect((await getLog(repo, { search: initial.hash })).map((c) => c.hash)).toEqual([
+      initial.hash
+    ])
+    // Abbreviated and uppercase ids resolve too (rev-parse semantics).
+    const abbrev = initial.hash.slice(0, 7).toUpperCase()
+    expect((await getLog(repo, { search: abbrev })).map((c) => c.hash)).toEqual([initial.hash])
+  })
 })
 
 describe('toWebUrl', () => {

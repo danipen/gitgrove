@@ -12,7 +12,7 @@ import { useFileFilter } from '@/components/common/FileFilter'
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
 import { AvatarStack } from '@/components/history/AvatarStack'
-import { CopyButton, DiffStat, RefChip } from '@/components/history/CommitSummary'
+import { CommitBody, CopyButton, DiffStat, RefChip } from '@/components/history/CommitSummary'
 import { coAuthorsOf } from '@/lib/coauthors'
 import { parseRefs, pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
@@ -55,6 +55,9 @@ function CommitHead({ commit }: { commit: Commit }) {
           <CopyButton value={commit.hash} label="Copy commit SHA" />
         </span>
       </div>
+      {/* Keyed by hash: switching commits remounts the body, resetting its
+          collapse state and re-probing overflow (see CommitBody). */}
+      <CommitBody key={commit.hash} commit={commit} />
       {refs.length > 0 && (
         <div className="graph-detail__refs">
           {refs.map((ref) => (

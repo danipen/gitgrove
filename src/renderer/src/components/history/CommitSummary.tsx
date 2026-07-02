@@ -40,6 +40,38 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
   )
 }
 
+/** The commit's body, collapsed to a few lines with a "Show more" toggle once
+ *  it overflows. Render with `key={commit.hash}` (or under a keyed parent) so
+ *  a selection change remounts it — that resets the collapse state and lets
+ *  the overflow probe measure a fresh, collapsed layout. */
+export function CommitBody({ commit }: { commit: Commit }) {
+  // Co-authors render as the avatar stack + byline; their trailer lines would
+  // only repeat that, so the displayed body drops them.
+  const body = stripCoAuthorTrailers(commit.body)
+  const [expanded, setExpanded] = useState(false)
+  const [overflows, setOverflows] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const el = bodyRef.current
+    if (el) setOverflows(el.scrollHeight - el.clientHeight > 2)
+  }, [])
+
+  if (!body) return null
+  return (
+    <div className="commit-summary__body-wrap">
+      <div ref={bodyRef} className={`commit-summary__body${expanded ? ' is-expanded' : ''}`}>
+        {body}
+      </div>
+      {(overflows || expanded) && (
+        <button className="link-toggle" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export function DiffStat({ files }: { files: ChangedFile[] }) {
   let insertions = 0
   let deletions = 0
@@ -67,19 +99,8 @@ interface Props {
 // layout without effect-ordering races.
 export function CommitSummary({ commit, files, filesLoading }: Props) {
   const refs = parseRefs(commit.refs)
-  // Co-authors render as the avatar stack + byline; their trailer lines would
-  // only repeat that, so the displayed body drops them.
   const coAuthors = coAuthorsOf(commit)
-  const body = stripCoAuthorTrailers(commit.body)
-  const [bodyExpanded, setBodyExpanded] = useState(false)
   const [refsExpanded, setRefsExpanded] = useState(false)
-  const [bodyOverflows, setBodyOverflows] = useState(false)
-  const bodyRef = useRef<HTMLDivElement>(null)
-
-  useLayoutEffect(() => {
-    const el = bodyRef.current
-    if (el) setBodyOverflows(el.scrollHeight - el.clientHeight > 2)
-  }, [])
 
   const visibleRefs = refsExpanded ? refs : refs.slice(0, MAX_SUMMARY_REFS)
   const hiddenRefs = refs.length - MAX_SUMMARY_REFS
@@ -122,21 +143,7 @@ export function CommitSummary({ commit, files, filesLoading }: Props) {
         </div>
       </div>
 
-      {body && (
-        <div className="commit-summary__body-wrap">
-          <div
-            ref={bodyRef}
-            className={`commit-summary__body${bodyExpanded ? ' is-expanded' : ''}`}
-          >
-            {body}
-          </div>
-          {(bodyOverflows || bodyExpanded) && (
-            <button className="link-toggle" onClick={() => setBodyExpanded((v) => !v)}>
-              {bodyExpanded ? 'Show less' : 'Show more'}
-            </button>
-          )}
-        </div>
-      )}
+      <CommitBody commit={commit} />
 
       {refs.length > 0 && (
         <div className="commit-summary__refs">
