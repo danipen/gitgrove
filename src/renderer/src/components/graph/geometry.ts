@@ -25,6 +25,25 @@ export const LABEL_GAP = 4
  *  itself a click target (it IS the branch). */
 export const CAPSULE_PAD = 10
 export const CAPSULE_HALF_H = 19
+/** Caption band under a node (subject text): its offset below the node's
+ *  center and the band's height — the caption's hit region. */
+export const CAPTION_TOP = NODE_R + 6
+export const CAPTION_BAND_H = 20
+
+/** Columns until the next node on the same row (∞-ish at the row tip). */
+export function columnsToNext(layout: GraphLayout, node: GraphNode): number {
+  let best = 6
+  for (const n of layout.nodes) {
+    if (n.row !== node.row || n.column <= node.column) continue
+    best = Math.min(best, n.column - node.column)
+  }
+  return best
+}
+
+/** World width of a node's caption area (mirrors the renderer's truncation). */
+export function captionWidth(layout: GraphLayout, node: GraphNode): number {
+  return Math.min(columnsToNext(layout, node) * COL_W - 10, COL_W * 3.4)
+}
 
 /** Pan/zoom: screen = world * scale + offset. */
 export interface View {
@@ -92,7 +111,9 @@ export function hitTest(
   wipColumn: number | null,
   headRow: number,
   /** The sticky-label clamp the renderer used this frame (world x). */
-  labelLeftClampX = Number.NEGATIVE_INFINITY
+  labelLeftClampX = Number.NEGATIVE_INFINITY,
+  /** Whether captions are drawn at the current zoom (they hit-test too). */
+  captions = true
 ): GraphHit | null {
   const slop = 4
   const row = Math.floor((wy - MARGIN_Y) / ROW_H)
@@ -114,6 +135,20 @@ export function hitTest(
     if (wx >= rect.x && wx <= rect.x + rect.w && wy >= rect.y && wy <= rect.y + rect.h) {
       return { type: 'label', row: r }
     }
+  }
+  // A node's caption acts as the node: hovering it expands the message,
+  // clicking it selects the commit. Overlapping bands (dense lanes) resolve
+  // to the caption that starts closest to the pointer.
+  if (captions) {
+    let best: GraphNode | null = null
+    for (const node of layout.nodes) {
+      const top = nodeY(node.row) + CAPTION_TOP
+      if (wy < top || wy > top + CAPTION_BAND_H) continue
+      const x0 = nodeX(node.column) - NODE_R
+      if (wx < x0 || wx > x0 + captionWidth(layout, node)) continue
+      if (!best || node.column > best.column) best = node
+    }
+    if (best) return { type: 'node', node: best }
   }
   for (const r of layout.rows) {
     if (Math.abs(wy - nodeY(r.index)) > CAPSULE_HALF_H) continue

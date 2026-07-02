@@ -15,6 +15,7 @@ import {
   CAPSULE_HALF_H,
   CAPSULE_PAD,
   COL_W,
+  columnsToNext,
   HEADER_H,
   labelRect,
   MARGIN_X,
@@ -452,7 +453,7 @@ function drawNodeText(
   labelBoxes: LabelBox[]
 ): void {
   const { palette, wip } = scene
-  let gap = gapAfter(scene.layout, node)
+  let gap = columnsToNext(scene.layout, node)
   // The WIP node occupies the column after the HEAD tip but isn't a commit —
   // its "uncommitted" caption still bounds the tip's subject. The caption is
   // centered on the WIP column, so it reaches ~half its width further left
@@ -498,16 +499,6 @@ function drawNodeText(
     ctx.fillStyle = palette.tag
     ctx.fillText(label, x, chip.y + 8)
   }
-}
-
-/** Columns until the next node on the same row (∞-ish at the row tip). */
-function gapAfter(layout: GraphLayout, node: GraphNode): number {
-  let best = 6
-  for (const n of layout.nodes) {
-    if (n.row !== node.row || n.column <= node.column) continue
-    best = Math.min(best, n.column - node.column)
-  }
-  return best
 }
 
 function drawWip(ctx: CanvasRenderingContext2D, scene: SceneState): void {

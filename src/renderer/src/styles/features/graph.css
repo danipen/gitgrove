@@ -55,30 +55,42 @@
   height: 100%;
 }
 
-/* Hover card for a node; positioned above the node, never interactive. */
+/* The commit-message expansion card: anchored ON the hovered caption so the
+   truncated text appears to complete itself in place (Plastic-style). It's
+   interactive — the full message can be selected and, when long, scrolled. */
 .graph-tip {
   position: absolute;
-  transform: translate(-50%, calc(-100% - 8px));
-  max-width: 340px;
+  width: max-content;
+  max-width: 420px;
   padding: 6px 9px;
   background: var(--bg-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   box-shadow: var(--popover-shadow);
-  pointer-events: none;
+  user-select: text;
+  cursor: auto;
   animation: pop-in 0.12s ease;
 }
 .graph-tip__subject {
   font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+.graph-tip__body {
+  margin-top: 5px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 .graph-tip__meta {
   display: flex;
   gap: 6px;
-  margin-top: 3px;
+  margin-top: 5px;
   font-size: 11px;
   color: var(--fg-faint);
 }

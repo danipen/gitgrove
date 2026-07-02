@@ -43,8 +43,18 @@ describe('graph geometry', () => {
     const hit = hitTest(layout, nodeX(m.column), nodeY(m.row), () => 40, null, -1)
     expect(hit?.type).toBe('node')
     if (hit?.type === 'node') expect(hit.node.commit.hash).toBe('m')
-    // Below every row and label band: nothing.
-    expect(hitTest(layout, nodeX(m.column), nodeY(1) + 40, () => 40, null, -1)).toBeNull()
+    // Below every row, label band and caption band: nothing.
+    expect(hitTest(layout, nodeX(m.column), nodeY(1) + 60, () => 40, null, -1)).toBeNull()
+  })
+
+  test('a caption band hit resolves to its commit', () => {
+    const layout = sampleLayout()
+    const m = layout.nodeByHash.get('m')
+    if (!m) throw new Error('missing node')
+    // Just under the node, where its subject text draws.
+    const hit = hitTest(layout, nodeX(m.column) + 4, nodeY(m.row) + 24, () => 40, null, -1)
+    expect(hit?.type).toBe('node')
+    if (hit?.type === 'node') expect(hit.node.commit.hash).toBe('m')
   })
 
   test('the branch container capsule is a click target between its nodes', () => {

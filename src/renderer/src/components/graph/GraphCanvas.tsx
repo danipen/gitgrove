@@ -4,8 +4,11 @@
 // styles: styles/features/graph.css
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { stripCoAuthorTrailers } from '@/lib/coauthors'
 import { subscribeAvatars } from './avatars'
+import { reflowMessage } from './reflow'
 import {
+  CAPTION_TOP,
   contentSize,
   HEADER_H,
   hitTest,
@@ -338,7 +341,9 @@ export function GraphCanvas({
       s.wip ? s.wip.column : null,
       s.wip ? s.wip.row : -1,
       // Match the renderer's sticky-label clamp so labels hit where they draw.
-      toWorldX(view, 8)
+      toWorldX(view, 8),
+      // Captions only hit while they're drawn (they hide at far zoom).
+      view.scale >= 0.55
     )
   }, [])
 
@@ -354,12 +359,19 @@ export function GraphCanvas({
   )
 
   const onPointerDown = (e: React.PointerEvent) => {
+    if (inTip(e)) return
     if (e.button !== 0 && e.button !== 1) return
     wrapRef.current?.focus()
     panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, panned: false }
   }
 
+  /** True when the event happened inside the expanded-message card — it owns
+   *  its own interactions (text selection, body scrolling). */
+  const inTip = (e: { target: EventTarget }) =>
+    (e.target as HTMLElement).closest?.('.graph-tip') != null
+
   const onPointerMove = (e: React.PointerEvent) => {
+    if (inTip(e)) return
     const pan = panRef.current
     if (pan && pan.id === e.pointerId) {
       // Released off-window: buttons bitmask is the only reliable signal.
@@ -388,10 +400,12 @@ export function GraphCanvas({
     }
     const hit = hitAt(e.clientX, e.clientY)
     if (hit?.type === 'node') {
+      // Anchor the expansion card exactly on the node's caption, so the
+      // truncated text appears to complete itself in place.
       const view = viewRef.current
       setHover(hit.node.commit.hash, {
-        x: nodeX(hit.node.column) * view.scale + view.x,
-        y: (nodeY(hit.node.row) - NODE_R) * view.scale + view.y,
+        x: (nodeX(hit.node.column) - NODE_R) * view.scale + view.x,
+        y: (nodeY(hit.node.row) + CAPTION_TOP) * view.scale + view.y,
         node: hit.node
       })
       setCursor('pointer')
@@ -420,6 +434,7 @@ export function GraphCanvas({
   }
 
   const onContextMenu = (e: React.MouseEvent) => {
+    if (inTip(e)) return
     e.preventDefault()
     const hit = hitAt(e.clientX, e.clientY)
     if (hit?.type === 'node') {
@@ -431,6 +446,7 @@ export function GraphCanvas({
   }
 
   const onDoubleClick = (e: React.MouseEvent) => {
+    if (inTip(e)) return
     const hit = hitAt(e.clientX, e.clientY)
     if (hit?.type === 'label') onRowDoubleClick(hit.row)
     else if (!hit) {
@@ -440,6 +456,8 @@ export function GraphCanvas({
   }
 
   const onWheel = (e: React.WheelEvent) => {
+    // Inside the expanded message the wheel scrolls its body, not the canvas.
+    if (inTip(e)) return
     const rect = wrapRef.current?.getBoundingClientRect()
     if (!rect) return
     if (e.ctrlKey || e.metaKey) {
@@ -516,8 +534,24 @@ export function GraphCanvas({
     >
       <canvas ref={canvasRef} className="graph-canvas__surface" />
       {tooltip && (
-        <div className="graph-tip" style={{ left: tooltip.x, top: tooltip.y }}>
+        <div
+          className="graph-tip"
+          // Anchored over the caption (minus its own padding) so the full
+          // message appears to grow out of the truncated text in place;
+          // clamped so it never runs off the right edge.
+          style={{
+            left: Math.max(8, Math.min(tooltip.x - 9, sizeRef.current.width - 428)),
+            top: tooltip.y - 7
+          }}
+        >
           <div className="graph-tip__subject">{tooltip.node.commit.subject}</div>
+          {stripCoAuthorTrailers(tooltip.node.commit.body) && (
+            <div className="graph-tip__body">
+              {/* Bodies come hard-wrapped at 72/80 columns; reflow joins the
+                  wrapped paragraph lines so the card wraps them itself. */}
+              {reflowMessage(stripCoAuthorTrailers(tooltip.node.commit.body))}
+            </div>
+          )}
           <div className="graph-tip__meta">
             <span className="commit__hash">{tooltip.node.commit.shortHash}</span>
             <span>{tooltip.node.commit.authorName}</span>
