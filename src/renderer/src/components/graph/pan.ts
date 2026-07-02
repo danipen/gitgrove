@@ -20,7 +20,7 @@ export interface PanSample {
  *  mid-drag before letting go means "park it here", not "fling it". */
 export const VELOCITY_WINDOW_MS = 100
 /** px/ms below which a release is a positioning drag, not a flick. */
-export const FLING_MIN_LAUNCH = 0.2
+export const FLING_MIN_LAUNCH = 0.25
 /** px/ms ceiling. A violent flick measured over a handful of ms can read
  *  absurdly fast; the clamp keeps the glide vigorous, never a teleport. */
 export const FLING_MAX_SPEED = 9
@@ -32,7 +32,7 @@ export const FLING_MIN_SPEED = 0.01
 // throws feel weak. Growing τ with speed makes distance superlinear, the way
 // touch-screen inertia feels: a gentle push parks nearby, a hard throw sails.
 /** τ for the gentlest fling — short, precise little pushes. */
-export const FLING_TAU_MIN_MS = 220
+export const FLING_TAU_MIN_MS = 180
 /** τ ceiling — even the hardest throw settles within a few seconds. */
 export const FLING_TAU_MAX_MS = 800
 /** Extra ms of τ per px/ms of launch speed. */
