@@ -353,11 +353,17 @@ export function GraphCanvas({
         jumpToHead()
       }
       clampView()
-      invalidate()
+      // Setting canvas.width/height wipes the backing store to transparent.
+      // ResizeObserver fires after layout but *before* paint (and after this
+      // frame's rAF callbacks already ran), so a rAF-deferred draw would land
+      // one frame late and the blank canvas would hit the screen — one white
+      // flash per resize step, i.e. constant flicker while dragging a splitter.
+      // Drawing synchronously here repaints the wiped store in the same frame.
+      draw()
     })
     observer.observe(wrap)
     return () => observer.disconnect()
-  }, [clampView, invalidate, jumpToHead])
+  }, [clampView, draw, jumpToHead])
 
   // First data landing after mount: frame the HEAD commit once.
   useEffect(() => {
