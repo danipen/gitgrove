@@ -34,6 +34,7 @@ const api: GitGroveApi = {
   log: (repoPath, options?: LogOptions) => ipcRenderer.invoke(IPC.log, repoPath, options),
   graphLog: (repoPath, options?: GraphLogOptions) =>
     ipcRenderer.invoke(IPC.graphLog, repoPath, options),
+  graphPatchIds: (repoPath, hashes) => ipcRenderer.invoke(IPC.graphPatchIds, repoPath, hashes),
   commitIndex: (repoPath, hash) => ipcRenderer.invoke(IPC.commitIndex, repoPath, hash),
   fileHistory: (repoPath, path, ref) => ipcRenderer.invoke(IPC.fileHistory, repoPath, path, ref),
   blame: (repoPath, path, ref) => ipcRenderer.invoke(IPC.blame, repoPath, path, ref),

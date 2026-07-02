@@ -204,6 +204,38 @@
   color: var(--accent);
 }
 
+/* The twin dot's explanation, inside the hover card (GraphCanvas.tsx): where
+   else this change lives. Same hue as the dot on the node — the ::before dot
+   IS the legend: seeing both together is what teaches the mark. */
+.graph-tip__twins {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--pr-merged);
+}
+.graph-tip__twins::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+/* Each twin's branch name jumps to that commit (select + reveal). */
+.graph-tip__twin-link {
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  font-weight: 600;
+  background: none;
+  border: none;
+}
+.graph-tip__twin-link:hover {
+  text-decoration: underline;
+}
+
 /* Focus lens chip (GraphToolbar.tsx): seed + hop-depth button and the exit
    button share one pill; the divider keeps the two hit targets legible. */
 .graph-focus {

@@ -31,6 +31,7 @@ import {
   type View
 } from './geometry'
 import { BRANCH_COLOR_COUNT, type GraphLayout, type GraphNode, type GraphRow } from './layout'
+import { type BackportLink, linkedHashes } from './links'
 
 export interface GraphPalette {
   dark: boolean
@@ -141,6 +142,8 @@ export interface SceneState {
   activeMatch: string | null
   wip: { column: number; row: number; count: number; color: number } | null
   dayMarks: DayMark[]
+  /** Dashed "same change" links between backport twins (see links.ts). */
+  links: readonly BackportLink[]
 }
 
 const LABEL_FONT = 11
@@ -274,7 +277,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: SceneState): voi
   drawDayLines(ctx, scene)
   drawContainers(ctx, scene, c0, c1)
   drawEdges(ctx, scene, c0, c1)
-  drawNodes(ctx, scene, c0, c1, labelBoxes)
+  drawBackportLinks(ctx, scene, c0, c1)
+  drawNodes(ctx, scene, c0, c1, labelBoxes, twinsOf(scene.links))
   drawWip(ctx, scene)
   drawLabels(ctx, scene, labelBoxes)
 
@@ -415,12 +419,72 @@ function drawEdges(
   ctx.globalAlpha = 1
 }
 
+// Twin markers: which commits participate in any link. Cached per links array
+// (stable between frames) so the 60fps pan path never re-derives the set.
+const twinCache = new WeakMap<readonly BackportLink[], ReadonlySet<string>>()
+function twinsOf(links: readonly BackportLink[]): ReadonlySet<string> | null {
+  if (links.length === 0) return null
+  let twins = twinCache.get(links)
+  if (!twins) twinCache.set(links, (twins = linkedHashes(links)))
+  return twins
+}
+
+/** Dashed "same change" links: the same patch-id living on two lines — a
+ *  cherry-picked backport. A real release branch shares dozens of changes
+ *  with the mainline, so all-pairs-at-once is spaghetti; instead every twin
+ *  commit wears a quiet dot (drawNodes) and the curve draws ONLY for the
+ *  hovered or selected commit. Flowing bezier in the tag hue, deliberately
+ *  unlike the orthogonal ancestry pipes, so equivalence never reads as
+ *  parentage. */
+function drawBackportLinks(
+  ctx: CanvasRenderingContext2D,
+  scene: SceneState,
+  c0: number,
+  c1: number
+): void {
+  if (scene.links.length === 0) return
+  if (scene.selectedHash === null && scene.hoverHash === null) return
+  const { layout, palette } = scene
+  const active = (hash: string) => hash === scene.selectedHash || hash === scene.hoverHash
+  ctx.setLineDash([5, 4])
+  for (const link of scene.links) {
+    if (!active(link.fromHash) && !active(link.toHash)) continue
+    const from = layout.nodeByHash.get(link.fromHash)
+    const to = layout.nodeByHash.get(link.toHash)
+    if (!from || !to) continue
+    if (Math.max(from.column, to.column) < c0) continue
+    if (Math.min(from.column, to.column) > c1) continue
+    const x0 = nodeX(from.column)
+    const y0 = nodeY(from.row)
+    const x1 = nodeX(to.column)
+    const y1 = nodeY(to.row)
+    ctx.strokeStyle = palette.tag
+    ctx.globalAlpha = 0.95
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    if (y0 === y1) {
+      // Two chains sharing a packed row: a shallow arc, like same-row edges.
+      ctx.moveTo(x0, y0 - NODE_R)
+      ctx.quadraticCurveTo((x0 + x1) / 2, y0 - CAPSULE_HALF_H - 18, x1, y1 - NODE_R)
+    } else {
+      const dir = Math.sign(y1 - y0)
+      const midY = (y0 + y1) / 2
+      ctx.moveTo(x0, y0 + dir * NODE_R)
+      ctx.bezierCurveTo(x0, midY, x1, midY, x1, y1 - dir * NODE_R)
+    }
+    ctx.stroke()
+  }
+  ctx.setLineDash([])
+  ctx.globalAlpha = 1
+}
+
 function drawNodes(
   ctx: CanvasRenderingContext2D,
   scene: SceneState,
   c0: number,
   c1: number,
-  labelBoxes: LabelBox[]
+  labelBoxes: LabelBox[],
+  twins: ReadonlySet<string> | null
 ): void {
   const { layout, palette, view } = scene
   const showText = view.scale >= 0.55
@@ -501,6 +565,28 @@ function drawNodes(
       ctx.beginPath()
       ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2)
       ctx.stroke()
+    }
+    // Backport twin dot: this change also lives on another line — hover or
+    // select to see the dashed link. Restraint is the design: a presence-dot
+    // on the lower shoulder (backed by a bg disc for contrast on any avatar),
+    // sized to be legible when you look and ignorable when you don't, and
+    // culled below the same zoom where node text vanishes — an overview must
+    // never turn into a field of specks. Rings are taken (branch color,
+    // selection, match), so a badge, not another ring. It brightens with its
+    // node's hover/selection, exactly when the curve appears.
+    if (twins?.has(node.commit.hash) && showText) {
+      const bx = x + NODE_R * 0.78
+      const by = y + NODE_R * 0.78
+      ctx.fillStyle = palette.bg
+      ctx.beginPath()
+      ctx.arc(bx, by, 3.4, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.fillStyle = palette.tag
+      if (!dim) ctx.globalAlpha = isHover || isSelected ? 1 : 0.7
+      ctx.beginPath()
+      ctx.arc(bx, by, 2.1, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = dim ? DIM_ALPHA : 1
     }
     if (node.isHead) drawHomeBadge(ctx, scene, x, y)
 

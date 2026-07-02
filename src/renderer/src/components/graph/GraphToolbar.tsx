@@ -48,6 +48,9 @@ interface Props {
   /** Omit branches already merged into another branch. */
   hideMerged: boolean
   onHideMerged: (value: boolean) => void
+  /** Mark commits whose change also lives on a release line (default on). */
+  twins: boolean
+  onTwins: (value: boolean) => void
   /** Active Focus lens (seed branch + hop depth), or null. */
   focus: { name: string; hops: number } | null
   onFocusHops: (hops: number) => void
@@ -181,6 +184,8 @@ export function GraphToolbar({
   onStructureOnly,
   hideMerged,
   onHideMerged,
+  twins,
+  onTwins,
   focus,
   onFocusHops,
   onExitFocus,
@@ -232,10 +237,13 @@ export function GraphToolbar({
       />
       <Chip
         label="View"
-        value={
-          structureOnly || hideMerged ? `${Number(structureOnly) + Number(hideMerged)}` : null
-        }
-        active={open === 'view' || structureOnly || hideMerged}
+        value={(() => {
+          // The count reflects settings moved OFF their default — twins
+          // default on, so it only counts when switched off.
+          const engaged = Number(structureOnly) + Number(hideMerged) + Number(!twins)
+          return engaged > 0 ? `${engaged}` : null
+        })()}
+        active={open === 'view' || structureOnly || hideMerged || !twins}
         onClick={() => setOpen(open === 'view' ? null : 'view')}
         refCb={anchorFor('view')}
       />
@@ -423,6 +431,22 @@ export function GraphToolbar({
               <span className="graph-picker__opt-desc">
                 Omit branches already merged into another branch. The current and default
                 branches always show.
+              </span>
+            </span>
+          </label>
+          <label className="graph-picker__opt">
+            <input
+              type="checkbox"
+              checked={twins}
+              onChange={(e) => onTwins(e.target.checked)}
+            />
+            <span>
+              <span className="graph-picker__opt-title">Detect backport twins</span>
+              <span className="graph-picker__opt-desc">
+                Find changes that live on more than one line — a fix on the mainline and
+                its cherry-picked copy on a release line. Each copy wears a purple dot:
+                hover to see its twins, click a branch name or press T to jump between
+                them.
               </span>
             </span>
           </label>

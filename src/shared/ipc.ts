@@ -67,6 +67,7 @@ export const IPC = {
   checkout: 'repo:checkout',
   log: 'repo:log',
   graphLog: 'repo:graph:log',
+  graphPatchIds: 'repo:graph:patch-ids',
   commitIndex: 'repo:commit:index',
   fileHistory: 'repo:file-history',
   blame: 'repo:blame',
@@ -263,6 +264,13 @@ export interface GitGroveApi {
    * parents — the order the diagram's layout depends on.
    */
   graphLog(repoPath: string, options?: GraphLogOptions): Promise<Commit[]>
+  /**
+   * Patch-id per commit (`git patch-id --stable`) for the given hashes: equal
+   * ids mean the same change — how the Graph spots cherry-picked backports
+   * (its twin markers). Merges, empty commits and unknown hashes drop out of
+   * the result.
+   */
+  graphPatchIds(repoPath: string, hashes: string[]): Promise<Record<string, string>>
   /** How many commits sit between HEAD and `hash` (i.e. `hash`'s 0-based index
    *  in `git log HEAD`), so the History list can page far enough to reveal it.
    *  `-1` when `hash` isn't an ancestor of HEAD. */

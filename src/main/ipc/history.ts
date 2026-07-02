@@ -12,6 +12,7 @@ import {
   getFileHistory,
   getGraphLog,
   getLog,
+  getPatchIds,
   getRangeDiff,
   getRangeFiles,
   getWorkingDiff
@@ -21,6 +22,9 @@ export function registerHistoryHandlers(): void {
   ipcMain.handle(IPC.log, (_e, repoPath: string, options?: LogOptions) => getLog(repoPath, options))
   ipcMain.handle(IPC.graphLog, (_e, repoPath: string, options?: GraphLogOptions) =>
     getGraphLog(repoPath, options)
+  )
+  ipcMain.handle(IPC.graphPatchIds, (_e, repoPath: string, hashes: string[]) =>
+    getPatchIds(repoPath, hashes)
   )
   ipcMain.handle(IPC.commitIndex, (_e, repoPath: string, hash: string) =>
     getCommitIndex(repoPath, hash)

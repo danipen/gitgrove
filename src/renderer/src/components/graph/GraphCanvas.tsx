@@ -26,6 +26,7 @@ import {
   type View
 } from './geometry'
 import type { GraphLayout, GraphNode, GraphRow } from './layout'
+import { type BackportLink, twinHashes } from './links'
 import {
   captionMetrics,
   captionWidthFor,
@@ -59,6 +60,8 @@ interface Props {
   activeMatch: string | null
   /** Uncommitted change count — drawn as the dashed WIP node on the HEAD row. */
   changesCount: number
+  /** Dashed "same change" links between backport twins (see links.ts). */
+  links: readonly BackportLink[]
   /** Receives the imperative handle (zoom/fit/jump), for the toolbar. */
   controls: RefObject<GraphCanvasHandle | null>
   onSelectNode: (node: GraphNode | null) => void
@@ -139,6 +142,7 @@ export function GraphCanvas({
   matches,
   activeMatch,
   changesCount,
+  links,
   controls,
   onSelectNode,
   onNodeMenu,
@@ -184,7 +188,8 @@ export function GraphCanvas({
     matches,
     activeMatch,
     wip,
-    dayMarks
+    dayMarks,
+    links
   })
   sceneRef.current = {
     layout,
@@ -193,7 +198,8 @@ export function GraphCanvas({
     matches,
     activeMatch,
     wip,
-    dayMarks
+    dayMarks,
+    links
   }
 
   const draw = useCallback(() => {
@@ -219,7 +225,8 @@ export function GraphCanvas({
       matches: s.matches,
       activeMatch: s.activeMatch,
       wip: s.wip,
-      dayMarks: s.dayMarks
+      dayMarks: s.dayMarks,
+      links: s.links
     })
   }, [theme])
 
@@ -369,6 +376,7 @@ export function GraphCanvas({
     matches,
     activeMatch,
     wip,
+    links,
     theme,
     invalidate
   ])
@@ -427,6 +435,22 @@ export function GraphCanvas({
     wrapRef.current?.focus()
     panRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, panned: false }
   }
+
+  // The twin dot's own explanation, for the hover card: where else this
+  // change lives. This line is what makes the dot self-teaching — one hover
+  // answers "what's the purple dot?" — and each name is a jump target.
+  // Computed per card, not per frame.
+  const twinTargets = useMemo(() => {
+    if (!tooltip) return []
+    const targets: { name: string; node: GraphNode }[] = []
+    for (const hash of twinHashes(links, tooltip.node.commit.hash)) {
+      const twin = layout.nodeByHash.get(hash)
+      if (!twin) continue
+      const name = layout.rows.find((r) => r.chain === twin.chain)?.name
+      if (name && !targets.some((t) => t.name === name)) targets.push({ name, node: twin })
+    }
+    return targets
+  }, [tooltip, links, layout])
 
   /** True when the event happened inside the expanded-message card — it owns
    *  its own interactions (text selection, body scrolling). */
@@ -548,6 +572,22 @@ export function GraphCanvas({
       onSelectNode(null)
       return
     }
+    // T: jump between a change and its twin on another line. twinHashes is
+    // symmetric, so on a plain backport pair T bounces between the two ends;
+    // the first in-window twin wins on longer chains.
+    if (e.key === 't' || e.key === 'T') {
+      const current = s.selectedHash ? s.layout.nodeByHash.get(s.selectedHash) : null
+      if (!current) return
+      const twin = twinHashes(s.links, current.commit.hash)
+        .map((hash) => s.layout.nodeByHash.get(hash))
+        .find((node) => node !== undefined)
+      if (twin) {
+        e.preventDefault()
+        onSelectNode(twin)
+        reveal(twin.commit.hash)
+      }
+      return
+    }
     if (e.key === '+' || e.key === '=') {
       e.preventDefault()
       zoomAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 1.25)
@@ -630,6 +670,25 @@ export function GraphCanvas({
               body shows in full — the two differences this context forces. */}
           <div className="graph-tip__subject">{tooltip.node.commit.subject}</div>
           <CommitMeta commit={tooltip.node.commit} />
+          {twinTargets.length > 0 && (
+            <div className="graph-tip__twins">
+              <span>Also on</span>
+              {twinTargets.map((target) => (
+                <button
+                  key={target.node.commit.hash}
+                  type="button"
+                  className="graph-tip__twin-link"
+                  onClick={() => {
+                    onSelectNode(target.node)
+                    reveal(target.node.commit.hash)
+                    setTooltip(null)
+                  }}
+                >
+                  {target.name}
+                </button>
+              ))}
+            </div>
+          )}
           {stripCoAuthorTrailers(tooltip.node.commit.body) && (
             <div className="graph-tip__body">
               {/* Bodies come hard-wrapped at 72/80 columns; reflow joins the

@@ -15,8 +15,10 @@ import { usePersistentState } from '@/lib/persist'
 import { GraphCanvas, type GraphCanvasHandle } from './GraphCanvas'
 import { type AuthorOption, DATE_PRESETS, type DatePresetId, GraphToolbar } from './GraphToolbar'
 import { collectBranchNames, type GraphNode, type GraphRow, layoutGraph } from './layout'
+import { linkableChains, twinHashes } from './links'
 import { relatedBranches } from './related'
 import { releaseLineVersion, releaseVersionWithOverride } from './releases'
+import { useBackportLinks } from './useBackportLinks'
 import { useGraphLog } from './useGraphLog'
 
 interface Props {
@@ -76,10 +78,21 @@ export function GraphView({
   // View shaping (persisted): what makes busy trunk-based repos readable.
   const [structureOnly, setStructureOnly] = usePersistentState('gg.graphStructureOnly', false)
   const [hideMerged, setHideMerged] = usePersistentState('gg.graphHideMerged', false)
+  /** Backport twins (default on): the opt-out lives in the View popover for
+   *  anyone who finds the dots noisy — never an opt-in, or nobody finds it. */
+  const [twins, setTwins] = usePersistentState('gg.graphTwins', true)
   const [search, setSearch] = useState('')
   const [matchIndex, setMatchIndex] = useState(0)
   const [menu, setMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
   const controls = useRef<GraphCanvasHandle | null>(null)
+
+  // A different repo is a fresh view: focus and the branch filter both name
+  // branches of the previous repo and must never leak across.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: repoPath is the intentional trigger
+  useEffect(() => {
+    setFocus(null)
+    setBranchFilter(null)
+  }, [repoPath])
 
   const since = DATE_PRESETS.find((p) => p.id === datePreset)?.since ?? null
   const { commits, loading, loaded, limitHit, showMore } = useGraphLog({
@@ -111,6 +124,15 @@ export function GraphView({
     () => layoutGraph({ ...input, visibleBranches: branchFilter, hideMerged, structureOnly }),
     [input, branchFilter, hideMerged, structureOnly]
   )
+
+  // Backport twins: only the mainline + release-line chains enter the
+  // patch-id pipeline — a repo without release lines pays nothing. An empty
+  // set (opted out) short-circuits the pipeline entirely.
+  const linkable = useMemo(() => {
+    if (!twins) return new Set<number>()
+    return linkableChains(layout.rows, input.defaultBranch, releaseOverrides)
+  }, [twins, layout, input, releaseOverrides])
+  const links = useBackportLinks(repoPath, layout, linkable)
 
   const authors = useMemo((): AuthorOption[] => {
     const byEmail = new Map<string, AuthorOption>()
@@ -201,8 +223,27 @@ export function GraphView({
     setReleasePins({ ...releasePins, [repoPath]: pins })
   }
 
-  const openNodeMenu = (node: GraphNode, x: number, y: number) =>
-    setMenu({ x, y, items: commitMenuFor(node.commit) })
+  // "Go to Twin": jump to the same change on another line. One item per
+  // twin — usually one; a chain across 12 → 11.x → 10.x gets two.
+  const openNodeMenu = (node: GraphNode, x: number, y: number) => {
+    const twinItems: ContextMenuItem[] = twinHashes(links, node.commit.hash).flatMap((hash) => {
+      const twin = layout.nodeByHash.get(hash)
+      if (!twin) return []
+      const branch = layout.rows.find((r) => r.chain === twin.chain)
+      return [
+        {
+          label: `Go to Twin on ${branch?.name ?? twin.commit.shortHash}`,
+          icon: <Icon.CherryPick size={15} />,
+          onClick: () => {
+            onSelectCommit(twin.commit)
+            controls.current?.reveal(twin.commit.hash)
+          }
+        }
+      ]
+    })
+    const items = commitMenuFor(node.commit)
+    setMenu({ x, y, items: twinItems.length > 0 ? [...twinItems, {}, ...items] : items })
+  }
 
   const openRowMenu = (row: GraphRow, x: number, y: number) => {
     const changesItem: ContextMenuItem = {
@@ -291,6 +332,8 @@ export function GraphView({
         onStructureOnly={setStructureOnly}
         hideMerged={hideMerged}
         onHideMerged={setHideMerged}
+        twins={twins}
+        onTwins={setTwins}
         focus={focus}
         onFocusHops={(hops) => focus && focusOn(focus.name, hops)}
         onExitFocus={exitFocus}
@@ -330,6 +373,7 @@ export function GraphView({
             matches={matches}
             activeMatch={activeMatch}
             changesCount={changesCount}
+            links={links}
             controls={controls}
             onSelectNode={(node) => onSelectCommit(node ? node.commit : null)}
             onNodeMenu={openNodeMenu}
