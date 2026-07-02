@@ -59,7 +59,13 @@
    truncated text appears to complete itself in place (Plastic-style). It's
    interactive — the full message can be selected and, when long, scrolled. */
 .graph-tip {
-  position: absolute;
+  /* Fixed, on the popover rung (65) of the z ladder (base.css): the stage
+     clips its children (overflow: hidden) and the diff pane sits below it,
+     so an absolute card gets cut off at the stage edge. Fixed escapes the
+     clip — but it means no ancestor of .graph-canvas may gain a transform/
+     filter/contain, or the card's viewport coordinates break. */
+  position: fixed;
+  z-index: 65;
   width: max-content;
   max-width: 420px;
   padding: 6px 9px;

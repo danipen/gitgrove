@@ -94,20 +94,26 @@ const TIP_MAX_WIDTH = 420
  *  positions text by half-leading + ascent. Both are converted to the shared
  *  alphabetic baseline with real font metrics (captionMetrics), so the hover
  *  swap is pixel-stable — offsets eyeballed from the line height drift by a
- *  pixel and break the "text completes itself in place" illusion. */
-function tipPosition(tip: Tooltip, viewportWidth: number, fontFamily: string) {
+ *  pixel and break the "text completes itself in place" illusion.
+ *  The card is position: fixed (it must overlay the diff pane below the
+ *  stage — see graph.css), so stage-local coordinates translate by the
+ *  stage's viewport rect. */
+function tipPosition(tip: Tooltip, stage: DOMRect | undefined, fontFamily: string) {
   const m = captionMetrics(fontFamily)
   const lineBox = SUBJECT_FONT * TIP_SUBJECT_LINE_HEIGHT
   const halfLeading = (lineBox - (m.ascent + m.descent)) / 2
   const baselineY = tip.y + m.middleToBaseline
+  const stageWidth = stage?.width ?? 0
   return {
-    // Clamped so the card never runs off the right edge (alignment yields
-    // to visibility there, by design).
-    left: Math.max(
-      8,
-      Math.min(tip.x - TIP_BORDER - TIP_PAD_X, viewportWidth - TIP_MAX_WIDTH - 2 * TIP_BORDER - 8)
-    ),
-    top: baselineY - TIP_BORDER - TIP_PAD_Y - halfLeading - m.ascent
+    // Clamped so the card never runs off the stage's right edge (alignment
+    // yields to visibility there, by design).
+    left:
+      (stage?.left ?? 0) +
+      Math.max(
+        8,
+        Math.min(tip.x - TIP_BORDER - TIP_PAD_X, stageWidth - TIP_MAX_WIDTH - 2 * TIP_BORDER - 8)
+      ),
+    top: (stage?.top ?? 0) + baselineY - TIP_BORDER - TIP_PAD_Y - halfLeading - m.ascent
   }
 }
 
@@ -586,7 +592,7 @@ export function GraphCanvas({
           // the truncated text completes itself in place, pixel for pixel.
           style={tipPosition(
             tooltip,
-            sizeRef.current.width,
+            wrapRef.current?.getBoundingClientRect(),
             paletteRef.current?.font ?? getComputedStyle(document.body).fontFamily
           )}
         >
