@@ -12,6 +12,8 @@
 import { avatarColor, initials } from '@/lib/avatar'
 import { avatarImageFor } from './avatars'
 import {
+  CAPSULE_HALF_H,
+  CAPSULE_PAD,
   COL_W,
   HEADER_H,
   labelRect,
@@ -138,9 +140,6 @@ export interface SceneState {
 const LABEL_FONT = 11
 const SUBJECT_FONT = 11
 const DIM_ALPHA = 0.15
-/** Horizontal breathing room a branch container adds past its outer nodes. */
-const CAPSULE_PAD = 10
-const CAPSULE_HALF_H = 19
 
 // Measured pill-text widths, shared with hit-testing (see labelWidthFor).
 const labelWidths = new Map<string, number>()

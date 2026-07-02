@@ -47,6 +47,15 @@ describe('graph geometry', () => {
     expect(hitTest(layout, nodeX(m.column), nodeY(1) + 40, () => 40, null, -1)).toBeNull()
   })
 
+  test('the branch container capsule is a click target between its nodes', () => {
+    const layout = sampleLayout()
+    // Column 2 on the main row has no node (f sits on the feature row) — the
+    // point lands inside main's capsule instead.
+    const hit = hitTest(layout, nodeX(2), nodeY(0), () => 40, null, -1)
+    expect(hit?.type).toBe('row')
+    if (hit?.type === 'row') expect(hit.row.name).toBe('main')
+  })
+
   test('arrow keys walk the row and jump to the column-nearest node across rows', () => {
     const layout = sampleLayout()
     const m = layout.nodeByHash.get('m')

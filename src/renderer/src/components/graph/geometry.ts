@@ -20,6 +20,11 @@ export const HEADER_H = 26
 /** Branch label pill: height and its gap above the row spine. */
 export const LABEL_H = 18
 export const LABEL_GAP = 4
+/** Branch container capsule: horizontal padding past the outer nodes, and
+ *  half its height. Shared by the renderer and hit-testing — the capsule is
+ *  itself a click target (it IS the branch). */
+export const CAPSULE_PAD = 10
+export const CAPSULE_HALF_H = 19
 
 /** Pan/zoom: screen = world * scale + offset. */
 export interface View {
@@ -71,11 +76,13 @@ export function labelRect(
 export type GraphHit =
   | { type: 'node'; node: GraphNode }
   | { type: 'label'; row: GraphRow }
+  /** The branch container capsule — selects the branch, like its label. */
+  | { type: 'row'; row: GraphRow }
   | { type: 'wip' }
 
 /**
- * What sits at a world point: a commit node, a branch label, or the WIP node.
- * Nodes win over labels (they're the smaller target).
+ * What sits at a world point: a commit node, a branch label, the branch's
+ * container capsule, or the WIP node — checked smallest target first.
  */
 export function hitTest(
   layout: GraphLayout,
@@ -107,6 +114,14 @@ export function hitTest(
     if (wx >= rect.x && wx <= rect.x + rect.w && wy >= rect.y && wy <= rect.y + rect.h) {
       return { type: 'label', row: r }
     }
+  }
+  for (const r of layout.rows) {
+    if (Math.abs(wy - nodeY(r.index)) > CAPSULE_HALF_H) continue
+    // The HEAD row's capsule stretches to embrace the WIP node (see render.ts).
+    const endColumn = r.isHead && wipColumn !== null ? wipColumn : r.endColumn
+    const x0 = nodeX(r.startColumn) - NODE_R - CAPSULE_PAD
+    const x1 = nodeX(endColumn) + NODE_R + CAPSULE_PAD
+    if (wx >= x0 && wx <= x1) return { type: 'row', row: r }
   }
   return null
 }

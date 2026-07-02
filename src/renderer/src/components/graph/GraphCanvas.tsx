@@ -415,7 +415,7 @@ export function GraphCanvas({
     if (!hit) onSelectNode(null)
     else if (hit.type === 'node') onSelectNode(hit.node)
     else if (hit.type === 'wip') onWipClick()
-    // Clicking a branch label opens the whole branch's changes.
+    // A branch label or its container capsule opens the branch's changes.
     else onRowClick(hit.row)
   }
 
@@ -425,7 +425,7 @@ export function GraphCanvas({
     if (hit?.type === 'node') {
       onSelectNode(hit.node)
       onNodeMenu(hit.node, e.clientX, e.clientY)
-    } else if (hit?.type === 'label') {
+    } else if (hit?.type === 'label' || hit?.type === 'row') {
       onRowMenu(hit.row, e.clientX, e.clientY)
     }
   }
