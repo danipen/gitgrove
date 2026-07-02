@@ -3,6 +3,8 @@ import type { Commit } from '@shared/types'
 import {
   CAPSULE_HALF_H,
   CAPTION_FULL_ZOOM,
+  CAPTION_INK_ABOVE,
+  CAPTION_INK_BELOW,
   captionAlpha,
   captionCenterOffset,
   contentSize,
@@ -127,12 +129,12 @@ describe('graph geometry', () => {
     // Roomy corridor (zoom 2): the design gap below the capsule (11 screen px
     // to the text center — see CAPTION_GAP_SCREEN).
     expect(captionCenterOffset(2)).toBeCloseTo(CAPSULE_HALF_H + 11 / 2)
-    // Squeezed corridor (zoom 0.9): equal screen air above the ink (4.5 up
-    // from center) and below it (6 down), and the ink stays clear of the next
-    // row's label band, 38 world px below the row center.
+    // Squeezed corridor (zoom 0.9): equal screen air above the ink and below
+    // it, and the ink stays clear of the next row's label band, 38 world px
+    // below the row center.
     const offset = captionCenterOffset(0.9)
-    const airAbove = (offset - CAPSULE_HALF_H) * 0.9 - 4.5
-    const airBelow = (38 - offset) * 0.9 - 6
+    const airAbove = (offset - CAPSULE_HALF_H) * 0.9 - CAPTION_INK_ABOVE
+    const airBelow = (38 - offset) * 0.9 - CAPTION_INK_BELOW
     expect(airAbove).toBeCloseTo(airBelow)
     expect(airBelow).toBeGreaterThan(0)
   })

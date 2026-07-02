@@ -149,7 +149,7 @@ const LABEL_FONT = 11
  *  glyphs, and only a matching font makes the truncated text visibly "become"
  *  the full message. Captions therefore draw in SCREEN space (see drawCaption)
  *  so they rasterize at this exact pixel size, like the DOM text does. */
-export const SUBJECT_FONT = 12
+export const SUBJECT_FONT = 13
 export const SUBJECT_WEIGHT = 600
 const DIM_ALPHA = 0.15
 

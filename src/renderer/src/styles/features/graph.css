@@ -94,7 +94,7 @@
    are mirrored by tipPosition in GraphCanvas.tsx — keep them in sync.
    pre-wrap matches canvas fillText, which never collapses runs of spaces. */
 .graph-tip__subject {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1.45;
   color: var(--fg-muted);

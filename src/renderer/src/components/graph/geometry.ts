@@ -30,25 +30,27 @@ export const CAPSULE_HALF_H = 19
  *  between them must be screen-fixed too — a world-space anchor sinks the
  *  text into the capsule when zooming out and floats it far below when
  *  zooming in. SCREEN px from the capsule's bottom edge down to the text
- *  line's CENTER when the corridor is roomy: 12px type spans ~4.5px of ink
+ *  line's CENTER when the corridor is roomy: 13px type spans ~5px of ink
  *  above its center, so 11 leaves ~6px of clear air under the capsule. */
 export const CAPTION_GAP_SCREEN = 11
-/** SCREEN height of the caption's hit band (12px type plus slop). */
-export const CAPTION_BAND_H = 20
+/** SCREEN height of the caption's hit band (13px type plus slop). */
+export const CAPTION_BAND_H = 21
 /** Approximate SCREEN ink extents of a caption line around its middle
- *  baseline: cap height above, baseline and descenders below. They size the
- *  squeeze math in captionCenterOffset. */
-const CAPTION_INK_ABOVE = 4.5
-const CAPTION_INK_BELOW = 6
+ *  baseline: cap height above, baseline and descenders below. Sized for the
+ *  13px caption type (render.ts SUBJECT_FONT); they drive the squeeze math
+ *  in captionCenterOffset. */
+export const CAPTION_INK_ABOVE = 5
+export const CAPTION_INK_BELOW = 6.5
 /** Horizontal air a caption leaves before the next node's slot begins. */
 export const CAPTION_SLOT_AIR = 10
 /** Caption width bounds in SCREEN px — captions draw at a fixed screen size
  *  (render.ts SUBJECT_FONT), so their width is screen-bounded too:
- *  - MIN (~4 characters): the least a caption can show and still mean something.
+ *  - MIN (a handful of characters): the least a caption can show and still
+ *    mean something.
  *  - MAX (~a 3.4-column slot at zoom 1): past it a caption would sprawl over
  *    the empty canvas where edges run, instead of staying by its node. */
 export const CAPTION_MIN_SCREEN_W = 34
-export const CAPTION_MAX_SCREEN_W = 150
+export const CAPTION_MAX_SCREEN_W = 160
 /** Captions are ALL-OR-NOTHING across the graph: the layer is fully on at the
  *  zoom where the TIGHTEST standard slot — two adjacent commits, one column
  *  apart — reaches CAPTION_MIN_SCREEN_W (zoom 1, by construction), and fades
