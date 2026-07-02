@@ -6,20 +6,24 @@
 // The model is Plastic SCM's branch explorer, adapted to git: git commits
 // don't belong to a branch, so branches are reconstructed by walking
 // first-parent chains down from each tip, in priority order (default branch
-// first, so it owns the mainline spine; then the checked-out branch; then the
-// rest, newest tip first). Local and remote refs with the same base name
+// first, so it owns the mainline spine; then release lines, newest version
+// first — see releases.ts; then the checked-out branch; then the rest, newest
+// tip first). Local and remote refs with the same base name
 // ("main" / "origin/main") share one chain — the walk starts at the newer tip
 // and passes through the older one. Commits left unclaimed (their branch was
 // deleted after merging) become "unnamed" chains, labelled from the merge
 // commit's subject when it records the branch name.
 //
-// Rows are then PACKED: the mainline keeps row 0 to itself, and every other
-// chain goes to the lowest row where its column span (plus room for its
-// label) doesn't collide — so short-lived branches that never overlap in time
-// share a row instead of staircasing down the canvas.
+// Rows are then PACKED: the mainline keeps row 0 to itself, release lines
+// stack directly beneath it (newest version first — a stable "spine stack"
+// that keeps maintenance branches in the same rows), and every other chain
+// goes to the lowest row where its column span (plus room for its label)
+// doesn't collide — so short-lived branches that never overlap in time share
+// a row instead of staircasing down the canvas.
 
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
+import { compareReleaseVersions, releaseLineVersion } from './releases'
 
 export type GraphRowKind = 'branch' | 'remote' | 'detached' | 'unnamed'
 
@@ -111,7 +115,8 @@ export interface GraphInput {
   /**
    * Drop branches whose tip is already merged into another branch, plus the
    * deleted-branch chains — the noise of a busy trunk-based repo. The default
-   * and checked-out branches always stay.
+   * branch, the checked-out branch and release lines always stay (a merge-up
+   * workflow merges 11.x into main without ending 11.x).
    */
   hideMerged?: boolean
   /**
@@ -161,6 +166,14 @@ function branchNameFromMergeSubject(subject: string): string | null {
   return m ? m[1] : null
 }
 
+/** A chain's release-line version — named branches only: an unnamed chain
+ *  reconstructed from "Merge branch 'release/1.2'" is merged history, not a
+ *  living release line. */
+function releaseVersionOfChain(chain: Chain): readonly number[] | null {
+  if (chain.kind !== 'branch' && chain.kind !== 'remote') return null
+  return releaseLineVersion(chain.name)
+}
+
 /** Stable palette slot for a branch name (1..N-1; 0 is the mainline's). */
 function colorForName(name: string): number {
   let hash = 5381
@@ -189,7 +202,11 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
     }
   })
   // Tips arrive newest-first already (commits are date-ordered); order groups:
-  // default branch, then the checked-out branch, then by newest tip.
+  // default branch, then release lines newest version first, then the
+  // checked-out branch, then by newest tip. Claim order doubles as importance:
+  // pinning a release line lets it claim its own spine before the feature
+  // branches forked from it, whose newer tips would otherwise walk down the
+  // first parents and take its commits.
   const ordered = [...groups.entries()].sort((a, b) => a[1][0].order - b[1][0].order)
   const named = ordered.map(([base, tips]) => ({ base, tips }))
   const pin = (base: string | null) => {
@@ -198,8 +215,21 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
     if (i > 0) named.unshift(...named.splice(i, 1))
   }
   pin(input.headBranch || null)
+  for (const base of releaseLinesNewestFirst(named).reverse()) pin(base)
   pin(input.defaultBranch)
   return named
+}
+
+/** Base names that are release lines, newest version first (see releases.ts). */
+function releaseLinesNewestFirst(groups: { base: string }[]): string[] {
+  const versions = new Map<string, readonly number[]>()
+  for (const { base } of groups) {
+    const version = releaseLineVersion(base)
+    if (version) versions.set(base, version)
+  }
+  return [...versions.keys()].sort((a, b) =>
+    compareReleaseVersions(versions.get(a) ?? [], versions.get(b) ?? [])
+  )
 }
 
 export function layoutGraph(input: GraphInput): GraphLayout {
@@ -247,6 +277,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       input.hideMerged &&
       group.base !== input.defaultBranch &&
       group.base !== input.headBranch &&
+      releaseLineVersion(group.base) === null &&
       mergeSources.has(group.tips[0].hash)
     ) {
       continue
@@ -341,11 +372,23 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   const mainChain = defaultChain !== -1 ? defaultChain : (headChain ?? (chains.length > 0 ? 0 : -1))
   const rowOfChain = new Map<number, number>()
   if (mainChain >= 0) rowOfChain.set(mainChain, 0)
+  // Release lines pack before everything else, newest version first, so they
+  // stack directly under the mainline — maintenance branches always live in
+  // the same rows, whatever else is going on. HEAD's chain follows, then the
+  // rest by start column so packing stays dense.
+  const releaseRank = new Map<number, number>()
+  chains
+    .map((chain, id) => ({ id, version: releaseVersionOfChain(chain) }))
+    .filter((entry) => entry.version !== null)
+    .sort((a, b) => compareReleaseVersions(a.version ?? [], b.version ?? []))
+    .forEach((entry, rank) => releaseRank.set(entry.id, rank))
+  const NOT_RELEASE = Number.MAX_SAFE_INTEGER
   const others = chains
     .map((_, id) => id)
     .filter((id) => id !== mainChain)
     .sort((a, b) => {
-      // HEAD's chain first, then by start column so packing stays dense.
+      const releases = (releaseRank.get(a) ?? NOT_RELEASE) - (releaseRank.get(b) ?? NOT_RELEASE)
+      if (releases !== 0) return releases
       if (a === headChain) return -1
       if (b === headChain) return 1
       return span[a].start - span[b].start

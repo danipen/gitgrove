@@ -321,6 +321,79 @@ describe('layoutGraph', () => {
     expect(rowNamed(layout, 'late').index).toBe(2)
   })
 
+  test('release lines stack directly under the mainline, newest version first', () => {
+    // 10.x forked before 11.x and both overlap main's span; feature has the
+    // newest tip of all but must not take a row above the release lines.
+    const layout = layoutGraph(
+      input([
+        commit('f', ['b'], 'feature'),
+        commit('m', ['b'], 'HEAD -> main'),
+        commit('y2', ['y1'], '11.x'),
+        commit('x2', ['x1'], '10.x'),
+        commit('y1', ['b']),
+        commit('x1', ['a']),
+        commit('b', ['a']),
+        commit('a', [])
+      ])
+    )
+    expect(rowNamed(layout, 'main').index).toBe(0)
+    expect(rowNamed(layout, '11.x').index).toBe(1)
+    expect(rowNamed(layout, '10.x').index).toBe(2)
+    expect(rowNamed(layout, 'feature').index).toBe(3)
+  })
+
+  test('a release line claims its spine before a newer branch forked from it', () => {
+    // Without the release pin, feature's newer tip would walk down the first
+    // parents and claim 11.x's commits, leaving no 11.x row at all.
+    const layout = layoutGraph(
+      input(
+        [
+          commit('f', ['y2'], 'HEAD -> feature'),
+          commit('y2', ['y1'], '11.x'),
+          commit('m', ['a'], 'main'),
+          commit('y1', ['a']),
+          commit('a', [])
+        ],
+        { headBranch: 'feature' }
+      )
+    )
+    const release = rowNamed(layout, '11.x')
+    expect(layout.nodeByHash.get('y1')?.row).toBe(release.index)
+    expect(layout.nodeByHash.get('y2')?.row).toBe(release.index)
+    expect(rowNamed(layout, 'feature').baseHash).toBe('y2')
+  })
+
+  test('hideMerged keeps release lines even when merged up into main', () => {
+    // Merge-up workflow: 11.x merged into main makes 11.x's tip a merge
+    // source, but the release line must survive the filter — it isn't done.
+    const layout = layoutGraph(
+      input(
+        [
+          commit('m2', ['m1', 'y2'], 'HEAD -> main', "Merge branch '11.x'"),
+          commit('y2', ['y1'], '11.x'),
+          commit('m1', ['a']),
+          commit('y1', ['a']),
+          commit('a', [])
+        ],
+        { hideMerged: true }
+      )
+    )
+    expect(layout.rows.map((r) => r.name)).toEqual(['main', '11.x'])
+  })
+
+  test('collectBranchNames puts release lines right after the default branch', () => {
+    const names = collectBranchNames(
+      input([
+        commit('f', ['a'], 'feature'),
+        commit('x', ['a'], '10.x'),
+        commit('y', ['a'], '11.x'),
+        commit('m', ['a'], 'HEAD -> main'),
+        commit('a', [])
+      ])
+    )
+    expect(names).toEqual(['main', '11.x', '10.x', 'feature'])
+  })
+
   test('collectBranchNames lists base names in claim priority order', () => {
     const names = collectBranchNames(
       input(
