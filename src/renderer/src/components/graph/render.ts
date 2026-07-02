@@ -631,7 +631,16 @@ function drawCaption(
   // where the tightest slot goes unreadable — never caption by caption.
   const reveal = captionAlpha(view.scale)
   if (reveal === 0) return 0
-  const maxScreenWidth = Math.min(maxWorldWidth * view.scale, maxScreenCap)
+  const startX = worldX * view.scale + view.x
+  // Bounded by the slot, the style cap AND the viewport's right edge: a
+  // caption reaching the edge truncates with an ellipsis there — the canvas
+  // must never clip glyphs mid-stroke. Panning left re-truncates and the
+  // text progressively reveals itself.
+  const maxScreenWidth = Math.min(
+    maxWorldWidth * view.scale,
+    maxScreenCap,
+    scene.width - startX - 8
+  )
   if (maxScreenWidth <= 0) return 0
   ctx.save()
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
@@ -644,7 +653,7 @@ function drawCaption(
     ctx.globalAlpha *= reveal
     ctx.fillStyle = palette.subject
     const y = (rowCenterY + captionCenterOffset(view.scale)) * view.scale + view.y
-    ctx.fillText(fitted, worldX * view.scale + view.x, y)
+    ctx.fillText(fitted, startX, y)
   }
   ctx.restore()
   return width
