@@ -4,6 +4,9 @@ import {
   FLING_MAX_SPEED,
   FLING_MIN_LAUNCH,
   FLING_MIN_SPEED,
+  FLING_TAU_MAX_MS,
+  FLING_TAU_MIN_MS,
+  flingTau,
   flingVelocity,
   type PanSample,
   pushPanSample,
@@ -72,6 +75,18 @@ describe('flingVelocity', () => {
     expect(Math.hypot(v.vx, v.vy)).toBeCloseTo(FLING_MAX_SPEED)
     // The clamp preserves direction: 90:120 is 3:4.
     expect(v.vy / v.vx).toBeCloseTo(120 / 90)
+    // A clamped launch also earns the longest coast.
+    expect(v.tauMs).toBe(flingTau(FLING_MAX_SPEED))
+  })
+
+  test('a harder throw coasts disproportionately farther', () => {
+    // A fling's total glide is exactly v₀·τ(v₀); τ growing with speed makes
+    // the distance superlinear — the touch-screen feel.
+    const glide = (v0: number) => v0 * flingTau(v0)
+    expect(glide(4)).toBeGreaterThan(4 * glide(1))
+    // …but never unbounded: τ is capped.
+    expect(flingTau(100)).toBe(FLING_TAU_MAX_MS)
+    expect(flingTau(0)).toBe(FLING_TAU_MIN_MS)
   })
 
   test('a small quick drag still flings', () => {
@@ -98,7 +113,7 @@ describe('flingVelocity', () => {
 
 describe('decayFling', () => {
   test('velocity decays and distance follows it', () => {
-    const step = decayFling(1, -0.5, 16)
+    const step = decayFling(1, -0.5, 16, FLING_TAU_MIN_MS)
     expect(step.vx).toBeLessThan(1)
     expect(step.vx).toBeGreaterThan(0)
     expect(step.dx).toBeGreaterThan(0)
@@ -107,26 +122,32 @@ describe('decayFling', () => {
   })
 
   test('is frame-rate independent: two 8ms steps equal one 16ms step', () => {
-    const half = decayFling(1, 0, 8)
-    const rest = decayFling(half.vx, 0, 8)
-    const whole = decayFling(1, 0, 16)
+    const half = decayFling(1, 0, 8, FLING_TAU_MIN_MS)
+    const rest = decayFling(half.vx, 0, 8, FLING_TAU_MIN_MS)
+    const whole = decayFling(1, 0, 16, FLING_TAU_MIN_MS)
     expect(half.dx + rest.dx).toBeCloseTo(whole.dx, 6)
     expect(rest.vx).toBeCloseTo(whole.vx, 6)
   })
 
   test('reports done once the glide is crawling', () => {
-    let vx = 1
-    let done = false
-    let elapsed = 0
-    while (!done && elapsed < 10000) {
-      const step = decayFling(vx, 0, 16)
-      vx = step.vx
-      done = step.done
-      elapsed += 16
+    const settleMs = (v0: number) => {
+      const tau = flingTau(v0)
+      let vx = v0
+      let done = false
+      let elapsed = 0
+      while (!done && elapsed < 20000) {
+        const step = decayFling(vx, 0, 16, tau)
+        vx = step.vx
+        done = step.done
+        elapsed += 16
+      }
+      expect(done).toBe(true)
+      expect(vx).toBeLessThan(FLING_MIN_SPEED)
+      return elapsed
     }
-    expect(done).toBe(true)
-    expect(vx).toBeLessThan(FLING_MIN_SPEED)
     // ~ln(v0/vmin)·τ of glide — a familiar, not endless, coast.
-    expect(elapsed).toBeLessThan(2000)
+    expect(settleMs(1)).toBeLessThan(2000)
+    // Even the hardest clamped throw settles within a few seconds.
+    expect(settleMs(FLING_MAX_SPEED)).toBeLessThan(6000)
   })
 })

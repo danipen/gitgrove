@@ -4,7 +4,7 @@
 // and decay math stays pure and tested in pan.ts.
 
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { decayFling, flingVelocity, type PanSample, pushPanSample } from './pan'
+import { decayFling, type Fling, flingVelocity, type PanSample, pushPanSample } from './pan'
 
 /** Frame gaps beyond this (background tab, stall) don't teleport the view. */
 const MAX_FRAME_MS = 64
@@ -32,7 +32,7 @@ export function usePanInertia(
   panBy: (dx: number, dy: number) => { dx: number; dy: number }
 ): PanInertia {
   const samplesRef = useRef<PanSample[]>([])
-  const velocityRef = useRef<{ vx: number; vy: number } | null>(null)
+  const flingRef = useRef<Fling | null>(null)
   const frameRef = useRef<number | null>(null)
   const lastFrameRef = useRef(0)
 
@@ -42,30 +42,30 @@ export function usePanInertia(
   const cancel = useCallback(() => {
     if (frameRef.current !== null) cancelAnimationFrame(frameRef.current)
     frameRef.current = null
-    velocityRef.current = null
+    flingRef.current = null
     samplesRef.current = []
   }, [])
 
   const step = useCallback(() => {
-    const velocity = velocityRef.current
-    if (!velocity) {
+    const fling = flingRef.current
+    if (!fling) {
       frameRef.current = null
       return
     }
     const now = performance.now()
     const dt = Math.min(MAX_FRAME_MS, now - lastFrameRef.current)
     lastFrameRef.current = now
-    const next = decayFling(velocity.vx, velocity.vy, dt)
+    const next = decayFling(fling.vx, fling.vy, dt, fling.tauMs)
     const applied = panByRef.current(next.dx, next.dy)
     // An axis the clamp pinned has nowhere left to glide.
     const vx = Math.abs(applied.dx - next.dx) > 0.5 ? 0 : next.vx
     const vy = Math.abs(applied.dy - next.dy) > 0.5 ? 0 : next.vy
     if (next.done || (vx === 0 && vy === 0)) {
-      velocityRef.current = null
+      flingRef.current = null
       frameRef.current = null
       return
     }
-    velocityRef.current = { vx, vy }
+    flingRef.current = { vx, vy, tauMs: fling.tauMs }
     frameRef.current = requestAnimationFrame(step)
   }, [])
 
@@ -76,10 +76,10 @@ export function usePanInertia(
   }, [])
 
   const launch = useCallback(
-    (velocity: { vx: number; vy: number } | null) => {
+    (fling: Fling | null) => {
       samplesRef.current = []
-      if (!velocity) return
-      velocityRef.current = velocity
+      if (!fling) return
+      flingRef.current = fling
       lastFrameRef.current = performance.now()
       if (frameRef.current === null) frameRef.current = requestAnimationFrame(step)
     },
