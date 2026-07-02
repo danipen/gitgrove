@@ -381,6 +381,29 @@ describe('layoutGraph', () => {
     expect(layout.rows.map((r) => r.name)).toEqual(['main', '11.x'])
   })
 
+  test('releaseOverrides pin a branch in and knock a detected one out', () => {
+    // "lts" is invisible to the name heuristic; "11.x" is detected but the
+    // user unpinned it — the override map must flip both.
+    const names = collectBranchNames(
+      input(
+        [
+          commit('f', ['a'], 'feature'),
+          commit('l', ['a'], 'lts'),
+          commit('y', ['a'], '11.x'),
+          commit('m', ['a'], 'HEAD -> main'),
+          commit('a', [])
+        ],
+        {
+          releaseOverrides: new Map([
+            ['lts', true],
+            ['11.x', false]
+          ])
+        }
+      )
+    )
+    expect(names).toEqual(['main', 'lts', 'feature', '11.x'])
+  })
+
   test('collectBranchNames puts release lines right after the default branch', () => {
     const names = collectBranchNames(
       input([

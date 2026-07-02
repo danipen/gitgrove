@@ -15,6 +15,8 @@ import { usePersistentState } from '@/lib/persist'
 import { GraphCanvas, type GraphCanvasHandle } from './GraphCanvas'
 import { type AuthorOption, DATE_PRESETS, type DatePresetId, GraphToolbar } from './GraphToolbar'
 import { collectBranchNames, type GraphNode, type GraphRow, layoutGraph } from './layout'
+import { relatedBranches } from './related'
+import { releaseLineVersion, releaseVersionWithOverride } from './releases'
 import { useGraphLog } from './useGraphLog'
 
 interface Props {
@@ -62,6 +64,13 @@ export function GraphView({
   onError
 }: Props) {
   const [branchFilter, setBranchFilter] = useState<Set<string> | null>(null)
+  /** The Focus lens: seed branch + hop depth. Focus populates branchFilter
+   *  with the seed's related set, so the Branches picker can fine-tune it. */
+  const [focus, setFocus] = useState<{ name: string; hops: number } | null>(null)
+  // "Pin as Release Line" overrides, kept per repo under one storage key.
+  const [releasePins, setReleasePins] = usePersistentState<
+    Record<string, Record<string, boolean>>
+  >('gg.graphReleasePins', {})
   const [authorFilter, setAuthorFilter] = useState<Set<string> | null>(null)
   const [datePreset, setDatePreset] = useState<DatePresetId>('all')
   // View shaping (persisted): what makes busy trunk-based repos readable.
@@ -81,15 +90,21 @@ export function GraphView({
     fail: onError
   })
 
+  const releaseOverrides = useMemo(() => {
+    const pins = releasePins[repoPath]
+    return pins && Object.keys(pins).length > 0 ? new Map(Object.entries(pins)) : null
+  }, [releasePins, repoPath])
+
   const input = useMemo(
     () => ({
       commits,
       remotes,
       headBranch: branch && !branch.detached ? branch.current : '',
       detached: branch?.detached ?? false,
-      defaultBranch: branch?.defaultBranch ?? null
+      defaultBranch: branch?.defaultBranch ?? null,
+      releaseOverrides
     }),
-    [commits, remotes, branch]
+    [commits, remotes, branch, releaseOverrides]
   )
   const branches = useMemo(() => collectBranchNames(input), [input])
   const layout = useMemo(
@@ -146,6 +161,46 @@ export function GraphView({
     setMatchIndex((i) => i + dir)
   }
 
+  // Focus: one gesture to a subproject. The related set is computed on an
+  // unfiltered, unshaped layout (focus must see through the current filters)
+  // and becomes the branch filter, so all filter machinery just works.
+  const focusOn = (name: string, hops: number) => {
+    setFocus({ name, hops })
+    setBranchFilter(relatedBranches(layoutGraph(input), name, hops))
+  }
+  const exitFocus = () => {
+    setFocus(null)
+    setBranchFilter(null)
+  }
+
+  // Esc exits focus — but a selected commit wins the first press (deselect),
+  // and inputs (search, pickers) keep their own Escape behaviour.
+  useEffect(() => {
+    if (!focus) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const target = e.target
+      if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return
+      if (selectedCommit) {
+        onSelectCommit(null)
+        return
+      }
+      setFocus(null)
+      setBranchFilter(null)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focus, selectedCommit, onSelectCommit])
+
+  // Store only disagreements with the name heuristic, so the map stays tiny
+  // and detection keeps working for every branch the user never touched.
+  const toggleReleasePin = (name: string, pin: boolean) => {
+    const pins = { ...(releasePins[repoPath] ?? {}) }
+    if (pin === (releaseLineVersion(name) !== null)) delete pins[name]
+    else pins[name] = pin
+    setReleasePins({ ...releasePins, [repoPath]: pins })
+  }
+
   const openNodeMenu = (node: GraphNode, x: number, y: number) =>
     setMenu({ x, y, items: commitMenuFor(node.commit) })
 
@@ -162,8 +217,15 @@ export function GraphView({
     }
     const isCurrent = !branch?.detached && branch?.current === row.name
     const current = branch?.current ?? 'current branch'
+    const isRelease =
+      releaseVersionWithOverride(row.name, releaseOverrides?.get(row.name)) !== null
     const items: ContextMenuItem[] = [
       changesItem,
+      {
+        label: `Focus on ${row.name}`,
+        icon: <Icon.Focus size={15} />,
+        onClick: () => focusOn(row.name, focus?.hops ?? 1)
+      },
       {},
       {
         label: `Checkout ${row.name}`,
@@ -197,6 +259,12 @@ export function GraphView({
         : []),
       {},
       {
+        // Pinned release lines stack right under the mainline (layout.ts).
+        label: isRelease ? 'Unpin Release Line' : 'Pin as Release Line',
+        icon: <Icon.Tag size={15} />,
+        onClick: () => toggleReleasePin(row.name, !isRelease)
+      },
+      {
         label: 'Copy Branch Name',
         icon: <Icon.Copy size={15} />,
         onClick: () => window.gitgrove.clipboardWrite(row.name)
@@ -223,6 +291,9 @@ export function GraphView({
         onStructureOnly={setStructureOnly}
         hideMerged={hideMerged}
         onHideMerged={setHideMerged}
+        focus={focus}
+        onFocusHops={(hops) => focus && focusOn(focus.name, hops)}
+        onExitFocus={exitFocus}
         search={search}
         onSearch={setSearch}
         matchCount={matchCount}
@@ -246,7 +317,7 @@ export function GraphView({
           <div className="center-state">
             <h3>Nothing to show</h3>
             <p>No branches match the current filters.</p>
-            <button type="button" className="btn-ghost" onClick={() => setBranchFilter(null)}>
+            <button type="button" className="btn-ghost" onClick={exitFocus}>
               Show all branches
             </button>
           </div>

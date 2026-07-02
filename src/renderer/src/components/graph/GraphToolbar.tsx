@@ -19,6 +19,13 @@ export const DATE_PRESETS: { id: DatePresetId; label: string; since: string | nu
   { id: 'all', label: 'All time', since: null }
 ]
 
+/** Hop depths for the Focus lens: how far relatedness spreads from the seed. */
+const FOCUS_HOPS: { hops: number; label: string }[] = [
+  { hops: 1, label: 'Direct relatives' },
+  { hops: 2, label: 'Extended family · 2 hops' },
+  { hops: 3, label: 'Neighborhood · 3 hops' }
+]
+
 export interface AuthorOption {
   name: string
   /** Lowercased email — the filter's identity key. */
@@ -41,6 +48,10 @@ interface Props {
   /** Omit branches already merged into another branch. */
   hideMerged: boolean
   onHideMerged: (value: boolean) => void
+  /** Active Focus lens (seed branch + hop depth), or null. */
+  focus: { name: string; hops: number } | null
+  onFocusHops: (hops: number) => void
+  onExitFocus: () => void
   search: string
   onSearch: (query: string) => void
   /** Search hits: total and the 0-based current one (-1 when none active). */
@@ -170,13 +181,18 @@ export function GraphToolbar({
   onStructureOnly,
   hideMerged,
   onHideMerged,
+  focus,
+  onFocusHops,
+  onExitFocus,
   search,
   onSearch,
   matchCount,
   matchIndex,
   onMatchStep
 }: Props) {
-  const [open, setOpen] = useState<'branches' | 'authors' | 'date' | 'view' | null>(null)
+  const [open, setOpen] = useState<'branches' | 'authors' | 'date' | 'view' | 'focus' | null>(
+    null
+  )
   const anchors = useRef<Record<string, HTMLButtonElement | null>>({})
   const anchorFor = (id: string) => (el: HTMLButtonElement | null) => {
     anchors.current[id] = el
@@ -223,6 +239,33 @@ export function GraphToolbar({
         onClick={() => setOpen(open === 'view' ? null : 'view')}
         refCb={anchorFor('view')}
       />
+
+      {focus && (
+        <div className="graph-chip is-active graph-focus">
+          <button
+            ref={anchorFor('focus')}
+            type="button"
+            className="graph-focus__seed"
+            onClick={() => setOpen(open === 'focus' ? null : 'focus')}
+          >
+            <Icon.Focus size={13} />
+            {focus.name}
+            <span className="graph-chip__value">
+              {focus.hops === 1 ? '1 hop' : `${focus.hops} hops`}
+            </span>
+            <Icon.Chevron size={12} />
+          </button>
+          <button
+            type="button"
+            className="graph-focus__exit"
+            aria-label="Exit focus"
+            data-tip="Exit focus (Esc)"
+            onClick={onExitFocus}
+          >
+            <Icon.Close size={12} />
+          </button>
+        </div>
+      )}
 
       <div className={`graph-search${searching ? ' is-active' : ''}`}>
         <Icon.Search size={13} />
@@ -315,6 +358,35 @@ export function GraphToolbar({
                 <span className="graph-picker__spacer" />
               )}
               {preset.label}
+            </button>
+          ))}
+        </div>
+      </Popover>
+      <Popover
+        anchor={anchors.current.focus ?? null}
+        open={open === 'focus'}
+        onClose={close}
+        width={230}
+      >
+        <div className="graph-picker__list" role="menu">
+          {FOCUS_HOPS.map((option) => (
+            <button
+              key={option.hops}
+              type="button"
+              role="menuitemradio"
+              aria-checked={option.hops === focus?.hops}
+              className={`graph-picker__preset${option.hops === focus?.hops ? ' is-active' : ''}`}
+              onClick={() => {
+                onFocusHops(option.hops)
+                close()
+              }}
+            >
+              {option.hops === focus?.hops ? (
+                <Icon.Check size={13} />
+              ) : (
+                <span className="graph-picker__spacer" />
+              )}
+              {option.label}
             </button>
           ))}
         </div>

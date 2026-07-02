@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test'
-import { compareReleaseVersions, releaseLineVersion } from './releases'
+import {
+  compareReleaseVersions,
+  releaseLineVersion,
+  releaseVersionWithOverride
+} from './releases'
 
 describe('releaseLineVersion', () => {
   test('version-shaped names are release lines', () => {
@@ -33,6 +37,23 @@ describe('releaseLineVersion', () => {
     expect(releaseLineVersion('11.x-hotfix')).toBeNull()
     expect(releaseLineVersion('release')).toBeNull() // a namespace needs a separator
     expect(releaseLineVersion('unrelated/2.3')).toBeNull()
+  })
+})
+
+describe('releaseVersionWithOverride', () => {
+  test('undefined defers to detection', () => {
+    expect(releaseVersionWithOverride('11.x', undefined)).toEqual([11])
+    expect(releaseVersionWithOverride('feature/login', undefined)).toBeNull()
+  })
+
+  test('true forces a branch in, scraping digits when the shape gives none', () => {
+    expect(releaseVersionWithOverride('unity-2022-lts', true)).toEqual([2022])
+    expect(releaseVersionWithOverride('legacy', true)).toEqual([])
+    expect(releaseVersionWithOverride('11.x', true)).toEqual([11])
+  })
+
+  test('false forces a detected release line out', () => {
+    expect(releaseVersionWithOverride('11.x', false)).toBeNull()
   })
 })
 

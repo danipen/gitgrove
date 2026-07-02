@@ -170,6 +170,13 @@ export const Icon = {
       <path d="M21 4v5h-5" />
     </Svg>
   ),
+  Focus: (p: IconProps) => (
+    <Svg {...p}>
+      <circle cx="12" cy="12" r="6" />
+      <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+      <path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3" />
+    </Svg>
+  ),
   Search: (p: IconProps) => (
     <Svg {...p}>
       <circle cx="11" cy="11" r="7" />

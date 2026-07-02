@@ -204,6 +204,44 @@
   color: var(--accent);
 }
 
+/* Focus lens chip (GraphToolbar.tsx): seed + hop-depth button and the exit
+   button share one pill; the divider keeps the two hit targets legible. */
+.graph-focus {
+  padding: 0;
+  overflow: hidden;
+}
+/* Keep the active accent tint under the child buttons' own hover states. */
+.graph-focus:hover {
+  background: var(--accent-soft);
+}
+.graph-focus__seed {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px 3px 10px;
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+}
+.graph-focus__seed:hover {
+  background: var(--bg-hover);
+}
+.graph-focus__exit {
+  display: inline-flex;
+  align-items: center;
+  align-self: stretch;
+  padding: 0 8px 0 6px;
+  color: var(--fg-muted);
+  background: none;
+  border: none;
+  border-left: 1px solid var(--accent-border);
+}
+.graph-focus__exit:hover {
+  color: var(--fg);
+  background: var(--bg-hover);
+}
+
 .graph-search {
   display: flex;
   align-items: center;

@@ -31,6 +31,22 @@ export function releaseLineVersion(name: string): readonly number[] | null {
 }
 
 /**
+ * Detection plus the user's per-repo override ("Pin as Release Line"): true
+ * forces the branch in — taking any digits in the name as its version, so a
+ * pinned "unity-2022-lts" still sorts among the versioned lines — false
+ * forces it out, undefined defers to name-shape detection.
+ */
+export function releaseVersionWithOverride(
+  name: string,
+  override: boolean | undefined
+): readonly number[] | null {
+  if (override === false) return null
+  const detected = releaseLineVersion(name)
+  if (override === true) return detected ?? versionNumbersIn(name)
+  return detected
+}
+
+/**
  * Sort comparator: newest version first, versionless lines last. A missing
  * component ranks below a present one, so "11.0" sorts before the bare "11.x".
  */

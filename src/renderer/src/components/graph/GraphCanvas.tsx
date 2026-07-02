@@ -507,6 +507,10 @@ export function GraphCanvas({
       onSelectNode(hit.node)
       onNodeMenu(hit.node, e.clientX, e.clientY)
     } else if (hit?.type === 'label' || hit?.type === 'row') {
+      // Match the node behaviour: right-click selects what it targets (here,
+      // opening the branch-changes view), so the menu always acts on the
+      // thing the user is looking at.
+      onRowClick(hit.row)
       onRowMenu(hit.row, e.clientX, e.clientY)
     }
   }

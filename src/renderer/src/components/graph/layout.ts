@@ -23,7 +23,7 @@
 
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
-import { compareReleaseVersions, releaseLineVersion } from './releases'
+import { compareReleaseVersions, releaseVersionWithOverride } from './releases'
 
 export type GraphRowKind = 'branch' | 'remote' | 'detached' | 'unnamed'
 
@@ -32,6 +32,9 @@ export const BRANCH_COLOR_COUNT = 9
 
 /** One reconstructed branch: a chain of commits on a packed row. */
 export interface GraphRow {
+  /** Stable chain id — pairs this row with its nodes (GraphNode.chain); the
+   *  rows list is sorted by position, so the id is the reliable link. */
+  chain: number
   /** Packed row position (0 = the mainline); rows can share a position. */
   index: number
   /** Display name: the branch's base name, or a derived one for unnamed rows. */
@@ -53,6 +56,8 @@ export interface GraphRow {
 
 export interface GraphNode {
   commit: Commit
+  /** The chain (GraphRow.chain) that claimed this commit. */
+  chain: number
   /** Packed row position of the node's chain. */
   row: number
   column: number
@@ -120,6 +125,12 @@ export interface GraphInput {
    */
   hideMerged?: boolean
   /**
+   * Per-repo user overrides for release-line detection ("Pin as Release
+   * Line" in the row menu): true forces a branch in, false forces one the
+   * name heuristic caught back out. See releases.ts.
+   */
+  releaseOverrides?: ReadonlyMap<string, boolean> | null
+  /**
    * Keep only the commits that shape the diagram — branch tips and starts,
    * merges (and what they merged), tagged/decorated commits, HEAD — and
    * collapse the linear runs between them. Plastic's "relevant changes only":
@@ -169,9 +180,9 @@ function branchNameFromMergeSubject(subject: string): string | null {
 /** A chain's release-line version — named branches only: an unnamed chain
  *  reconstructed from "Merge branch 'release/1.2'" is merged history, not a
  *  living release line. */
-function releaseVersionOfChain(chain: Chain): readonly number[] | null {
+function releaseVersionOfChain(chain: Chain, input: GraphInput): readonly number[] | null {
   if (chain.kind !== 'branch' && chain.kind !== 'remote') return null
-  return releaseLineVersion(chain.name)
+  return releaseVersionWithOverride(chain.name, input.releaseOverrides?.get(chain.name))
 }
 
 /** Stable palette slot for a branch name (1..N-1; 0 is the mainline's). */
@@ -215,16 +226,16 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
     if (i > 0) named.unshift(...named.splice(i, 1))
   }
   pin(input.headBranch || null)
-  for (const base of releaseLinesNewestFirst(named).reverse()) pin(base)
+  for (const base of releaseLinesNewestFirst(named, input).reverse()) pin(base)
   pin(input.defaultBranch)
   return named
 }
 
 /** Base names that are release lines, newest version first (see releases.ts). */
-function releaseLinesNewestFirst(groups: { base: string }[]): string[] {
+function releaseLinesNewestFirst(groups: { base: string }[], input: GraphInput): string[] {
   const versions = new Map<string, readonly number[]>()
   for (const { base } of groups) {
-    const version = releaseLineVersion(base)
+    const version = releaseVersionWithOverride(base, input.releaseOverrides?.get(base))
     if (version) versions.set(base, version)
   }
   return [...versions.keys()].sort((a, b) =>
@@ -277,7 +288,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       input.hideMerged &&
       group.base !== input.defaultBranch &&
       group.base !== input.headBranch &&
-      releaseLineVersion(group.base) === null &&
+      releaseVersionWithOverride(group.base, input.releaseOverrides?.get(group.base)) === null &&
       mergeSources.has(group.tips[0].hash)
     ) {
       continue
@@ -378,7 +389,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // rest by start column so packing stays dense.
   const releaseRank = new Map<number, number>()
   chains
-    .map((chain, id) => ({ id, version: releaseVersionOfChain(chain) }))
+    .map((chain, id) => ({ id, version: releaseVersionOfChain(chain, input) }))
     .filter((entry) => entry.version !== null)
     .sort((a, b) => compareReleaseVersions(a.version ?? [], b.version ?? []))
     .forEach((entry, rank) => releaseRank.set(entry.id, rank))
@@ -422,6 +433,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
 
   // ── Rows (one per chain), colors, and the sorted output list ──────────────
   const rows: GraphRow[] = chains.map((chain, id) => ({
+    chain: id,
     index: rowOfChain.get(id) ?? 0,
     name: chain.name,
     kind: chain.kind,
@@ -442,6 +454,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     const chainId = chainOf.get(commit.hash) ?? 0
     const node: GraphNode = {
       commit,
+      chain: chainId,
       row: rowOfChain.get(chainId) ?? 0,
       column: columnOf.get(commit.hash) ?? 0,
       color: rows[chainId].color,
