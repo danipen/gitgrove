@@ -1,7 +1,7 @@
 {
   "name": "gitgrove",
   "productName": "GitGrove",
-  "version": "1.4.15",
+  "version": "1.5.0",
   "description": "A fast, beautiful git client built on @pierre/trees and @pierre/diffs",
   "author": "Daniel Peñalba",
   "homepage": "https://github.com/danipen/gitgrove",
