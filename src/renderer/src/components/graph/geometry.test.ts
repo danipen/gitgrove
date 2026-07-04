@@ -225,9 +225,7 @@ describe('graph geometry', () => {
 
   test('contentSize reserves a column for the WIP node', () => {
     const layout = sampleLayout()
-    expect(contentSize(layout, layout.columnCount).width - contentSize(layout, null).width).toBe(
-      44
-    )
+    expect(contentSize(layout, layout.columnCount).width - contentSize(layout, null).width).toBe(44)
   })
 
   test('contentSize covers an empty branch slot past the last commit column', () => {
