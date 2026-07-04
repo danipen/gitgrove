@@ -1279,6 +1279,7 @@ export function App() {
         dirtyCount={changes.length}
         opInFlight={!!repoState?.op}
         busy={modalBusy}
+        onSetupAi={() => setModal({ kind: 'settings', section: 'ai' })}
         runModalOp={runModalOp}
         onMerge={performMerge}
         onCreateBranch={performCreateBranch}

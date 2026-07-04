@@ -8,6 +8,7 @@
 
 import type { AiCommitOptions, ChangedFile } from '@shared/types'
 import { useEffect, useRef, useState } from 'react'
+import { AiTeaserPopover } from '@/components/common/AiTeaserPopover'
 import { Popover } from '@/components/common/Popover'
 import { DEFAULT_AI_COMMIT_OPTIONS, splitCommitMessage, useAiStatus } from '@/lib/ai'
 import { Icon } from '@/lib/icons'
@@ -160,34 +161,14 @@ export function AiComposerControls({
         <Icon.Chevron size={10} />
       </button>
 
-      <Popover
+      <AiTeaserPopover
         anchor={clusterRef.current}
         open={teaserOpen}
         onClose={() => setTeaserOpen(false)}
-        align="right"
-        width={280}
-      >
-        <div className="ai-teaser">
-          <div className="ai-teaser__title">
-            <Icon.Sparkle size={15} /> {verb} with AI
-          </div>
-          <p className="ai-teaser__body">
-            Connect OpenAI, Anthropic, Gemini, a local Ollama or any compatible endpoint — your
-            key, sent only to your provider. GitGrove writes the message from exactly the changes
-            you selected.
-          </p>
-          <button
-            type="button"
-            className="btn-primary btn-primary--sm ai-teaser__cta"
-            onClick={() => {
-              setTeaserOpen(false)
-              onSetupAi()
-            }}
-          >
-            Set up AI…
-          </button>
-        </div>
-      </Popover>
+        title={`${verb} with AI`}
+        body="GitGrove writes the message from exactly the changes you selected."
+        onSetup={onSetupAi}
+      />
 
       <Popover
         anchor={clusterRef.current}

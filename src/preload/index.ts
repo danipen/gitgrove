@@ -124,6 +124,10 @@ const api: GitGroveApi = {
   aiDisconnect: () => ipcRenderer.invoke(IPC.aiDisconnect),
   aiCommitMessage: (repoPath, request) =>
     ipcRenderer.invoke(IPC.aiCommitMessage, repoPath, request),
+  aiBranchName: (repoPath, request) => ipcRenderer.invoke(IPC.aiBranchName, repoPath, request),
+  aiExplainCommit: (repoPath, request) =>
+    ipcRenderer.invoke(IPC.aiExplainCommit, repoPath, request),
+  aiExplainError: (repoPath, request) => ipcRenderer.invoke(IPC.aiExplainError, repoPath, request),
   aiCancel: (requestId) => ipcRenderer.invoke(IPC.aiCancel, requestId),
   cloneRepo: (url, targetPath) => ipcRenderer.invoke(IPC.cloneRepo, url, targetPath),
   defaultCloneDir: () => ipcRenderer.invoke(IPC.defaultCloneDir),

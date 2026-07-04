@@ -202,3 +202,51 @@
     transform: scale(1) rotate(0deg);
   }
 }
+
+/* ── Ghost suggestion field: an input whose empty state carries a streamed AI
+   suggestion (CreateBranchDialog.tsx — branch names). The ghost is a painted
+   overlay, never input value: the field stays honestly empty until the user
+   accepts (Tab / Enter), so nothing AI-written ever submits unseen. */
+.ai-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ai-field input {
+  width: 100%;
+  /* Room for the ✨ button so long names never slide under it. */
+  padding-right: 30px;
+}
+.ai-field__btn {
+  position: absolute;
+  right: 4px;
+}
+/* Mirrors .dlg-field input's box exactly (padding + border) so the ghost sits
+   where the caret will put real text — off by a pixel reads as a glitch. */
+.ai-field__ghost {
+  position: absolute;
+  left: 11px;
+  right: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--fg-faint);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ai-field__ghost-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-field__hint {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--fg-muted);
+  background: var(--bg-panel);
+}
