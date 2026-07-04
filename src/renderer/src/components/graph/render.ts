@@ -526,14 +526,13 @@ function drawNodes(
 
     // Opaque backing disc: edges and spines terminate BEHIND the commit, so
     // a dimmed (translucent) node never shows lines through its face. Merge
-    // nodes get a wider disc: it clears the air gap under the merge ring and
-    // makes every line dock at the ring's outer edge instead of vanishing
-    // beneath the avatar.
-    const isMergeNode = node.mergeColor !== null
+    // nodes wear a second ring but keep the same outer size as every other
+    // node (see below), so they share the same backing disc — every line
+    // docks at the ring's outer edge.
     ctx.globalAlpha = 1
     ctx.fillStyle = palette.bg
     ctx.beginPath()
-    ctx.arc(x, y, isMergeNode ? NODE_R + 5 : NODE_R + 1.5, 0, Math.PI * 2)
+    ctx.arc(x, y, NODE_R + 1.5, 0, Math.PI * 2)
     ctx.fill()
     ctx.globalAlpha = dim ? DIM_ALPHA : 1
 
@@ -547,13 +546,19 @@ function drawNodes(
     }
 
     // Face: colored initials disc, covered by the avatar image once loaded.
+    // Merge nodes carry a second (inner) ring, so their face shrinks to sit
+    // inside it — the ring frames the avatar instead of cutting across it. The
+    // face reaches the inner ring's inner edge (10 − 0.75) with the same 0.5px
+    // overlap a normal node's ring has, so the ring sits ON the avatar edge
+    // with no hairline of background between them.
+    const faceR = node.mergeColor !== null ? NODE_R - 2.25 : NODE_R
     const image = avatarImageFor(node.commit.authorName, node.commit.authorEmail)
     ctx.beginPath()
-    ctx.arc(x, y, NODE_R, 0, Math.PI * 2)
+    ctx.arc(x, y, faceR, 0, Math.PI * 2)
     if (image) {
       ctx.save()
       ctx.clip()
-      ctx.drawImage(image, x - NODE_R, y - NODE_R, NODE_R * 2, NODE_R * 2)
+      ctx.drawImage(image, x - faceR, y - faceR, faceR * 2, faceR * 2)
       ctx.restore()
     } else {
       ctx.fillStyle = avatarColor(node.commit.authorEmail || node.commit.authorName)
@@ -568,32 +573,41 @@ function drawNodes(
     // Ring in the branch color; louder states stack on top.
     const isActiveMatch = node.commit.hash === scene.activeMatch
     const isHover = node.commit.hash === scene.hoverHash
-    ctx.lineWidth = isHover || isActiveMatch ? 2.5 : 2
-    ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.color)
-    ctx.beginPath()
-    ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
-    ctx.stroke()
-    // Merge ring: a second ring in the INCOMING branch's color, separated
-    // from the branch ring by a hair of background. Merge edges keep their
-    // source branch's color, so the ring completes the association — the
-    // green line docks into a green ring — and a merge link can never be
-    // misread as a fork link. Fork/parent ends stay bare.
+    const emphasized = isHover || isActiveMatch
     if (node.mergeColor !== null) {
-      ctx.lineWidth = 2
-      ctx.strokeStyle = branchStroke(palette, node.mergeColor)
+      // Merge nodes carry TWO concentric rings, but both are squeezed into the
+      // footprint of a single ring so a merge commit is exactly the same size
+      // as every other node — no ballooning. The outer ring is the INCOMING
+      // branch's color, sitting at the normal ring radius where the merge edge
+      // docks: the green line docks into a green ring, so a merge link can
+      // never be misread as a fork link. This node's own branch color tucks
+      // just inside it, a hair of background between them.
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = branchStroke(palette, node.color)
       ctx.beginPath()
-      ctx.arc(x, y, NODE_R + 3.5, 0, Math.PI * 2)
+      ctx.arc(x, y, NODE_R - 2, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.lineWidth = emphasized ? 2.5 : 2
+      ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.mergeColor)
+      ctx.beginPath()
+      ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
+      ctx.stroke()
+    } else {
+      ctx.lineWidth = emphasized ? 2.5 : 2
+      ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.color)
+      ctx.beginPath()
+      ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
       ctx.stroke()
     }
     if (isSelected) {
       // Outer accent ring: "this is picked" — selection only. The home
       // changeset wears the house badge below instead, so being at home
-      // never *looks* like a selection. On merge nodes it steps outside the
-      // merge ring — the two rings must never overlap.
+      // never *looks* like a selection. Merge nodes are the same size now, so
+      // it sits at the same radius for every node.
       ctx.lineWidth = 2
       ctx.strokeStyle = palette.accent
       ctx.beginPath()
-      ctx.arc(x, y, isMergeNode ? NODE_R + 7 : NODE_R + 4, 0, Math.PI * 2)
+      ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2)
       ctx.stroke()
     }
     // Backport twin dot: this change also lives on another line — hover or
