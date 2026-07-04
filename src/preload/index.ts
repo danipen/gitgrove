@@ -1,5 +1,6 @@
 import { type GitGroveApi, IPC, type MenuCommand } from '@shared/ipc'
 import type {
+  AiChunk,
   ChangedFile,
   CloneProgress,
   CredentialPromptRequest,
@@ -117,6 +118,13 @@ const api: GitGroveApi = {
   lfsEnable: (repoPath) => ipcRenderer.invoke(IPC.lfsEnable, repoPath),
   optimizeRepo: (repoPath) => ipcRenderer.invoke(IPC.optimizeRepo, repoPath),
   selectionSize: (repoPath, paths) => ipcRenderer.invoke(IPC.selectionSize, repoPath, paths),
+  aiStatus: () => ipcRenderer.invoke(IPC.aiStatus),
+  aiConnect: (input) => ipcRenderer.invoke(IPC.aiConnect, input),
+  aiSetModel: (model) => ipcRenderer.invoke(IPC.aiSetModel, model),
+  aiDisconnect: () => ipcRenderer.invoke(IPC.aiDisconnect),
+  aiCommitMessage: (repoPath, request) =>
+    ipcRenderer.invoke(IPC.aiCommitMessage, repoPath, request),
+  aiCancel: (requestId) => ipcRenderer.invoke(IPC.aiCancel, requestId),
   cloneRepo: (url, targetPath) => ipcRenderer.invoke(IPC.cloneRepo, url, targetPath),
   defaultCloneDir: () => ipcRenderer.invoke(IPC.defaultCloneDir),
   checkCloneTarget: (targetPath) => ipcRenderer.invoke(IPC.checkCloneTarget, targetPath),
@@ -197,6 +205,16 @@ const api: GitGroveApi = {
     const listener = (_e: unknown, progress: OpProgress) => handler(progress)
     ipcRenderer.on(IPC.opProgress, listener)
     return () => ipcRenderer.removeListener(IPC.opProgress, listener)
+  },
+  onAiChunk: (handler) => {
+    const listener = (_e: unknown, chunk: AiChunk) => handler(chunk)
+    ipcRenderer.on(IPC.aiChunk, listener)
+    return () => ipcRenderer.removeListener(IPC.aiChunk, listener)
+  },
+  onAiChanged: (handler) => {
+    const listener = () => handler()
+    ipcRenderer.on(IPC.aiChanged, listener)
+    return () => ipcRenderer.removeListener(IPC.aiChanged, listener)
   },
   onUpdateStatus: (handler) => {
     const listener = (_e: unknown, status: UpdateStatus) => handler(status)

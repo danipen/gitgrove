@@ -1,0 +1,203 @@
+/* ── AI assist (.ai-*) ──────────────────────────────────────────────────────
+   Every AI surface: the composer's ✨ cluster (AiComposerControls.tsx — its
+   position in the composer lives in changes.css), the setup teaser and style
+   popovers, and the Settings → AI pane (AiPane.tsx). One namespace so "where
+   is this styled?" is always answerable: .ai-* → this file. */
+
+/* The ✨ / caret pair: quiet ghost buttons living inside an input field —
+   visible on approach, never shouting over the text they assist. */
+.ai-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.ai-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* The sparkle earns its "wow" on approach: a soft accent glow + a one-shot
+   twinkle (scale/rotate pop). Motion lives on the glyph, not the button, so
+   the hit target stays calm. */
+.ai-btn svg {
+  transition: filter 0.2s ease;
+}
+.ai-btn:hover svg {
+  filter: drop-shadow(0 0 5px var(--accent-border));
+  animation: ai-twinkle 0.55s ease;
+}
+.ai-btn.is-generating {
+  color: var(--accent);
+}
+.ai-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.ai-btn[aria-disabled='true']:hover {
+  background: none;
+  color: var(--fg-muted);
+}
+.ai-btn--caret {
+  width: 16px;
+  margin-left: -2px;
+}
+/* Streaming: the sparkle gives way to a small spinner (shared keyframes). */
+.ai-btn__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Setup teaser: the "how do I enable this?" popover every unconfigured AI
+   button opens. One pitch, one button — never a nag, gone on outside click. */
+.ai-teaser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.ai-teaser__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ai-teaser__title svg {
+  color: var(--accent);
+}
+.ai-teaser__body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.ai-teaser__cta {
+  align-self: flex-start;
+}
+
+/* ── Style popover: length / tone / emojis + regenerate. */
+.ai-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+.ai-options__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ai-options__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ai-options__label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.ai-options__segmented button {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+/* A compact select shared by the tone row and the settings model picker. */
+.ai-select {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.ai-select:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
+/* The emoji toggle: a plain switch, no library. */
+.ai-switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-hover);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ai-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.ai-switch.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.ai-switch.is-on .ai-switch__thumb {
+  transform: translateX(14px);
+  background: var(--accent);
+}
+
+/* ── Settings → AI pane. */
+.ai-provider-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.ai-connected-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--fg);
+}
+.ai-connected-hint svg {
+  color: var(--accent);
+}
+
+/* The sparkle's one-shot pop: a quick over-scale + gentle turn that settles,
+   so hovering the AI button feels alive without ever spinning distractingly. */
+@keyframes ai-twinkle {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  45% {
+    transform: scale(1.25) rotate(12deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}

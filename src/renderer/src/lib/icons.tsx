@@ -249,9 +249,21 @@ export const Icon = {
       <path d="M6.5 8v8.5a1 1 0 0 0 1 1H14M6.5 11.5H14" />
     </Svg>
   ),
+  // The modern AI glyph: a four-point sparkle with concave (pinched) edges —
+  // each side curves toward the center via a control point AT the center, the
+  // trick behind the Gemini/Copilot "shimmer" star — paired with a smaller
+  // companion spark for that premium, twinkly feel. Filled with soft (round)
+  // tips rather than a thin outline so it reads as a jewel, not a doodle.
   Sparkle: (p: IconProps) => (
-    <Svg {...p}>
-      <path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8z" />
+    <Svg {...p} strokeWidth={1}>
+      <path
+        d="M10.5 5 Q10.5 12.5 18 12.5 Q10.5 12.5 10.5 20 Q10.5 12.5 3 12.5 Q10.5 12.5 10.5 5 Z"
+        fill="currentColor"
+      />
+      <path
+        d="M18.5 3 Q18.5 6.5 22 6.5 Q18.5 6.5 18.5 10 Q18.5 6.5 15 6.5 Q18.5 6.5 18.5 3 Z"
+        fill="currentColor"
+      />
     </Svg>
   ),
   Sun: (p: IconProps) => (
