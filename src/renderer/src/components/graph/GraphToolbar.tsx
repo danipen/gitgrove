@@ -193,6 +193,7 @@ export function GraphToolbar({
   onMatchStep
 }: Props) {
   const [open, setOpen] = useState<'branches' | 'authors' | 'date' | 'view' | 'focus' | null>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const anchors = useRef<Record<string, HTMLButtonElement | null>>({})
   const anchorFor = (id: string) => (el: HTMLButtonElement | null) => {
     anchors.current[id] = el
@@ -270,6 +271,7 @@ export function GraphToolbar({
       <div className={`graph-search${searching ? ' is-active' : ''}`}>
         <Icon.Search size={13} />
         <input
+          ref={searchInput}
           type="text"
           placeholder="Find commits…"
           aria-label="Find commits"
@@ -282,27 +284,50 @@ export function GraphToolbar({
         />
         {searching && (
           <>
-            <span className="graph-search__count">
-              {matchCount === 0 ? '0' : `${matchIndex + 1}/${matchCount}`}
-            </span>
-            <button
-              type="button"
-              className="icon-btn graph-search__step"
-              aria-label="Previous match"
-              disabled={matchCount === 0}
-              onClick={() => onMatchStep(-1)}
-            >
-              <Icon.Prev size={12} />
-            </button>
-            <button
-              type="button"
-              className="icon-btn graph-search__step"
-              aria-label="Next match"
-              disabled={matchCount === 0}
-              onClick={() => onMatchStep(1)}
-            >
-              <Icon.Next size={12} />
-            </button>
+            {/* With no hits matchIndex is -1, so this renders "0/0" — the
+                compact zero state; anything wordier crowds the box. */}
+            <span className="graph-search__count">{`${matchIndex + 1}/${matchCount}`}</span>
+            {/* Chevrons drawn a notch thicker than the stock 1.7px icon
+                stroke: at stepper size the default renders a hairline. The
+                three actions sit FLUSH, one cluster (the browser find-bar
+                convention) — hover lights only the button under the cursor,
+                so they never need separating air. */}
+            <div className="graph-search__actions">
+              <button
+                type="button"
+                className="icon-btn graph-search__step"
+                aria-label="Previous match"
+                data-tip="Previous match (⇧Enter)"
+                disabled={matchCount === 0}
+                onClick={() => onMatchStep(-1)}
+              >
+                <Icon.Prev size={14} strokeWidth={2.4} />
+              </button>
+              <button
+                type="button"
+                className="icon-btn graph-search__step"
+                aria-label="Next match"
+                data-tip="Next match (Enter)"
+                disabled={matchCount === 0}
+                onClick={() => onMatchStep(1)}
+              >
+                <Icon.Next size={14} strokeWidth={2.4} />
+              </button>
+              <button
+                type="button"
+                className="icon-btn graph-search__step"
+                aria-label="Clear search"
+                data-tip="Clear (Esc)"
+                onClick={() => {
+                  onSearch('')
+                  // Keep the caret in the field — clearing is a restart of
+                  // the search, not the end of it (the find-bar convention).
+                  searchInput.current?.focus()
+                }}
+              >
+                <Icon.Close size={13} strokeWidth={2.2} />
+              </button>
+            </div>
           </>
         )}
       </div>

@@ -306,12 +306,31 @@
 }
 .graph-search__count {
   font-size: 11px;
-  color: var(--fg-faint);
+  color: var(--fg-muted);
+  /* Fixed-width digits: stepping "3/66 → 4/66" must not jitter the row. */
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+/* Prev/next/clear sit flush — one cluster, no inter-button air (the browser
+   find-bar convention): only one is ever hovered, and its hover box is the
+   separation. The container's gap still keeps the count clear of them. */
+.graph-search__actions {
+  display: flex;
+  align-items: center;
+}
+/* Quiet steppers: the chevron reads from its glyph alone. The stock bordered
+   icon-btn drowned a 12px hairline chevron in its own border at this size —
+   so no box until hover, and disabled fades the glyph, not a box. */
 .graph-search__step {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+}
+.graph-search__step:disabled {
+  color: var(--fg-faint);
+  opacity: 0.45;
+  background: none;
 }
 
 /* ── Filter popover pickers (GraphToolbar.tsx) ───────────────────────────── */

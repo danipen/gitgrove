@@ -24,6 +24,7 @@ import {
 import { linkableChains, twinHashes } from './links'
 import { relatedBranches } from './related'
 import { releaseLineVersion, releaseVersionWithOverride } from './releases'
+import { computeSearchHits } from './searchGlow'
 import { useBackportLinks } from './useBackportLinks'
 import { useGraphLog } from './useGraphLog'
 
@@ -155,39 +156,58 @@ export function GraphView({
   }, [commits])
 
   // Search terms + author filter dim everything they don't match. Hits are
-  // ordered newest-first for Enter/arrow navigation between them.
+  // TYPED (commit / branch label / tag chip — searching a ref name finds the
+  // ref itself, never the commit it decorates) and ordered newest-first for
+  // Enter/arrow navigation between them.
   const searching = filterTerms(search).length > 0
-  const matchList = useMemo((): string[] | null => {
-    const terms = filterTerms(search)
-    if (terms.length === 0 && authorFilter === null) return null
-    const hits: string[] = []
-    for (let i = layout.nodes.length - 1; i >= 0; i--) {
-      const c = layout.nodes[i].commit
-      if (authorFilter && !authorFilter.has(c.authorEmail.toLowerCase())) continue
-      if (terms.length > 0) {
-        const hay = `${c.subject} ${c.authorName} ${c.hash}`.toLowerCase()
-        if (!terms.every((t) => hay.includes(t))) continue
-      }
-      hits.push(c.hash)
-    }
-    return hits
-  }, [layout, search, authorFilter])
-  const matches = useMemo(() => (matchList ? new Set(matchList) : null), [matchList])
-  const matchCount = searching ? (matchList?.length ?? 0) : 0
-  const activeMatch =
-    searching && matchList && matchList.length > 0
+  const matchList = useMemo(
+    () => computeSearchHits(filterTerms(search), authorFilter, layout.nodes, layout.rows),
+    [layout, search, authorFilter]
+  )
+  /** Commits kept at full strength while everything else dims. */
+  const matches = useMemo(() => {
+    if (!searching && authorFilter === null) return null
+    const keep = new Set<string>()
+    for (const hit of matchList) if (hit.kind === 'commit') keep.add(hit.hash)
+    return keep
+  }, [matchList, searching, authorFilter])
+  /** Chains whose branch label is itself a hit (gold pill treatment). */
+  const hitBranches = useMemo(() => {
+    if (!searching) return null
+    const chains = new Set<number>()
+    for (const hit of matchList) if (hit.kind === 'branch') chains.add(hit.chain)
+    return chains
+  }, [matchList, searching])
+  /** Commits whose tag chip is a hit (gold chip treatment). */
+  const hitTags = useMemo(() => {
+    if (!searching) return null
+    const hashes = new Set<string>()
+    for (const hit of matchList) if (hit.kind === 'tag') hashes.add(hit.hash)
+    return hashes
+  }, [matchList, searching])
+  const matchCount = searching ? matchList.length : 0
+  const activeHit =
+    searching && matchList.length > 0
       ? matchList[((matchIndex % matchList.length) + matchList.length) % matchList.length]
       : null
 
-  // New search → restart at the newest hit and bring it into view.
+  // New search → restart at the newest hit and bring it into view. A branch
+  // hit reveals its LABEL's spot (the row start); the label may have no
+  // commit at all to reveal through (empty branches).
   // biome-ignore lint/correctness/useExhaustiveDependencies: the query change is the intentional trigger
   useEffect(() => setMatchIndex(0), [search])
   useEffect(() => {
-    if (activeMatch) controls.current?.reveal(activeMatch)
-  }, [activeMatch])
+    if (!activeHit) return
+    if (activeHit.kind === 'branch') {
+      const row = layout.rows.find((r) => r.chain === activeHit.chain)
+      if (row) controls.current?.revealAt(row.startColumn, row.index)
+    } else {
+      controls.current?.reveal(activeHit.hash)
+    }
+  }, [activeHit, layout])
 
   const stepMatch = (dir: 1 | -1) => {
-    if (!matchList || matchList.length === 0) return
+    if (matchList.length === 0) return
     setMatchIndex((i) => i + dir)
   }
 
@@ -347,7 +367,7 @@ export function GraphView({
         search={search}
         onSearch={setSearch}
         matchCount={matchCount}
-        matchIndex={activeMatch && matchList ? matchList.indexOf(activeMatch) : -1}
+        matchIndex={activeHit ? matchList.indexOf(activeHit) : -1}
         onMatchStep={stepMatch}
       />
       <div className="graph-stage">
@@ -378,7 +398,9 @@ export function GraphView({
             selectedHash={selectedCommit?.hash ?? null}
             selectedBranch={selectedBranch}
             matches={matches}
-            activeMatch={activeMatch}
+            activeHit={activeHit}
+            hitBranches={hitBranches}
+            hitTags={hitTags}
             changesCount={changesCount}
             links={links}
             controls={controls}

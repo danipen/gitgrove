@@ -37,6 +37,7 @@ import {
   readPalette,
   SUBJECT_FONT
 } from './render'
+import { hitKey, PING_MS, type SearchHit } from './searchGlow'
 import { usePanInertia } from './usePanInertia'
 import { useZoomAnimation } from './useZoomAnimation'
 import { isDiscreteWheel, wheelZoomFactor } from './zoom'
@@ -49,6 +50,8 @@ export interface GraphCanvasHandle {
   jumpToHead(): void
   /** Bring a commit into view (search navigation, keyboard selection). */
   reveal(hash: string): void
+  /** Bring a world position into view — branch-label hits have no commit. */
+  revealAt(column: number, row: number): void
 }
 
 interface Props {
@@ -61,8 +64,12 @@ interface Props {
   selectedBranch: BranchSelection | null
   /** Commits kept at full strength while the rest dim; null = no filter. */
   matches: ReadonlySet<string> | null
-  /** The current search hit (louder ring). */
-  activeMatch: string | null
+  /** The current search hit — a commit, branch label, or tag chip. */
+  activeHit: SearchHit | null
+  /** Chains whose branch label is itself a hit; null = not searching. */
+  hitBranches: ReadonlySet<number> | null
+  /** Commits whose tag chip is a hit; null = not searching. */
+  hitTags: ReadonlySet<string> | null
   /** Uncommitted change count — drawn as the dashed WIP node on the HEAD row. */
   changesCount: number
   /** Dashed "same change" links between backport twins (see links.ts). */
@@ -145,7 +152,9 @@ export function GraphCanvas({
   selectedHash,
   selectedBranch,
   matches,
-  activeMatch,
+  activeHit,
+  hitBranches,
+  hitTags,
   changesCount,
   links,
   controls,
@@ -167,6 +176,8 @@ export function GraphCanvas({
   // clicks stay clicks. `buttons === 0` checks recover from off-window releases.
   const panRef = useRef<{ id: number; x: number; y: number; panned: boolean } | null>(null)
   const initializedRef = useRef(false)
+  /** The current hit's arrival ping progress (0 → 1; 1 = settled, no ping). */
+  const matchPulseRef = useRef(1)
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
   const [cursor, setCursor] = useState<'default' | 'pointer' | 'grabbing'>('default')
 
@@ -193,7 +204,9 @@ export function GraphCanvas({
     selectedHash,
     selectedBranch,
     matches,
-    activeMatch,
+    activeHit,
+    hitBranches,
+    hitTags,
     wip,
     dayMarks,
     links
@@ -203,7 +216,9 @@ export function GraphCanvas({
     selectedHash,
     selectedBranch,
     matches,
-    activeMatch,
+    activeHit,
+    hitBranches,
+    hitTags,
     wip,
     dayMarks,
     links
@@ -230,7 +245,10 @@ export function GraphCanvas({
       selectedBranch: s.selectedBranch,
       hoverHash: hoverRef.current,
       matches: s.matches,
-      activeMatch: s.activeMatch,
+      activeHit: s.activeHit,
+      hitBranches: s.hitBranches,
+      hitTags: s.hitTags,
+      matchPulse: matchPulseRef.current,
       wip: s.wip,
       dayMarks: s.dayMarks,
       links: s.links
@@ -357,20 +375,26 @@ export function GraphCanvas({
     }
   }, [centerOn, fit])
 
-  const reveal = useCallback(
-    (hash: string) => {
-      const node = sceneRef.current.layout.nodeByHash.get(hash)
-      if (!node) return
+  const revealAt = useCallback(
+    (column: number, row: number) => {
       const view = viewRef.current
       const { width, height } = sizeRef.current
-      const sx = nodeX(node.column) * view.scale + view.x
-      const sy = nodeY(node.row) * view.scale + view.y
+      const sx = nodeX(column) * view.scale + view.x
+      const sy = nodeY(row) * view.scale + view.y
       const pad = 60
       if (sx < pad || sx > width - pad || sy < HEADER_H + pad / 2 || sy > height - pad / 2) {
-        centerOn(node.column, node.row)
+        centerOn(column, row)
       }
     },
     [centerOn]
+  )
+
+  const reveal = useCallback(
+    (hash: string) => {
+      const node = sceneRef.current.layout.nodeByHash.get(hash)
+      if (node) revealAt(node.column, node.row)
+    },
+    [revealAt]
   )
 
   // Every animated zoom entry point takes over the view — stop a drag fling
@@ -389,12 +413,13 @@ export function GraphCanvas({
       zoomOut: () => zoomStepAt(sizeRef.current.width / 2, sizeRef.current.height / 2, 0.8),
       fit,
       jumpToHead,
-      reveal
+      reveal,
+      revealAt
     }
     return () => {
       controls.current = null
     }
-  }, [controls, zoomStepAt, fit, jumpToHead, reveal])
+  }, [controls, zoomStepAt, fit, jumpToHead, reveal, revealAt])
 
   // Backing-store sizing, DPR-aware; re-runs on wrapper resize.
   useEffect(() => {
@@ -440,13 +465,34 @@ export function GraphCanvas({
     selectedHash,
     selectedBranch,
     matches,
-    activeMatch,
+    activeHit,
+    hitBranches,
+    hitTags,
     wip,
     links,
     theme,
     invalidate
   ])
   useEffect(() => subscribeAvatars(invalidate), [invalidate])
+  // The current hit's arrival ping: a short, FINITE rAF loop — it runs
+  // PING_MS per target change and stops, so an idle graph burns zero frames.
+  // Keyed on the hit's stable identity, not the object: the hits array is
+  // rebuilt on every layout/search recompute and must not re-fire the ping.
+  // Reduced-motion users get the steady glow with no ping.
+  const activeHitKey = hitKey(activeHit)
+  useEffect(() => {
+    matchPulseRef.current = 1
+    if (!activeHitKey) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    matchPulseRef.current = 0
+    const start = performance.now()
+    let raf = requestAnimationFrame(function tick() {
+      matchPulseRef.current = Math.min(1, (performance.now() - start) / PING_MS)
+      invalidate()
+      if (matchPulseRef.current < 1) raf = requestAnimationFrame(tick)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [activeHitKey, invalidate])
   // biome-ignore lint/correctness/useExhaustiveDependencies: theme isn't read here — a theme change is the trigger to drop the palette cache and redraw
   useEffect(() => {
     paletteRef.current = null
