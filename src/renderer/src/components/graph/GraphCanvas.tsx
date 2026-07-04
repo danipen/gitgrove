@@ -37,6 +37,7 @@ import {
   readPalette,
   SUBJECT_FONT
 } from './render'
+import { PING_MS } from './searchGlow'
 import { usePanInertia } from './usePanInertia'
 import { useZoomAnimation } from './useZoomAnimation'
 import { isDiscreteWheel, wheelZoomFactor } from './zoom'
@@ -167,6 +168,8 @@ export function GraphCanvas({
   // clicks stay clicks. `buttons === 0` checks recover from off-window releases.
   const panRef = useRef<{ id: number; x: number; y: number; panned: boolean } | null>(null)
   const initializedRef = useRef(false)
+  /** The current hit's arrival ping progress (0 → 1; 1 = settled, no ping). */
+  const matchPulseRef = useRef(1)
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
   const [cursor, setCursor] = useState<'default' | 'pointer' | 'grabbing'>('default')
 
@@ -231,6 +234,7 @@ export function GraphCanvas({
       hoverHash: hoverRef.current,
       matches: s.matches,
       activeMatch: s.activeMatch,
+      matchPulse: matchPulseRef.current,
       wip: s.wip,
       dayMarks: s.dayMarks,
       links: s.links
@@ -447,6 +451,22 @@ export function GraphCanvas({
     invalidate
   ])
   useEffect(() => subscribeAvatars(invalidate), [invalidate])
+  // The current hit's arrival ping: a short, FINITE rAF loop — it runs
+  // PING_MS per activeMatch change and stops, so an idle graph burns zero
+  // frames. Reduced-motion users get the steady glow with no ping.
+  useEffect(() => {
+    matchPulseRef.current = 1
+    if (!activeMatch) return
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    matchPulseRef.current = 0
+    const start = performance.now()
+    let raf = requestAnimationFrame(function tick() {
+      matchPulseRef.current = Math.min(1, (performance.now() - start) / PING_MS)
+      invalidate()
+      if (matchPulseRef.current < 1) raf = requestAnimationFrame(tick)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [activeMatch, invalidate])
   // biome-ignore lint/correctness/useExhaustiveDependencies: theme isn't read here — a theme change is the trigger to drop the palette cache and redraw
   useEffect(() => {
     paletteRef.current = null

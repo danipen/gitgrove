@@ -285,23 +285,27 @@ export function GraphToolbar({
             <span className="graph-search__count">
               {matchCount === 0 ? '0' : `${matchIndex + 1}/${matchCount}`}
             </span>
+            {/* Chevrons drawn a notch thicker than the stock 1.7px icon
+                stroke: at stepper size the default renders a hairline. */}
             <button
               type="button"
               className="icon-btn graph-search__step"
               aria-label="Previous match"
+              data-tip="Previous match (⇧Enter)"
               disabled={matchCount === 0}
               onClick={() => onMatchStep(-1)}
             >
-              <Icon.Prev size={12} />
+              <Icon.Prev size={14} strokeWidth={2.4} />
             </button>
             <button
               type="button"
               className="icon-btn graph-search__step"
               aria-label="Next match"
+              data-tip="Next match (Enter)"
               disabled={matchCount === 0}
               onClick={() => onMatchStep(1)}
             >
-              <Icon.Next size={12} />
+              <Icon.Next size={14} strokeWidth={2.4} />
             </button>
           </>
         )}

@@ -39,6 +39,7 @@ import {
   rowMatchesSelection
 } from './layout'
 import { type BackportLink, linkedHashes } from './links'
+import { ACTIVE_GLOW, HIT_GLOW, litChains, pingRings, withAlpha } from './searchGlow'
 
 export interface GraphPalette {
   dark: boolean
@@ -150,6 +151,9 @@ export interface SceneState {
   matches: ReadonlySet<string> | null
   /** The current search hit, ringed louder than its fellow matches. */
   activeMatch: string | null
+  /** The current hit's arrival ping: 0 = just landed … 1 = settled (no ping).
+   *  GraphCanvas animates it over PING_MS whenever activeMatch changes. */
+  matchPulse: number
   wip: { column: number; row: number; count: number; color: number } | null
   dayMarks: DayMark[]
   /** Dashed "same change" links between backport twins (see links.ts). */
@@ -169,6 +173,9 @@ const HEADER_LABEL_PAD = 6
 export const SUBJECT_FONT = 13
 export const SUBJECT_WEIGHT = 600
 const DIM_ALPHA = 0.15
+/** Ghosted branch labels (no hit on the chain): stronger than DIM_ALPHA — a
+ *  label is a wayfinding anchor, it must stay locatable while receding. */
+const LABEL_GHOST_ALPHA = 0.25
 
 /** Font metrics of the caption face, for baseline-exact DOM overlays. */
 export interface CaptionMetrics {
@@ -294,7 +301,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: SceneState): voi
   drawNodes(ctx, scene, c0, c1, labelBoxes, twinsOf(scene.links))
   drawWip(ctx, scene)
   drawEmptyHeadBadge(ctx, scene, c0, c1)
-  drawLabels(ctx, scene, labelBoxes)
+  drawLabels(ctx, scene, labelBoxes, litChainsFor(scene))
 
   drawHeader(ctx, scene)
 }
@@ -429,6 +436,20 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
   ctx.globalAlpha = 1
 }
 
+// Chains holding at least one filter/search match, cached per matches set
+// (stable between frames) so the 60fps pan path never re-derives it.
+const litChainsCache = new WeakMap<ReadonlySet<string>, ReadonlySet<number>>()
+function litChainsFor(scene: SceneState): ReadonlySet<number> | null {
+  const { matches } = scene
+  if (matches === null) return null
+  let lit = litChainsCache.get(matches)
+  if (!lit) {
+    lit = litChains(scene.layout.nodes, matches)
+    litChainsCache.set(matches, lit)
+  }
+  return lit
+}
+
 // Twin markers: which commits participate in any link. Cached per links array
 // (stable between frames) so the 60fps pan path never re-derives the set.
 const twinCache = new WeakMap<readonly BackportLink[], ReadonlySet<string>>()
@@ -536,6 +557,25 @@ function drawNodes(
     ctx.fill()
     ctx.globalAlpha = dim ? DIM_ALPHA : 1
 
+    // Search hits wear the text-editor find treatment, in gold: every hit a
+    // soft radial glow behind the node, the CURRENT hit a wider corona (plus
+    // a ring and an arrival ping, below). Gold, not the branch hue — hits
+    // must read across all branch colors at a glance. The glow fades to a
+    // zero-alpha stop of the SAME color: fading to `transparent` would drag
+    // the gradient through black and dirty the halo's rim.
+    const isActiveMatch = node.commit.hash === scene.activeMatch
+    const isHit = scene.activeMatch !== null && scene.matches?.has(node.commit.hash) === true
+    if (isHit) {
+      const glowR = NODE_R + (isActiveMatch ? ACTIVE_GLOW : HIT_GLOW)
+      const glow = ctx.createRadialGradient(x, y, NODE_R - 2, x, y, glowR)
+      glow.addColorStop(0, withAlpha(palette.match, isActiveMatch ? 0.55 : 0.35))
+      glow.addColorStop(1, withAlpha(palette.match, 0))
+      ctx.fillStyle = glow
+      ctx.beginPath()
+      ctx.arc(x, y, glowR, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
     // Selection halo, under everything else on the node.
     const isSelected = node.commit.hash === scene.selectedHash
     if (isSelected) {
@@ -570,8 +610,10 @@ function drawNodes(
       }
     }
 
-    // Ring in the branch color; louder states stack on top.
-    const isActiveMatch = node.commit.hash === scene.activeMatch
+    // Ring in the branch color; louder states stack on top. The current hit
+    // keeps its branch/merge ring — the gold glow and corona carry the find
+    // state, so branch identity (and the merge ring's incoming-color rule)
+    // survive being the current match.
     const isHover = node.commit.hash === scene.hoverHash
     const emphasized = isHover || isActiveMatch
     if (node.mergeColor !== null) {
@@ -588,16 +630,38 @@ function drawNodes(
       ctx.arc(x, y, NODE_R - 2, 0, Math.PI * 2)
       ctx.stroke()
       ctx.lineWidth = emphasized ? 2.5 : 2
-      ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.mergeColor)
+      ctx.strokeStyle = branchStroke(palette, node.mergeColor)
       ctx.beginPath()
       ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
       ctx.stroke()
     } else {
       ctx.lineWidth = emphasized ? 2.5 : 2
-      ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.color)
+      ctx.strokeStyle = branchStroke(palette, node.color)
       ctx.beginPath()
       ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
       ctx.stroke()
+    }
+    if (isActiveMatch) {
+      // The current hit's gold corona ring — the same radius and weight as
+      // the selection ring, so "current find" and "selected" speak one
+      // grammar in two colors. When a hit is also selected, the accent ring
+      // (drawn below) wins the radius and the gold glow still marks the find.
+      ctx.lineWidth = 2
+      ctx.strokeStyle = palette.match
+      ctx.beginPath()
+      ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2)
+      ctx.stroke()
+      // Arrival ping: staggered expanding rings that fade as they travel —
+      // the eye is drawn by motion exactly once, then the steady corona
+      // holds the spot (pingRings returns [] once settled).
+      for (const ring of pingRings(scene.matchPulse)) {
+        ctx.globalAlpha = ring.alpha
+        ctx.lineWidth = ring.width
+        ctx.beginPath()
+        ctx.arc(x, y, NODE_R + 4 + ring.grow, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.globalAlpha = dim ? DIM_ALPHA : 1
     }
     if (isSelected) {
       // Outer accent ring: "this is picked" — selection only. The home
@@ -904,7 +968,9 @@ function drawWip(ctx: CanvasRenderingContext2D, scene: SceneState): void {
 function drawLabels(
   ctx: CanvasRenderingContext2D,
   scene: SceneState,
-  labelBoxes: LabelBox[]
+  labelBoxes: LabelBox[],
+  /** Chains holding at least one match, or null when nothing is filtering. */
+  lit: ReadonlySet<number> | null
 ): void {
   const { palette } = scene
   ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
@@ -912,7 +978,12 @@ function drawLabels(
   ctx.textAlign = 'left'
   for (const { row, rect, sticky } of labelBoxes) {
     const head = row.isHead
-    ctx.globalAlpha = row.kind === 'unnamed' ? 0.8 : 1
+    // While a filter/search dims commits, labels of hitless branches ghost
+    // with them — a full-strength label over dimmed commits would claim a
+    // hit the branch doesn't have. (Empty branches have no nodes, so they
+    // ghost too: a zero-commit branch can never hold a match.)
+    const ghost = lit !== null && !lit.has(row.chain)
+    ctx.globalAlpha = ghost ? LABEL_GHOST_ALPHA : row.kind === 'unnamed' ? 0.8 : 1
     ctx.beginPath()
     ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 5)
     // A sticky pill floats over diagram content — a soft shadow makes the
