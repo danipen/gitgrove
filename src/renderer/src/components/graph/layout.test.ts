@@ -486,3 +486,96 @@ describe('layoutGraph', () => {
     expect(columns).toEqual([...columns].sort((x, y) => x - y))
   })
 })
+
+describe('empty branches (zero-commit refs)', () => {
+  test("a branch pointing at another chain's commit gets an empty lane", () => {
+    const layout = layoutGraph(input([commit('b', ['a'], 'HEAD -> main, fresh'), commit('a', [])]))
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    expect(fresh.kind).toBe('branch')
+    // tip and base both name the anchor: the branch-changes range is empty.
+    expect(fresh.tipHash).toBe('b')
+    expect(fresh.baseHash).toBe('b')
+    // One reserved slot right of the anchor, on its own row below main.
+    expect(fresh.startColumn).toBe(2)
+    expect(fresh.endColumn).toBe(2)
+    expect(fresh.index).toBeGreaterThan(rowNamed(layout, 'main').index)
+    // It claimed no commits — main keeps its whole spine…
+    expect(layout.nodes.every((n) => n.chain !== fresh.chain)).toBe(true)
+    expect(layout.nodeByHash.get('b')?.row).toBe(0)
+    // …and a fork connector reaches from the anchor into the reserved slot.
+    const fork = layout.edges.find((e) => e.kind === 'fork')
+    expect(fork?.toColumn).toBe(1)
+    expect(fork?.toRow).toBe(0)
+    expect(fork?.fromColumn).toBe(2)
+    expect(fork?.fromRow).toBe(fresh.index)
+    // HEAD is on main, so main keeps the marker.
+    expect(rowNamed(layout, 'main').isHead).toBe(true)
+    expect(fresh.isHead).toBe(false)
+    expect(layout.nodeByHash.get('b')?.isHead).toBe(true)
+  })
+
+  test('HEAD on an empty branch moves the home marker to the empty lane', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> fresh, main'), commit('a', [])], { headBranch: 'fresh' })
+    )
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    expect(fresh.isHead).toBe(true)
+    expect(rowNamed(layout, 'main').isHead).toBe(false)
+    // The anchor node stays plain: home lives on the empty lane now.
+    expect(layout.nodeByHash.get('b')?.isHead).toBe(false)
+    // headHash still names the anchor commit (jump-to-home target).
+    expect(layout.headHash).toBe('b')
+  })
+
+  test('an empty branch anchored mid-spine hangs beside its anchor', () => {
+    const layout = layoutGraph(
+      input([commit('c', ['b'], 'HEAD -> main'), commit('b', ['a'], 'fresh'), commit('a', [])])
+    )
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    // Anchor b sits at column 1; the slot is the next column, one row down.
+    expect(fresh.startColumn).toBe(2)
+    expect(fresh.index).toBeGreaterThan(0)
+  })
+
+  test('a remote-only zero-commit ref becomes an empty remote lane', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, origin/fresh'), commit('a', [])])
+    )
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    expect(fresh.kind).toBe('remote')
+  })
+
+  test('two empty branches at one commit stack on separate rows', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, one, two'), commit('a', [])])
+    )
+    const one = rowNamed(layout, 'one')
+    const two = rowNamed(layout, 'two')
+    expect(one.empty).toBe(true)
+    expect(two.empty).toBe(true)
+    // Same reserved slot column — the packer must give them separate rows.
+    expect(one.startColumn).toBe(two.startColumn)
+    expect(one.index).not.toBe(two.index)
+  })
+
+  test('empty branches appear in the branch filter list', () => {
+    const names = collectBranchNames(
+      input([commit('b', ['a'], 'HEAD -> main, fresh'), commit('a', [])])
+    )
+    expect(names).toContain('fresh')
+  })
+
+  test('local and remote refs at an already-claimed commit share one empty lane', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, fresh, origin/fresh'), commit('a', [])])
+    )
+    const rows = layout.rows.filter((r) => r.name === 'fresh')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].kind).toBe('branch')
+    expect(rows[0].empty).toBe(true)
+  })
+})

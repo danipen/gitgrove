@@ -225,6 +225,27 @@ describe('graph geometry', () => {
 
   test('contentSize reserves a column for the WIP node', () => {
     const layout = sampleLayout()
-    expect(contentSize(layout, true).width - contentSize(layout, false).width).toBe(44)
+    expect(contentSize(layout, layout.columnCount).width - contentSize(layout, null).width).toBe(
+      44
+    )
+  })
+
+  test('contentSize covers an empty branch slot past the last commit column', () => {
+    // 'fresh' points at the HEAD tip: zero commits, slot right of the tip.
+    const layout = layoutGraph({
+      commits: [commit('b', ['a'], 'HEAD -> main, fresh'), commit('a', [])],
+      remotes: [],
+      headBranch: 'main',
+      detached: false,
+      defaultBranch: 'main'
+    })
+    const fresh = layout.rows.find((r) => r.name === 'fresh')
+    if (!fresh) throw new Error('missing empty row')
+    expect(fresh.endColumn).toBe(layout.columnCount)
+    // One column wider than the commits alone would need.
+    expect(contentSize(layout, null).width).toBe(
+      contentSize({ ...layout, rows: layout.rows.filter((r) => r.name === 'main') }, null).width +
+        44
+    )
   })
 })

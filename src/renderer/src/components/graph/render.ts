@@ -283,6 +283,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: SceneState): voi
   drawBackportLinks(ctx, scene, c0, c1)
   drawNodes(ctx, scene, c0, c1, labelBoxes, twinsOf(scene.links))
   drawWip(ctx, scene)
+  drawEmptyHeadBadge(ctx, scene, c0, c1)
   drawLabels(ctx, scene, labelBoxes)
 
   drawHeader(ctx, scene)
@@ -593,6 +594,22 @@ function drawNodes(
 
     if (showText) drawNodeText(ctx, scene, node, x, y, labelBoxes)
     ctx.globalAlpha = 1
+  }
+}
+
+/** HEAD on a zero-commit branch: no node carries isHead (layout moves it to
+ *  the empty lane's row), so the home badge anchors to the lane's reserved
+ *  slot — where the branch's first commit will land. */
+function drawEmptyHeadBadge(
+  ctx: CanvasRenderingContext2D,
+  scene: SceneState,
+  c0: number,
+  c1: number
+): void {
+  for (const row of scene.layout.rows) {
+    if (!row.empty || !row.isHead) continue
+    if (row.endColumn < c0 || row.startColumn > c1) continue
+    drawHomeBadge(ctx, scene, nodeX(row.startColumn), nodeY(row.index))
   }
 }
 

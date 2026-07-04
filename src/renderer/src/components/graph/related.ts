@@ -33,6 +33,16 @@ export function relatedBranches(layout: GraphLayout, seed: string, hops: number)
     connect(from, to)
     connect(to, from)
   }
+  // Empty lanes (zero-commit branches) own no nodes, so their fork connector
+  // maps to the anchor's chain on both ends above — relate them to the chain
+  // owning the commit they point at explicitly.
+  for (const row of layout.rows) {
+    if (!row.empty) continue
+    const anchor = layout.nodeByHash.get(row.tipHash)?.chain
+    if (anchor === undefined || anchor === row.chain) continue
+    connect(row.chain, anchor)
+    connect(anchor, row.chain)
+  }
 
   const nameOf = new Map<number, string>()
   const seeds: number[] = []

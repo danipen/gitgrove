@@ -174,7 +174,9 @@ export function GraphCanvas({
     () =>
       changesCount > 0 && headRow
         ? {
-            column: layout.columnCount,
+            // On a zero-commit branch the WIP node docks right of the lane's
+            // reserved slot; otherwise right of the newest commit column.
+            column: headRow.empty ? headRow.endColumn + 1 : layout.columnCount,
             row: headRow.index,
             count: changesCount,
             color: headRow.color
@@ -244,7 +246,7 @@ export function GraphCanvas({
   const clampView = useCallback(() => {
     const view = viewRef.current
     const { width, height } = sizeRef.current
-    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip !== null)
+    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null)
     const cw = cs.width * view.scale
     const ch = cs.height * view.scale
     const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
@@ -329,7 +331,7 @@ export function GraphCanvas({
     zoomAnim.stop()
     panInertia.cancel()
     const { width, height } = sizeRef.current
-    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip !== null)
+    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null)
     const view = viewRef.current
     view.scale = Math.min(
       MAX_SCALE,
