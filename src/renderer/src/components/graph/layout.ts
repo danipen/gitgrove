@@ -7,8 +7,9 @@
 // don't belong to a branch, so branches are reconstructed by walking
 // first-parent chains down from each tip, in priority order (default branch
 // first, so it owns the mainline spine; then release lines, newest version
-// first — see releases.ts; then the checked-out branch; then the rest, newest
-// tip first). Local and remote refs with the same base name
+// first — see releases.ts; then branches whose tip was merged away, so they
+// keep the commits they carried into that merge; then the checked-out branch;
+// then the rest, newest tip first). Local and remote refs with the same base name
 // ("main" / "origin/main") share one chain — the walk starts at the newer tip
 // and passes through the older one. Commits left unclaimed (their branch was
 // deleted after merging) become "unnamed" chains, labelled from the merge
@@ -17,9 +18,10 @@
 // Rows are then PACKED: the mainline keeps row 0 to itself, release lines
 // stack directly beneath it (newest version first — a stable "spine stack"
 // that keeps maintenance branches in the same rows), and every other chain
-// goes to the lowest row where its column span (plus room for its label)
-// doesn't collide — so short-lived branches that never overlap in time share
-// a row instead of staircasing down the canvas.
+// goes to the lowest row BELOW the chain it forked from where its column span
+// (plus room for its label) doesn't collide — child branches hang beneath
+// their parent, and short-lived branches that never overlap in time share a
+// row instead of staircasing down the canvas.
 
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
@@ -177,6 +179,15 @@ function branchNameFromMergeSubject(subject: string): string | null {
   return m ? m[1] : null
 }
 
+/** Every non-first parent in the window: the tips merges pulled in. */
+function collectMergeSourceHashes(commits: readonly Commit[]): Set<string> {
+  const sources = new Set<string>()
+  for (const c of commits) {
+    for (const parent of c.parents.slice(1)) sources.add(parent)
+  }
+  return sources
+}
+
 /** A chain's release-line version — named branches only: an unnamed chain
  *  reconstructed from "Merge branch 'release/1.2'" is merged history, not a
  *  living release line. */
@@ -216,11 +227,11 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
     }
   })
   // Tips arrive newest-first already (commits are date-ordered); order groups:
-  // default branch, then release lines newest version first, then the
-  // checked-out branch, then by newest tip. Claim order doubles as importance:
-  // pinning a release line lets it claim its own spine before the feature
-  // branches forked from it, whose newer tips would otherwise walk down the
-  // first parents and take its commits.
+  // default branch, then release lines newest version first, then merged-away
+  // branches, then the checked-out branch, then by newest tip. Claim order
+  // doubles as importance: pinning a release line lets it claim its own spine
+  // before the feature branches forked from it, whose newer tips would
+  // otherwise walk down the first parents and take its commits.
   const ordered = [...groups.entries()].sort((a, b) => a[1][0].order - b[1][0].order)
   const named = ordered.map(([base, tips]) => ({ base, tips }))
   const pin = (base: string | null) => {
@@ -229,6 +240,14 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
     if (i > 0) named.unshift(...named.splice(i, 1))
   }
   pin(input.headBranch || null)
+  // A branch whose tip was merged away owns the commits it carried into that
+  // merge: it claims before the checked-out branch and other unmerged tips,
+  // or a branch forked from its middle would walk down the first parents and
+  // steal its spine — leaving the merged branch a single orphaned commit.
+  const mergeSources = collectMergeSourceHashes(input.commits)
+  for (const { base } of named.filter((g) => mergeSources.has(g.tips[0].hash)).reverse()) {
+    pin(base)
+  }
   for (const base of releaseLinesNewestFirst(named, input).reverse()) pin(base)
   pin(input.defaultBranch)
   return named
@@ -261,11 +280,10 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // (a tip that is a merge source has been merged), structureOnly (merge
   // sources are structure), unnamed-chain naming, and the merge lead-out each
   // chain's packing interval reserves.
-  const mergeSources = new Set<string>()
+  const mergeSources = collectMergeSourceHashes(commits)
   const mergeChildOf = new Map<string, Commit>()
   for (const c of commits) {
     for (const parent of c.parents.slice(1)) {
-      mergeSources.add(parent)
       if (!mergeChildOf.has(parent)) mergeChildOf.set(parent, c)
     }
   }
@@ -380,7 +398,8 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // ── Row packing: mainline alone on row 0; everyone else first-fit below ───
   // "As near to main as possible": each chain takes the lowest row whose
   // occupied column intervals don't collide with its own (padded for the
-  // label). The HEAD chain is placed first so it lands closest to the top.
+  // label) — but never above the chain it forked from: a child branch always
+  // hangs beneath its parent, however new its tip or where HEAD sits.
   const headChain = headHash !== null ? chainOf.get(headHash) : undefined
   const defaultChain = chains.findIndex(
     (c) => c.name === input.defaultBranch && c.kind !== 'unnamed'
@@ -388,9 +407,30 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   const mainChain = defaultChain !== -1 ? defaultChain : (headChain ?? (chains.length > 0 ? 0 : -1))
   const rowOfChain = new Map<number, number>()
   if (mainChain >= 0) rowOfChain.set(mainChain, 0)
+  // The chain owning the commit this chain grew from (its fork parent), and
+  // the fork depth below the mainline (mainline 0, branches off it 1, …).
+  // Depth orders the packing parent-before-child, so every child's floor row
+  // is already resolved when its turn comes.
+  const parentChainOf = (id: number): number | undefined => {
+    const base = span[id].oldest?.parents[0]
+    return base === undefined ? undefined : chainOf.get(base)
+  }
+  const depths = new Map<number, number>()
+  const depthOf = (id: number): number => {
+    if (id === mainChain) return 0
+    const cached = depths.get(id)
+    if (cached !== undefined) return cached
+    // Chains can't cycle (bases only point at older columns); keeps the walk total.
+    depths.set(id, 1)
+    const parent = parentChainOf(id)
+    const depth = parent === undefined ? 1 : depthOf(parent) + 1
+    depths.set(id, depth)
+    return depth
+  }
   // Release lines pack before everything else, newest version first, so they
   // stack directly under the mainline — maintenance branches always live in
-  // the same rows, whatever else is going on. HEAD's chain follows, then the
+  // the same rows, whatever else is going on. Then by fork depth (parents
+  // before their children), HEAD's chain first within its depth, then the
   // rest by start column so packing stays dense.
   const releaseRank = new Map<number, number>()
   chains
@@ -407,6 +447,8 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     .sort((a, b) => {
       const releases = (releaseRank.get(a) ?? NOT_RELEASE) - (releaseRank.get(b) ?? NOT_RELEASE)
       if (releases !== 0) return releases
+      const depth = depthOf(a) - depthOf(b)
+      if (depth !== 0) return depth
       if (a === headChain) return -1
       if (b === headChain) return 1
       return span[a].start - span[b].start
@@ -425,7 +467,11 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       start: Math.min(span[id].start - LABEL_PAD_COLUMNS, forkColumn ?? Number.MAX_SAFE_INTEGER),
       end: Math.max(span[id].end + 1, mergeColumn ?? -1)
     }
-    let row = 0
+    // A child branch never packs above its parent: the scan starts at the
+    // parent's row, so the first candidate row already sits below it. Release
+    // lines are exempt — their spine stack under the mainline is fixed.
+    const parent = parentChainOf(id)
+    let row = releaseRank.has(id) || parent === undefined ? 0 : (rowOfChain.get(parent) ?? 0)
     while (true) {
       const taken = occupied[row]
       if (!taken?.some((t) => interval.start <= t.end && t.start <= interval.end)) {

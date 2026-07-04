@@ -346,6 +346,64 @@ describe('layoutGraph', () => {
     expect(rowNamed(layout, 'feature').baseHash).toBe('y2')
   })
 
+  test('a merged branch keeps its spine from a newer branch forked off its middle', () => {
+    // The PR #74 / #75 shape: gen (g1─g2─g3─g4) merged into main, while the
+    // checked-out extra forked from g3 and kept going (e1─e2). Without the
+    // merged-tip pin, extra's newer tip walks down through g3─g2─g1 and
+    // steals them, leaving gen a single orphaned commit (g4).
+    const layout = layoutGraph(
+      input(
+        [
+          commit('e2', ['e1'], 'HEAD -> extra'),
+          commit('m2', ['m1', 'g4'], 'main', 'Merge pull request #74 from danipen/gen'),
+          commit('g4', ['g3'], 'gen'),
+          commit('e1', ['g3']),
+          commit('g3', ['g2']),
+          commit('g2', ['g1']),
+          commit('g1', ['m1']),
+          commit('m1', [])
+        ],
+        { headBranch: 'extra' }
+      )
+    )
+    const gen = rowNamed(layout, 'gen')
+    for (const hash of ['g1', 'g2', 'g3', 'g4']) {
+      expect(layout.nodeByHash.get(hash)?.chain).toBe(gen.chain)
+    }
+    // extra owns only its unique commits and forks from gen's g3.
+    const extra = rowNamed(layout, 'extra')
+    expect(layout.nodeByHash.get('e1')?.chain).toBe(extra.chain)
+    expect(extra.baseHash).toBe('g3')
+    expect(gen.baseHash).toBe('m1')
+    // And the child branch hangs BELOW the branch it grew from, even though
+    // it's checked out and has the newer tip.
+    expect(gen.index).toBe(1)
+    expect(extra.index).toBe(2)
+  })
+
+  test('child branches pack below their parent, grandchildren below both', () => {
+    // parent (merged into main) ← child (HEAD, forked from p1) ← grandchild
+    // (forked from c1): each fork level hangs one row further from the
+    // mainline, whatever the tip order says.
+    const layout = layoutGraph(
+      input(
+        [
+          commit('gg1', ['c1'], 'grandchild'),
+          commit('c2', ['c1'], 'HEAD -> child'),
+          commit('M', ['a', 'p2'], 'main', "Merge branch 'parent'"),
+          commit('p2', ['p1'], 'parent'),
+          commit('c1', ['p1']),
+          commit('p1', ['a']),
+          commit('a', [])
+        ],
+        { headBranch: 'child' }
+      )
+    )
+    expect(rowNamed(layout, 'parent').index).toBe(1)
+    expect(rowNamed(layout, 'child').index).toBe(2)
+    expect(rowNamed(layout, 'grandchild').index).toBe(3)
+  })
+
   test('hideMerged keeps release lines even when merged up into main', () => {
     // Merge-up workflow: 11.x merged into main makes 11.x's tip a merge
     // source, but the release line must survive the filter — it isn't done.
