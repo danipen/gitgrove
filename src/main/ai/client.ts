@@ -10,6 +10,7 @@ import {
   buildModelsRequest,
   type ChatMessage,
   extractStreamText,
+  parseErrorMessage,
   parseModelList,
   pickDefaultModel,
   type WireRequest
@@ -30,12 +31,20 @@ const VERIFY_TIMEOUT_MS = 15_000
 /** Ceiling on one generation — a stuck stream must not spin forever. */
 const GENERATION_TIMEOUT_MS = 90_000
 
-function classifyHttp(status: number): AiRequestError {
+/**
+ * Turn a failed response into a stable code plus the endpoint's OWN words —
+ * "HTTP 400" helps nobody, "max_tokens: field required" fixes itself.
+ */
+function classifyHttp(status: number, bodyText: string): AiRequestError {
+  const detail = parseErrorMessage(bodyText)
   if (status === 401 || status === 403)
-    return new AiRequestError('unauthorized', 'The endpoint rejected the API key.')
+    return new AiRequestError('unauthorized', detail ?? 'The endpoint rejected the API key.')
   if (status === 404)
-    return new AiRequestError('bad-endpoint', 'No compatible API at that address.')
-  return new AiRequestError('provider-error', `The endpoint answered with HTTP ${status}.`)
+    return new AiRequestError('bad-endpoint', detail ?? 'No compatible API at that address.')
+  return new AiRequestError(
+    'provider-error',
+    detail ? `The endpoint answered: ${detail}` : `The endpoint answered with HTTP ${status}.`
+  )
 }
 
 async function send(request: WireRequest, signal: AbortSignal): Promise<Response> {
@@ -54,7 +63,10 @@ async function send(request: WireRequest, signal: AbortSignal): Promise<Response
       `Could not reach the endpoint${e instanceof Error && e.message ? ` (${e.message})` : ''}.`
     )
   }
-  if (!response.ok) throw classifyHttp(response.status)
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => '')
+    throw classifyHttp(response.status, bodyText)
+  }
   return response
 }
 

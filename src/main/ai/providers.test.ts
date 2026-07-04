@@ -4,6 +4,7 @@ import {
   buildChatRequest,
   buildModelsRequest,
   extractStreamText,
+  parseErrorMessage,
   parseModelList,
   pickDefaultModel,
   resolveBaseUrl
@@ -52,6 +53,14 @@ describe('buildChatRequest', () => {
   test('keyless endpoints send no auth header at all', () => {
     const req = buildChatRequest(endpoint({ provider: 'ollama', apiKey: null }), messages)
     expect(req.headers.Authorization).toBeUndefined()
+  })
+
+  test('anthropic keeps its protocol version header even with no key', () => {
+    // The version header is protocol, not auth: dropping it with the key
+    // turns "reconnect your key" (401) into an inscrutable 400.
+    const req = buildChatRequest(endpoint({ provider: 'anthropic', apiKey: null }), messages)
+    expect(req.headers['anthropic-version']).toBe('2023-06-01')
+    expect(req.headers['x-api-key']).toBeUndefined()
   })
 
   test('anthropic: x-api-key + version headers, system extracted', () => {
@@ -136,6 +145,22 @@ describe('pickDefaultModel', () => {
   test('falls back to the first served model', () => {
     expect(pickDefaultModel('litellm', ['corp-model', 'other'])).toBe('corp-model')
     expect(pickDefaultModel('openai', [])).toBe('')
+  })
+})
+
+describe('parseErrorMessage', () => {
+  test('every dialect answers { error: { message } }', () => {
+    expect(parseErrorMessage('{"error":{"message":"max_tokens: field required"}}')).toBe(
+      'max_tokens: field required'
+    )
+    expect(parseErrorMessage('{"error":"model overloaded"}')).toBe('model overloaded')
+    expect(parseErrorMessage('{"message":"proxy says no"}')).toBe('proxy says no')
+  })
+
+  test('plain-text bodies pass through (truncated), HTML gateway pages do not', () => {
+    expect(parseErrorMessage('upstream timeout')).toBe('upstream timeout')
+    expect(parseErrorMessage('<html><body>502</body></html>')).toBeNull()
+    expect(parseErrorMessage('')).toBeNull()
   })
 })
 

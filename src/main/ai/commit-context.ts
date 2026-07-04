@@ -8,19 +8,24 @@ import type { AiCommitRequest, ChangedFile } from '@shared/types'
 import { getLog, getWorkingDiff } from '../git/read'
 import { capPatch, type CommitPromptInput, DIFF_CAPS } from './commit-prompt'
 
+/** Listed individually in the summary; a 90k-file selection must not become a
+ *  90k-line prompt (the endpoint would reject it as too long). */
+const MAX_SUMMARY_FILES = 300
+
 /** `status\tpath` per file — cheap orientation even for files whose diff
  *  didn't fit the budget (binary, huge, or beyond maxFiles). */
 export function summarizeFiles(files: ChangedFile[]): string {
-  return files
-    .map((f) => {
-      const name = f.oldPath ? `${f.oldPath} → ${f.path}` : f.path
-      const counts =
-        f.insertions !== undefined || f.deletions !== undefined
-          ? ` (+${f.insertions ?? 0} −${f.deletions ?? 0})`
-          : ''
-      return `${f.status}\t${name}${counts}`
-    })
-    .join('\n')
+  const lines = files.slice(0, MAX_SUMMARY_FILES).map((f) => {
+    const name = f.oldPath ? `${f.oldPath} → ${f.path}` : f.path
+    const counts =
+      f.insertions !== undefined || f.deletions !== undefined
+        ? ` (+${f.insertions ?? 0} −${f.deletions ?? 0})`
+        : ''
+    return `${f.status}\t${name}${counts}`
+  })
+  const overflow = files.length - MAX_SUMMARY_FILES
+  if (overflow > 0) lines.push(`…and ${overflow} more files`)
+  return lines.join('\n')
 }
 
 export async function gatherCommitContext(

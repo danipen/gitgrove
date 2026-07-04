@@ -103,16 +103,22 @@ export function resolveBaseUrl(provider: AiProvider, input?: string): string | n
   return trimmed || AI_PROVIDERS[provider].defaultBaseUrl
 }
 
-/** Auth headers per dialect; empty when the endpoint runs keyless. */
+/**
+ * Per-dialect auth + protocol headers. The anthropic-version header is part
+ * of the PROTOCOL, not the auth: it must ride along even when the key is
+ * missing (keyless proxy, undecryptable stored key), or Anthropic answers
+ * 400 "anthropic-version required" instead of the honest 401 that routes the
+ * user to reconnect.
+ */
 function authHeaders(endpoint: Pick<AiEndpoint, 'provider' | 'apiKey'>): Record<string, string> {
-  if (!endpoint.apiKey) return {}
+  const key = endpoint.apiKey
   switch (endpoint.provider) {
     case 'anthropic':
-      return { 'x-api-key': endpoint.apiKey, 'anthropic-version': '2023-06-01' }
+      return { 'anthropic-version': '2023-06-01', ...(key ? { 'x-api-key': key } : {}) }
     case 'gemini':
-      return { 'x-goog-api-key': endpoint.apiKey }
+      return key ? { 'x-goog-api-key': key } : {}
     default:
-      return { Authorization: `Bearer ${endpoint.apiKey}` }
+      return key ? { Authorization: `Bearer ${key}` } : {}
   }
 }
 
@@ -211,6 +217,29 @@ export function pickDefaultModel(provider: AiProvider, models: string[]): string
     if (hit) return hit
   }
   return models[0] ?? ''
+}
+
+/**
+ * The endpoint's own error message out of a failed response body, or null.
+ * All three dialects (and every OpenAI-compatible proxy) answer errors as
+ * `{ error: { message } }` — surfacing it turns "HTTP 400" into "max_tokens:
+ * …" and makes misconfigurations self-explanatory.
+ */
+export function parseErrorMessage(bodyText: string): string | null {
+  try {
+    const parsed = JSON.parse(bodyText) as Record<string, unknown>
+    const error = parsed?.error as Record<string, unknown> | string | undefined
+    if (typeof error === 'string' && error) return error
+    if (error && typeof error === 'object' && typeof error.message === 'string' && error.message)
+      return error.message
+    if (typeof parsed?.message === 'string' && parsed.message) return parsed.message
+  } catch {
+    // Not JSON — an HTML gateway page or plain text; a short raw excerpt
+    // still beats a bare status code.
+    const trimmed = bodyText.trim()
+    if (trimmed && !trimmed.startsWith('<')) return trimmed.slice(0, 200)
+  }
+  return null
 }
 
 /**
