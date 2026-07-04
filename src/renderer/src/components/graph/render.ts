@@ -942,8 +942,7 @@ function drawNodeText(
     // match — the tag did, so the node beneath keeps its dim), glow behind,
     // gold border, and corona + ping when current.
     const isHitTag = scene.hitTags?.has(node.commit.hash) === true
-    const isActiveTag =
-      scene.activeHit?.kind === 'tag' && scene.activeHit.hash === node.commit.hash
+    const isActiveTag = scene.activeHit?.kind === 'tag' && scene.activeHit.hash === node.commit.hash
     if (isHitTag) ctx.globalAlpha = 1
     ctx.beginPath()
     ctx.roundRect(chip.x, chip.y, chip.w, chip.h, 4)

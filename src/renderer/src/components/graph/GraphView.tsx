@@ -23,8 +23,8 @@ import {
 } from './layout'
 import { linkableChains, twinHashes } from './links'
 import { relatedBranches } from './related'
-import { computeSearchHits } from './searchGlow'
 import { releaseLineVersion, releaseVersionWithOverride } from './releases'
+import { computeSearchHits } from './searchGlow'
 import { useBackportLinks } from './useBackportLinks'
 import { useGraphLog } from './useGraphLog'
 
