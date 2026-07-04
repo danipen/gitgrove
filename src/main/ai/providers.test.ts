@@ -102,9 +102,7 @@ describe('buildModelsRequest', () => {
   })
 
   test('gemini pages wide so small models are not cut off', () => {
-    const req = buildModelsRequest(
-      endpoint({ provider: 'gemini', baseUrl: 'https://g/v1beta' })
-    )
+    const req = buildModelsRequest(endpoint({ provider: 'gemini', baseUrl: 'https://g/v1beta' }))
     expect(req.url).toBe('https://g/v1beta/models?pageSize=200')
   })
 })
@@ -166,9 +164,7 @@ describe('parseErrorMessage', () => {
 
 describe('extractStreamText', () => {
   test('openai-compatible deltas', () => {
-    expect(
-      extractStreamText('openai', { choices: [{ delta: { content: 'Fix ' } }] })
-    ).toBe('Fix ')
+    expect(extractStreamText('openai', { choices: [{ delta: { content: 'Fix ' } }] })).toBe('Fix ')
     expect(extractStreamText('openai', { choices: [{ delta: { role: 'assistant' } }] })).toBe('')
   })
 

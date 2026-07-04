@@ -273,8 +273,6 @@ export function extractStreamText(provider: AiProvider, data: unknown): string {
   // OpenAI-compatible: choices[0].delta.content.
   const choices = obj.choices
   if (!Array.isArray(choices) || !choices[0]) return ''
-  const delta = (choices[0] as Record<string, unknown>).delta as
-    | Record<string, unknown>
-    | undefined
+  const delta = (choices[0] as Record<string, unknown>).delta as Record<string, unknown> | undefined
   return typeof delta?.content === 'string' ? delta.content : ''
 }

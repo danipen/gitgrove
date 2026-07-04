@@ -6,7 +6,7 @@
 
 import type { AiCommitRequest, ChangedFile } from '@shared/types'
 import { getLog, getWorkingDiff } from '../git/read'
-import { capPatch, type CommitPromptInput, DIFF_CAPS } from './commit-prompt'
+import { type CommitPromptInput, capPatch, DIFF_CAPS } from './commit-prompt'
 
 /** Listed individually in the summary; a 90k-file selection must not become a
  *  90k-line prompt (the endpoint would reject it as too long). */
