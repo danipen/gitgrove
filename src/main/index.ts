@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, type BrowserWindow, Menu, nativeImage } from 'electron'
+import { app, type BrowserWindow, nativeImage } from 'electron'
 
 import { IPC } from '@shared/ipc'
 import type { GitAvailability, RepoOpenResult, UpdateStatus } from '@shared/types'
-import { REPO_URL } from './app-info'
-import { resolveStartupRepo } from './cli'
+import { APP_USER_MODEL_ID, REPO_URL } from './app-info'
+import { refreshAppShortcuts } from './app-shortcuts'
+import { hasNewWindowFlag, resolveStartupRepo } from './cli'
 import { gitVersion, locateGit, resetGitLocation } from './git/bin'
 import {
   addSafeDirectory,
@@ -17,7 +18,7 @@ import {
 } from './git/read'
 import { registerIpc } from './ipc'
 import { buildMenu, type MenuContext } from './menu'
-import { getRecentRepo, rememberRepo } from './store'
+import { getRecentRepo, rememberRepo, setRecentsChangedListener } from './store'
 import { checkForUpdates, initAutoUpdater } from './updater'
 import { RepoWatcher } from './watcher'
 import { WindowManager } from './windows'
@@ -53,6 +54,13 @@ if (!app.requestSingleInstanceLock()) {
 app.commandLine.appendSwitch('password-store', 'basic')
 if (process.platform === 'darwin') {
   app.commandLine.appendSwitch('use-mock-keychain')
+}
+
+// Windows: adopt the installer's AppUserModelID so the taskbar groups our
+// windows under the installed shortcut — required for the Jump List
+// (app-shortcuts.ts) to appear on the pinned/Start-menu icon.
+if (process.platform === 'win32') {
+  app.setAppUserModelId(APP_USER_MODEL_ID)
 }
 
 // Opt-in CDP debugging: when GITGROVE_DEBUG_PORT is set (e.g. `bun dev:debug`),
@@ -106,6 +114,31 @@ const menuContext: MenuContext = {
 }
 
 /**
+ * Bring `path` to the front the least surprising way: focus the window that
+ * already shows it, else reuse a window idling on the welcome screen, else
+ * open a fresh window. Used by the launcher shortcuts (dock menu, Jump List
+ * via second-instance) — never steals a window that has another repo open.
+ */
+function focusOrOpenRepo(path: string): void {
+  const raise = (win: Electron.BrowserWindow) => {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+  const showing = windows.windowShowing(path)
+  if (showing) {
+    raise(showing)
+    return
+  }
+  const idle = windows.welcomeWindow()
+  if (idle) {
+    raise(idle)
+    idle.webContents.send(IPC.openRepoRequest, path)
+    return
+  }
+  windows.createWindow(path)
+}
+
+/**
  * Open a folder, resolve it to a repo root, persist as recent, watch it, and
  * associate it with the window that asked (menu targeting + watcher set).
  * Returns a cheap summary (current branch only) so the renderer can switch
@@ -144,6 +177,11 @@ async function openRepoAtPath(rawPath: string, win: BrowserWindow | null): Promi
   // vanishes — best-effort, never block opening on it.
   const remoteUrl = await getRemoteCloneUrl(root).catch(() => null)
   rememberRepo({ path: summary.path, name: summary.name, remoteUrl })
+  // Feed the OS-managed recents (macOS): the Dock renders this list in the
+  // icon's menu even while GitGrove is *closed*; a click comes back as an
+  // 'open-file' event (handled below). The system owns pruning/ordering, so
+  // "Remove from Recents" in-app intentionally doesn't reach into it.
+  if (process.platform === 'darwin') app.addRecentDocument(summary.path)
   // Point the menu's repo actions and the watcher at the now-open repo.
   if (win && !win.isDestroyed()) windows.setOpenRepo(win, summary.path)
   return { ok: true, summary }
@@ -184,17 +222,30 @@ async function checkGit(force: boolean): Promise<GitAvailability> {
   }
 }
 
+// macOS hands us paths as 'open-file' Apple Events: a Dock-menu recent, a
+// folder dragged onto the dock icon, or "Open With → GitGrove" in Finder.
+// Before the app is ready the event beats window creation — stash the path as
+// the startup repo for the first window; afterwards route it like any other
+// launcher click. (Registered at top level: the event can fire pre-ready.)
+app.on('open-file', (event, path) => {
+  event.preventDefault()
+  if (app.isReady()) focusOrOpenRepo(path)
+  else startupRepoPath = path
+})
+
 // A second launch routed its argv here (see requestSingleInstanceLock above).
-// `--repo <path>` opens that repo in a new window — this is how "open two
-// GitGroves" behaves on Windows/Linux; a bare relaunch raises a window (or
-// recreates one if all were closed, e.g. on macOS with the app still running).
+// `--repo <path>` focuses or opens that repo (a Jump List recent, "open two
+// GitGroves" on Windows/Linux, shell aliases); `--new-window` (the Jump List
+// and Linux desktop-action task) opens a fresh window; a bare relaunch raises
+// a window (or recreates one if all were closed, e.g. on macOS with the app
+// still running).
 app.on('second-instance', (_e, argv) => {
   const repoPath = resolveStartupRepo(argv, {})
   if (repoPath) {
-    windows.createWindow(repoPath)
+    focusOrOpenRepo(repoPath)
     return
   }
-  if (windows.windowCount() === 0) {
+  if (hasNewWindowFlag(argv) || windows.windowCount() === 0) {
     windows.createWindow()
     return
   }
@@ -214,20 +265,20 @@ app.whenReady().then(() => {
     website: REPO_URL
   })
 
-  if (process.platform === 'darwin' && app.dock) {
-    // macOS ignores the BrowserWindow icon and shows the bundle icon in the
-    // dock; in dev that's the generic Electron icon, so override it explicitly.
-    if (isDev) {
-      // build/icon.png sits two levels up from out/main (ESM: no __dirname).
-      const devIconPath = join(dirname(fileURLToPath(import.meta.url)), '../../build/icon.png')
-      const img = nativeImage.createFromPath(devIconPath)
-      if (!img.isEmpty()) app.dock.setIcon(img)
-    }
-    // Finder-style dock menu: right-click the dock icon → "New Window".
-    app.dock.setMenu(
-      Menu.buildFromTemplate([{ label: 'New Window', click: () => windows.createWindow() }])
-    )
+  // macOS ignores the BrowserWindow icon and shows the bundle icon in the
+  // dock; in dev that's the generic Electron icon, so override it explicitly.
+  if (isDev && process.platform === 'darwin' && app.dock) {
+    // build/icon.png sits two levels up from out/main (ESM: no __dirname).
+    const devIconPath = join(dirname(fileURLToPath(import.meta.url)), '../../build/icon.png')
+    const img = nativeImage.createFromPath(devIconPath)
+    if (!img.isEmpty()) app.dock.setIcon(img)
   }
+
+  // Launcher shortcuts (dock menu / Jump List), rebuilt whenever the recents
+  // store changes. macOS recents ride the OS list instead — see app-shortcuts.
+  const shortcutActions = { newWindow: () => void windows.createWindow() }
+  refreshAppShortcuts(shortcutActions)
+  setRecentsChangedListener(() => refreshAppShortcuts(shortcutActions))
 
   registerIpc({
     windowFrom: (sender) => windows.windowFrom(sender),

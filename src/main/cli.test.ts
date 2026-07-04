@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { resolveStartupRepo } from './cli'
+import { hasNewWindowFlag, resolveStartupRepo } from './cli'
 
 const noEnv: NodeJS.ProcessEnv = {}
 
@@ -36,5 +36,17 @@ describe('resolveStartupRepo', () => {
   test('returns null when nothing requests a repo', () => {
     expect(resolveStartupRepo(['electron', '.'], noEnv)).toBeNull()
     expect(resolveStartupRepo([], { GITGROVE_OPEN_REPO: '  ' })).toBeNull()
+  })
+})
+
+describe('hasNewWindowFlag', () => {
+  test('spots --new-window anywhere in argv', () => {
+    expect(hasNewWindowFlag(['electron', '.', '--new-window'])).toBe(true)
+    expect(hasNewWindowFlag(['gitgrove', '--new-window', 'ignored'])).toBe(true)
+  })
+
+  test('requires the exact flag', () => {
+    expect(hasNewWindowFlag(['electron', '.'])).toBe(false)
+    expect(hasNewWindowFlag(['electron', '--new-window=1'])).toBe(false)
   })
 })

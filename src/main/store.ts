@@ -31,11 +31,20 @@ function read(): StoredRepo[] {
   }
 }
 
+// Fired after every successful write so OS surfaces built from the recents
+// (the macOS dock menu, the Windows Jump List — see app-shortcuts.ts) can
+// rebuild. One listener is all the app needs; a change bus would be ceremony.
+let recentsChangedListener: (() => void) | null = null
+export function setRecentsChangedListener(listener: () => void): void {
+  recentsChangedListener = listener
+}
+
 function write(repos: StoredRepo[]): void {
   try {
     const dir = app.getPath('userData')
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
     writeFileSync(storePath(), JSON.stringify(repos, null, 2), 'utf8')
+    recentsChangedListener?.()
   } catch {
     // non-fatal: recents are a convenience only
   }

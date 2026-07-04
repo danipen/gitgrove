@@ -143,6 +143,11 @@ const api: GitGroveApi = {
     ipcRenderer.on(IPC.repoChanged, listener)
     return () => ipcRenderer.removeListener(IPC.repoChanged, listener)
   },
+  onOpenRepoRequest: (handler) => {
+    const listener = (_e: unknown, path: string) => handler(path)
+    ipcRenderer.on(IPC.openRepoRequest, listener)
+    return () => ipcRenderer.removeListener(IPC.openRepoRequest, listener)
+  },
   onMenuOpenRepo: (handler) => {
     const listener = () => handler()
     ipcRenderer.on(IPC.menuOpenRepo, listener)

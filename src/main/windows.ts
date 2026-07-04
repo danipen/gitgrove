@@ -206,6 +206,25 @@ export class WindowManager {
     return win ? (this.repoByWindow.get(win.id) ?? null) : null
   }
 
+  /** The window that has `repoPath` open, or null. Paths compare exactly —
+   *  both sides are the normalized repo root the recents store persisted. */
+  windowShowing(repoPath: string): BrowserWindow | null {
+    for (const win of this.windows) {
+      if (!win.isDestroyed() && this.repoByWindow.get(win.id) === repoPath) return win
+    }
+    return null
+  }
+
+  /** A window idling on the welcome screen (no repo open, none pending), or
+   *  null — launcher shortcuts reuse it instead of spawning a sibling. */
+  welcomeWindow(): BrowserWindow | null {
+    for (const win of this.windows) {
+      if (win.isDestroyed()) continue
+      if (!this.repoByWindow.has(win.id) && !this.pendingRepoByWindow.has(win.id)) return win
+    }
+    return null
+  }
+
   /** The repo `win` was created to open, handed over exactly once. */
   takePendingRepo(win: BrowserWindow): string | null {
     const path = this.pendingRepoByWindow.get(win.id) ?? null

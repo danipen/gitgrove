@@ -1233,6 +1233,13 @@ export function App() {
       .catch(() => {})
   }, [openRepoByPath])
 
+  // A dock-menu / Jump List recent aimed at this window (it was idling on the
+  // welcome screen, so main reused it instead of opening a sibling window).
+  useEffect(
+    () => window.gitgrove.onOpenRepoRequest((path) => openRepoByPath(path)),
+    [openRepoByPath]
+  )
+
   // Git LFS health of the open repo + the one-click enable — see useLfs.
   const { lfsHealth, lfsDismissed, dismissLfs, lfsEnabling, enableLfs, probeLfsHealth } = useLfs(
     repo?.path,

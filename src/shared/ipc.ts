@@ -170,6 +170,8 @@ export const IPC = {
   menuPopup: 'menu:popup',
   // main -> renderer pushes
   repoChanged: 'repo:changed',
+  /** Open this repo path in this window (launcher shortcuts reusing a welcome-screen window). */
+  openRepoRequest: 'repo:open-request',
   menuOpenRepo: 'menu:open-repo',
   menuShowAbout: 'menu:about',
   /** Generic application-menu command (payload: a MenuCommand string). */
@@ -526,6 +528,11 @@ export interface GitGroveApi {
   onWindowMaximized(handler: (maximized: boolean) => void): () => void
   /** Subscribe to filesystem-driven repo change notifications. Returns an unsubscribe fn. */
   onRepoChanged(handler: (repoPath: string) => void): () => void
+  /**
+   * Subscribe to "open this repo here" requests — a dock-menu / Jump List
+   * recent landing in this window because it was idling on the welcome screen.
+   */
+  onOpenRepoRequest(handler: (path: string) => void): () => void
   /** Subscribe to the application menu "Open Repository" command. */
   onMenuOpenRepo(handler: () => void): () => void
   /** Subscribe to the "About GitGrove" menu command. */
