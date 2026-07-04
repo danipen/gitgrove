@@ -975,13 +975,17 @@ function drawWip(ctx: CanvasRenderingContext2D, scene: SceneState): void {
   const { palette } = scene
   if (!scene.wip) return
   const { column, row, count, color } = scene.wip
+  // The WIP node is never a hit (it isn't a commit), so while a filter or
+  // search dims the diagram it recedes with the non-matches — a full-strength
+  // "uncommitted" beside dimmed commits would read as a result.
+  const dim = scene.matches !== null
   const x = nodeX(column)
   const y = nodeY(row)
   const tipX = nodeX(column - 1)
   ctx.strokeStyle = branchStroke(palette, color)
   ctx.setLineDash([3, 3])
   ctx.lineWidth = 1.5
-  ctx.globalAlpha = 0.9
+  ctx.globalAlpha = dim ? DIM_ALPHA : 0.9
   ctx.beginPath()
   ctx.moveTo(tipX + NODE_R, y)
   ctx.lineTo(x - NODE_R, y)
@@ -990,7 +994,7 @@ function drawWip(ctx: CanvasRenderingContext2D, scene: SceneState): void {
   ctx.arc(x, y, NODE_R, 0, Math.PI * 2)
   ctx.stroke()
   ctx.setLineDash([])
-  ctx.globalAlpha = 1
+  ctx.globalAlpha = dim ? DIM_ALPHA : 1
   ctx.fillStyle = palette.subject
   ctx.font = `600 10px ${palette.font}`
   ctx.textAlign = 'center'
@@ -998,7 +1002,9 @@ function drawWip(ctx: CanvasRenderingContext2D, scene: SceneState): void {
   ctx.fillText(count > 99 ? '99+' : `+${count}`, x, y + 0.5)
   // Placed exactly like a commit's caption — same size, weight, capsule gap
   // and left edge — so the WIP node reads as one more entry in the chain.
+  // drawCaption multiplies the current alpha, so the dim carries through.
   drawCaption(ctx, scene, 'uncommitted', x - NODE_R, y, COL_W * 3.4)
+  ctx.globalAlpha = 1
 }
 
 function drawLabels(
@@ -1054,6 +1060,7 @@ function drawLabels(
       ctx.fillStyle = palette.labelBg
       ctx.fill()
     }
+    ctx.globalAlpha = inkAlpha
     ctx.fillStyle = head ? palette.accent : branchFill(palette, row.color, 0.15)
     ctx.fill()
     if (!head) {
