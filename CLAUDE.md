@@ -57,8 +57,8 @@ handlers), `menu.ts`, `watcher.ts` (pushes `repo:changed`), `updater.ts`, `store
 orchestration spine that wires the tabs together); `components/` (one component — or
 the hook that drives just that feature — per file) grouped by feature: `changes/`,
 `history/`, `graph/` (the Graph tab's 2D branch explorer: pure layout in `layout.ts`,
-canvas drawing in `render.ts`, interactions in `GraphCanvas.tsx` — keep layout logic
-pure and tested), `toolbar/`, `app/` (shell screens + app-level dialogs) and `common/` (shared
+crossing-aware row packing in `packing.ts`, canvas drawing in `render.ts`, interactions
+in `GraphCanvas.tsx` — keep layout logic pure and tested), `toolbar/`, `app/` (shell screens + app-level dialogs) and `common/` (shared
 widgets and primitives — same-folder imports stay relative, cross-folder go through `@/`);
 `lib/` (the **shared tier**: pure logic + hooks reused by 2+ features — a hook used by
 exactly one feature lives in that feature's folder, not here. `lib/staging.ts` is the
