@@ -85,6 +85,10 @@ export interface GraphNode {
   color: number
   refs: CommitRef[]
   isMerge: boolean
+  /** Palette slot of the branch that merged in (the first merge edge's color)
+   *  — the merge ring the renderer draws around the node. Null when the commit
+   *  isn't a merge or every merged parent fell outside the loaded window. */
+  mergeColor: number | null
   /** The checked-out commit (HEAD) — gets the marker ring. */
   isHead: boolean
   /** Some parents fell outside the loaded window (draw a continuation stub). */
@@ -587,6 +591,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       color: rows[chainId].color,
       refs: parseRefs(commit.refs),
       isMerge: commit.parents.length > 1,
+      mergeColor: null,
       // When HEAD is on a zero-commit branch, the marker belongs to the empty
       // lane (its GraphRow.isHead), never to the anchor commit's node.
       isHead: commit.hash === headHash && headEmptyChain === -1,
@@ -623,6 +628,9 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       // host several chains, so a same-row fork must still draw as a fork.
       const sameChain = chainOf.get(node.commit.hash) === chainOf.get(resolved)
       const kind: GraphEdgeKind = parentIdx > 0 ? 'merge' : sameChain ? 'line' : 'fork'
+      // The node's merge ring wears the first incoming merge edge's color —
+      // octopus merges keep one ring (parents[1]'s branch), not a color wheel.
+      if (kind === 'merge' && node.mergeColor === null) node.mergeColor = target.color
       edges.push({
         kind,
         // Merges carry the source branch's color, forks the new branch's.

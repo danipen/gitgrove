@@ -524,11 +524,15 @@ function drawNodes(
     }
 
     // Opaque backing disc: edges and spines terminate BEHIND the commit, so
-    // a dimmed (translucent) node never shows lines through its face.
+    // a dimmed (translucent) node never shows lines through its face. Merge
+    // nodes get a wider disc: it clears the air gap under the merge ring and
+    // makes every line dock at the ring's outer edge instead of vanishing
+    // beneath the avatar.
+    const isMergeNode = node.mergeColor !== null
     ctx.globalAlpha = 1
     ctx.fillStyle = palette.bg
     ctx.beginPath()
-    ctx.arc(x, y, NODE_R + 1.5, 0, Math.PI * 2)
+    ctx.arc(x, y, isMergeNode ? NODE_R + 5 : NODE_R + 1.5, 0, Math.PI * 2)
     ctx.fill()
     ctx.globalAlpha = dim ? DIM_ALPHA : 1
 
@@ -568,14 +572,27 @@ function drawNodes(
     ctx.beginPath()
     ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
     ctx.stroke()
+    // Merge ring: a second ring in the INCOMING branch's color, separated
+    // from the branch ring by a hair of background. Merge edges keep their
+    // source branch's color, so the ring completes the association — the
+    // green line docks into a green ring — and a merge link can never be
+    // misread as a fork link. Fork/parent ends stay bare.
+    if (node.mergeColor !== null) {
+      ctx.lineWidth = 2
+      ctx.strokeStyle = branchStroke(palette, node.mergeColor)
+      ctx.beginPath()
+      ctx.arc(x, y, NODE_R + 3.5, 0, Math.PI * 2)
+      ctx.stroke()
+    }
     if (isSelected) {
       // Outer accent ring: "this is picked" — selection only. The home
       // changeset wears the house badge below instead, so being at home
-      // never *looks* like a selection.
+      // never *looks* like a selection. On merge nodes it steps outside the
+      // merge ring — the two rings must never overlap.
       ctx.lineWidth = 2
       ctx.strokeStyle = palette.accent
       ctx.beginPath()
-      ctx.arc(x, y, NODE_R + 4, 0, Math.PI * 2)
+      ctx.arc(x, y, isMergeNode ? NODE_R + 7 : NODE_R + 4, 0, Math.PI * 2)
       ctx.stroke()
     }
     // Backport twin dot: this change also lives on another line — hover or

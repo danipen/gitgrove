@@ -74,6 +74,37 @@ describe('layoutGraph', () => {
     expect(merge?.toRow).toBe(feature.index)
   })
 
+  test('merge nodes carry the incoming branch color; other nodes carry none', () => {
+    // main: a ── b ───── m (merge)      feature: f1 ── f2
+    const layout = layoutGraph(
+      input([
+        commit('m', ['b', 'f2'], 'HEAD -> main'),
+        commit('f2', ['f1'], 'feature'),
+        commit('f1', ['a']),
+        commit('b', ['a']),
+        commit('a', [])
+      ])
+    )
+    const feature = rowNamed(layout, 'feature')
+    // The merge ring wears the merged-in branch's palette slot — the same
+    // color its merge edge draws in, so line and ring read as one thing.
+    expect(layout.nodeByHash.get('m')?.mergeColor).toBe(feature.color)
+    expect(layout.nodeByHash.get('b')?.mergeColor).toBeNull()
+    expect(layout.nodeByHash.get('f2')?.mergeColor).toBeNull()
+  })
+
+  test('a merge whose merged parent is outside the window gets no merge color', () => {
+    // m's second parent never loaded: still isMerge, but there is no incoming
+    // edge to color a ring after — the node draws as a plain commit.
+    const layout = layoutGraph(
+      input([commit('m', ['b', 'zzz'], 'HEAD -> main'), commit('b', ['a']), commit('a', [])])
+    )
+    const m = layout.nodeByHash.get('m')
+    expect(m?.isMerge).toBe(true)
+    expect(m?.mergeColor).toBeNull()
+    expect(m?.truncated).toBe(true)
+  })
+
   test('local and remote refs with one base name share a single row', () => {
     // origin/main two ahead of main; the walk from the remote tip claims both.
     const layout = layoutGraph(
