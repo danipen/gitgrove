@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { litChains, pingRings, withAlpha } from './searchGlow'
+import { computeSearchHits, hitKey, litChains, pingRings, withAlpha } from './searchGlow'
 
 describe('pingRings', () => {
   test('settled pulse draws nothing', () => {
@@ -75,5 +75,83 @@ describe('litChains', () => {
   test('no matches lights nothing (every label ghosts)', () => {
     const nodes = [node(0, 'a'), node(1, 'b')]
     expect(litChains(nodes, new Set()).size).toBe(0)
+  })
+
+  test('branch-label hits light their chain regardless of commits', () => {
+    const nodes = [node(0, 'a'), node(1, 'b')]
+    const lit = litChains(nodes, new Set(['a']), new Set([2]))
+    expect(lit.has(0)).toBe(true)
+    expect(lit.has(1)).toBe(false)
+    expect(lit.has(2)).toBe(true)
+  })
+})
+
+describe('computeSearchHits', () => {
+  const mkNode = (hash: string, subject: string, column: number, row = 0, refs: string[] = []) => ({
+    commit: { hash, subject, authorName: 'Dani', authorEmail: 'dani@x.com' },
+    refs: refs.map((name) => ({ name, isTag: name.startsWith('v') })),
+    column,
+    row
+  })
+  const mkRow = (chain: number, name: string, startColumn: number, index = chain) => ({
+    chain,
+    name,
+    index,
+    startColumn
+  })
+
+  test('nothing to filter by yields no hits', () => {
+    expect(computeSearchHits([], null, [mkNode('a', 'x', 0)], [mkRow(0, 'main', 0)])).toEqual([])
+  })
+
+  test('a branch name finds the LABEL, not any commit', () => {
+    const nodes = [mkNode('a', 'Modified cs 8', 5)]
+    const rows = [mkRow(0, 'main', 0), mkRow(1, 'something6-1', 6)]
+    expect(computeSearchHits(['something6-1'], null, nodes, rows)).toEqual([
+      { kind: 'branch', chain: 1 }
+    ])
+  })
+
+  test('a tag name finds the CHIP; multiple matching tags are one stop', () => {
+    const nodes = [mkNode('a', 'Release', 3, 0, ['v1.2.0', 'v1.2.0-rc1'])]
+    expect(computeSearchHits(['v1.2.0'], null, nodes, [])).toEqual([{ kind: 'tag', hash: 'a' }])
+  })
+
+  test('mixed hits order newest-first, ref hits just before their commit', () => {
+    const nodes = [mkNode('old', 'fix parser', 1, 0), mkNode('new', 'fix diff', 4, 0, ['vfix'])]
+    const rows = [mkRow(1, 'fix-layout', 2, 1)]
+    expect(computeSearchHits(['fix'], null, nodes, rows)).toEqual([
+      { kind: 'tag', hash: 'new' },
+      { kind: 'commit', hash: 'new' },
+      { kind: 'branch', chain: 1 },
+      { kind: 'commit', hash: 'old' }
+    ])
+  })
+
+  test('the author filter gates commits but never branches or tags', () => {
+    const nodes = [mkNode('a', 'fix things', 1, 0, ['vfix'])]
+    const rows = [mkRow(0, 'fix-layout', 0)]
+    const hits = computeSearchHits(['fix'], new Set(['other@x.com']), nodes, rows)
+    expect(hits).toEqual([
+      { kind: 'tag', hash: 'a' },
+      { kind: 'branch', chain: 0 }
+    ])
+  })
+
+  test('author filter alone (no terms) yields commit hits only', () => {
+    const nodes = [mkNode('a', 'anything', 0)]
+    const rows = [mkRow(0, 'main', 0)]
+    const hits = computeSearchHits([], new Set(['dani@x.com']), nodes, rows)
+    expect(hits).toEqual([{ kind: 'commit', hash: 'a' }])
+  })
+})
+
+describe('hitKey', () => {
+  test('stable, distinct identities per kind', () => {
+    expect(hitKey(null)).toBeNull()
+    expect(hitKey({ kind: 'commit', hash: 'a' })).toBe('commit:a')
+    expect(hitKey({ kind: 'tag', hash: 'a' })).toBe('tag:a')
+    expect(hitKey({ kind: 'branch', chain: 3 })).toBe('branch:3')
+    expect(hitKey({ kind: 'commit', hash: 'a' })).not.toBe(hitKey({ kind: 'tag', hash: 'a' }))
   })
 })

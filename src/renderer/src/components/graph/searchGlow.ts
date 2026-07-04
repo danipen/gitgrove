@@ -63,14 +63,91 @@ export function withAlpha(color: string, alpha: number): string {
   return value
 }
 
+/** A search result: a commit, a branch LABEL, or a tag chip. Searching a
+ *  branch or tag name finds the ref itself — its pill/chip glows and is what
+ *  Enter steps to — never the commit it happens to decorate. */
+export type SearchHit =
+  | { kind: 'commit'; hash: string }
+  | { kind: 'branch'; chain: number }
+  | { kind: 'tag'; hash: string }
+
+interface SearchableNode {
+  commit: { hash: string; subject: string; authorName: string; authorEmail: string }
+  refs: readonly { name: string; isTag: boolean }[]
+  column: number
+  row: number
+}
+
+interface SearchableRow {
+  chain: number
+  name: string
+  index: number
+  startColumn: number
+}
+
+/** All search results, ordered newest-first (descending column — the order
+ *  Enter steps through). The author filter gates commits only: branches and
+ *  tags have no author. With no terms it degrades to the author filter's
+ *  commit set, which feeds dimming while the search box is empty. */
+export function computeSearchHits(
+  terms: readonly string[],
+  authorFilter: ReadonlySet<string> | null,
+  nodes: readonly SearchableNode[],
+  rows: readonly SearchableRow[]
+): SearchHit[] {
+  if (terms.length === 0 && authorFilter === null) return []
+  const matchesTerms = (hay: string) => terms.every((t) => hay.includes(t))
+  const entries: { hit: SearchHit; column: number; order: number }[] = []
+  for (const node of nodes) {
+    const c = node.commit
+    const byAuthor = authorFilter === null || authorFilter.has(c.authorEmail.toLowerCase())
+    if (byAuthor && matchesTerms(`${c.subject} ${c.authorName} ${c.hash}`.toLowerCase())) {
+      entries.push({ hit: { kind: 'commit', hash: c.hash }, column: node.column, order: node.row })
+    }
+    // One tag hit per COMMIT, not per tag: all its tags render as one chip,
+    // and one chip on screen must be one stop when stepping.
+    if (terms.length > 0 && node.refs.some((r) => r.isTag && matchesTerms(r.name.toLowerCase()))) {
+      entries.push({
+        hit: { kind: 'tag', hash: c.hash },
+        column: node.column,
+        // The chip sits above its node — visit it just before the commit.
+        order: node.row - 0.5
+      })
+    }
+  }
+  if (terms.length > 0) {
+    for (const row of rows) {
+      if (matchesTerms(row.name.toLowerCase())) {
+        entries.push({
+          hit: { kind: 'branch', chain: row.chain },
+          column: row.startColumn,
+          order: row.index - 0.5
+        })
+      }
+    }
+  }
+  entries.sort((a, b) => b.column - a.column || a.order - b.order)
+  return entries.map((e) => e.hit)
+}
+
+/** Stable identity for a hit: effects key off it so the arrival ping re-fires
+ *  only when the TARGET changes, not when the hits array is rebuilt. */
+export function hitKey(hit: SearchHit | null): string | null {
+  if (hit === null) return null
+  return hit.kind === 'branch' ? `branch:${hit.chain}` : `${hit.kind}:${hit.hash}`
+}
+
 /** The chains (GraphRow.chain / GraphNode.chain) holding at least one match.
  *  Branch labels of chains with none ghost alongside their dimmed commits —
  *  a lit label over dimmed commits would claim a hit the branch doesn't have. */
 export function litChains(
   nodes: readonly { chain: number; commit: { hash: string } }[],
-  matches: ReadonlySet<string>
+  matches: ReadonlySet<string>,
+  /** Chains lit regardless of their commits — a branch-label hit stays at
+   *  full strength even though none of its commits matched. */
+  extra: ReadonlySet<number> | null = null
 ): ReadonlySet<number> {
-  const lit = new Set<number>()
+  const lit = new Set<number>(extra ?? [])
   for (const node of nodes) {
     if (matches.has(node.commit.hash)) lit.add(node.chain)
   }
