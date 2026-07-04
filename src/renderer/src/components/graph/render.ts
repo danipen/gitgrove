@@ -582,24 +582,19 @@ function drawNodes(
     ctx.globalAlpha = dim ? DIM_ALPHA : 1
 
     // Commit hits wear the text-editor find treatment, in gold: every hit a
-    // soft radial glow behind the node, the CURRENT hit a wider corona (plus
-    // a ring and an arrival ping, below). Gold, not the branch hue — hits
-    // must read across all branch colors at a glance. The glow fades to a
-    // zero-alpha stop of the SAME color: fading to `transparent` would drag
-    // the gradient through black and dirty the halo's rim. (Branch and tag
-    // hits glow their pill/chip instead — drawLabels / drawNodeText.)
+    // soft halo behind the node, the CURRENT hit a wider one (plus a ring and
+    // an arrival ping, below). Gold, not the branch hue — hits must read across
+    // all branch colors at a glance. The very same drawHitGlow a branch pill or
+    // a tag chip uses, so a result looks identical wherever it lives.
     const isActiveMatch =
       scene.activeHit?.kind === 'commit' && scene.activeHit.hash === node.commit.hash
     const isHit = scene.activeHit !== null && scene.matches?.has(node.commit.hash) === true
     if (isHit) {
-      const glowR = NODE_R + (isActiveMatch ? ACTIVE_GLOW : HIT_GLOW)
-      const glow = ctx.createRadialGradient(x, y, NODE_R - 2, x, y, glowR)
-      glow.addColorStop(0, withAlpha(palette.match, isActiveMatch ? 0.55 : 0.35))
-      glow.addColorStop(1, withAlpha(palette.match, 0))
-      ctx.fillStyle = glow
-      ctx.beginPath()
-      ctx.arc(x, y, glowR, 0, Math.PI * 2)
-      ctx.fill()
+      drawHitGlow(ctx, scene, isActiveMatch, () => {
+        ctx.beginPath()
+        ctx.arc(x, y, NODE_R, 0, Math.PI * 2)
+        ctx.fill()
+      })
     }
 
     // Selection halo, under everything else on the node.
@@ -949,22 +944,21 @@ function drawNodeText(
     // the chip yields and reappears as the user pans on.
     if (labelBoxes.some((b) => b.sticky && intersects(b.rect, chip))) return
     // A tag-name hit is the CHIP itself, in the same gold find treatment the
-    // branch labels wear: the chip stays at full strength (its commit didn't
-    // match — the tag did, so the node beneath keeps its dim), glow behind,
-    // gold border, and corona + ping when current.
+    // branch labels and commits wear: the chip stays at full strength (its
+    // commit didn't match — the tag did, so the node beneath keeps its dim),
+    // the shared halo behind it, gold border, and corona + ping when current.
     const isHitTag = scene.hitTags?.has(node.commit.hash) === true
     const isActiveTag = scene.activeHit?.kind === 'tag' && scene.activeHit.hash === node.commit.hash
-    if (isHitTag) ctx.globalAlpha = 1
+    if (isHitTag) {
+      ctx.globalAlpha = 1
+      drawHitGlow(ctx, scene, isActiveTag, () => {
+        ctx.beginPath()
+        ctx.roundRect(chip.x, chip.y, chip.w, chip.h, 4)
+        ctx.fill()
+      })
+    }
     ctx.beginPath()
     ctx.roundRect(chip.x, chip.y, chip.w, chip.h, 4)
-    if (isHitTag) {
-      ctx.save()
-      ctx.shadowColor = withAlpha(palette.match, isActiveTag ? 0.95 : 0.65)
-      ctx.shadowBlur = isActiveTag ? 12 : 8
-      ctx.fillStyle = palette.labelBg
-      ctx.fill()
-      ctx.restore()
-    }
     ctx.fillStyle = palette.labelBg
     ctx.fill()
     ctx.strokeStyle = isHitTag ? palette.match : palette.tag
@@ -1036,12 +1030,20 @@ function drawLabels(
     // ghost too: a zero-commit branch can never hold a match.)
     const ghost = lit !== null && !lit.has(row.chain)
     // A branch-name hit is the LABEL itself: the same gold find treatment
-    // commits get, pill-shaped — glow behind it, and for the current hit a
-    // corona ring plus the arrival ping (below). litChains keeps hit labels
-    // out of the ghost set, so a hit always draws at full strength.
+    // commits get, pill-shaped — the shared halo behind it, and for the current
+    // hit a corona ring plus the arrival ping (below). litChains keeps hit
+    // labels out of the ghost set, so a hit always draws at full strength.
     const isHitLabel = scene.hitBranches?.has(row.chain) === true
     const isActiveHit = scene.activeHit?.kind === 'branch' && scene.activeHit.chain === row.chain
     const inkAlpha = ghost ? LABEL_GHOST_ALPHA : row.kind === 'unnamed' ? 0.8 : 1
+    // The halo is cast behind the pill before its opaque body is laid over it.
+    if (isHitLabel) {
+      drawHitGlow(ctx, scene, isActiveHit, () => {
+        ctx.beginPath()
+        ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 5)
+        ctx.fill()
+      })
+    }
     // The opaque base NEVER ghosts: a translucent pill lets the capsule and
     // spine bleed through the text and reads as a glitch. Ghosting fades the
     // pill's ink — tint, border, name — while the body keeps masking the
@@ -1049,19 +1051,14 @@ function drawLabels(
     ctx.globalAlpha = row.kind === 'unnamed' ? 0.8 : 1
     ctx.beginPath()
     ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 5)
-    // A sticky pill floats over diagram content — a soft shadow makes the
-    // layering read as deliberate. A hit's gold bloom replaces it: a shadow,
-    // not a radial gradient — it hugs the rounded shape.
-    if (isHitLabel || sticky) {
+    // A sticky pill floats over diagram content — a soft drop shadow makes the
+    // layering read as deliberate. A hit skips it: its gold halo already lifts
+    // the pill off the diagram.
+    if (sticky && !isHitLabel) {
       ctx.save()
-      if (isHitLabel) {
-        ctx.shadowColor = withAlpha(palette.match, isActiveHit ? 0.95 : 0.65)
-        ctx.shadowBlur = isActiveHit ? 14 : 9
-      } else {
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.3)'
-        ctx.shadowBlur = 6
-        ctx.shadowOffsetY = 1
-      }
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.3)'
+      ctx.shadowBlur = 6
+      ctx.shadowOffsetY = 1
       ctx.fillStyle = palette.labelBg
       ctx.fill()
       ctx.restore()
@@ -1085,6 +1082,31 @@ function drawLabels(
     if (isActiveHit) drawRectPing(ctx, scene, rect, 5)
     ctx.globalAlpha = 1
   }
+}
+
+/** The soft gold bloom a search hit wears — the find grammar every glyph
+ *  shares: node disc, branch pill and tag chip all cast the SAME warm halo, so
+ *  a result reads the same wherever it lives. It's a Gaussian shadow thrown by
+ *  the glyph's own silhouette (`fillGlyph` traces + fills it); the glyph body
+ *  drawn on top hides that fill, leaving only the halo. canvas shadowBlur is
+ *  DEVICE-space — untouched by the world transform — so we pre-multiply it by
+ *  the zoom (`dpr * view.scale`) to hold the halo at a constant WORLD size that
+ *  grows and shrinks with the diagram, matching the node ring and the selection
+ *  halo (never a fixed-pixel glow that drifts as you zoom). */
+function drawHitGlow(
+  ctx: CanvasRenderingContext2D,
+  scene: SceneState,
+  active: boolean,
+  fillGlyph: () => void
+): void {
+  const { palette, view, dpr } = scene
+  ctx.save()
+  ctx.globalAlpha = 1
+  ctx.shadowColor = withAlpha(palette.match, active ? 0.9 : 0.6)
+  ctx.shadowBlur = (active ? ACTIVE_GLOW : HIT_GLOW) * dpr * view.scale
+  ctx.fillStyle = palette.match
+  fillGlyph()
+  ctx.restore()
 }
 
 /** The current hit's corona + arrival ping around a pill/chip rect — the
