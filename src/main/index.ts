@@ -18,6 +18,7 @@ import {
 } from './git/read'
 import { registerIpc } from './ipc'
 import { buildMenu, type MenuContext } from './menu'
+import { loadSession, saveSession } from './session-store'
 import { getRecentRepo, rememberRepo, setRecentsChangedListener } from './store'
 import { checkForUpdates, initAutoUpdater } from './updater'
 import { RepoWatcher } from './watcher'
@@ -86,9 +87,21 @@ const watcher = new RepoWatcher((repoPath) => {
   windows.broadcast(IPC.repoChanged, repoPath)
 })
 
+// True from the moment the app starts quitting. Quitting closes windows one
+// by one; without this flag that cascade would whittle the persisted session
+// down to nothing right before we want to restore it.
+let quitting = false
+
 const windows = new WindowManager({
   onOpenReposChanged: (openRepos) => watcher.sync(openRepos),
-  onMenuTargetChanged: () => rebuildMenuIfTargetChanged()
+  onMenuTargetChanged: () => rebuildMenuIfTargetChanged(),
+  onSessionChanged: (session) => {
+    // The empty snapshot is never saved: the last window's close is how the
+    // app ends (it *is* the quit on Windows/Linux), so the state just before
+    // it — that window and its repo — is exactly what the next launch should
+    // bring back. Windows closed while others remain drop out as expected.
+    if (!quitting && session.length > 0) saveSession(session)
+  }
 })
 
 // The menu's only window-dependent state is the focused window's repo (its
@@ -300,7 +313,19 @@ app.whenReady().then(() => {
     checkForUpdates: (manual) => checkForUpdates(pushUpdateStatus, manual)
   })
   rebuildMenuIfTargetChanged()
-  windows.createWindow()
+
+  // Restore last session's windows — every window with the repo it had open —
+  // unless a specific repo was requested (CLI `--repo`, a Dock recent while
+  // closed): an explicit ask opens exactly that, nothing else. Repos whose
+  // folder vanished since come back as the recovery screen, welcome-screen
+  // windows (null) as themselves; an empty/missing session is a fresh start.
+  const session = startupRepoPath !== null ? [] : loadSession()
+  if (session.length === 0) {
+    windows.createWindow()
+  } else {
+    for (const repoPath of session) windows.createWindow(repoPath ?? undefined)
+  }
+
   initAutoUpdater(pushUpdateStatus)
 
   app.on('activate', () => {
@@ -313,4 +338,7 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', () => watcher.unwatchAll())
+app.on('before-quit', () => {
+  quitting = true
+  watcher.unwatchAll()
+})

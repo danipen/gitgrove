@@ -43,6 +43,9 @@ export interface WindowManagerHooks {
   onOpenReposChanged(openRepos: ReadonlySet<string>): void
   /** The window the application menu should target changed (focus/open/close). */
   onMenuTargetChanged(): void
+  /** Windows opened/closed or changed repo — the snapshot to persist for
+   *  session restore (one entry per window, null = welcome screen). */
+  onSessionChanged(session: (string | null)[]): void
 }
 
 export class WindowManager {
@@ -147,6 +150,7 @@ export class WindowManager {
       if (this.lastFocused === win) this.lastFocused = null
       this.hooks.onOpenReposChanged(this.openRepos())
       this.hooks.onMenuTargetChanged()
+      this.hooks.onSessionChanged(this.sessionSnapshot())
     })
 
     if (isDev && process.env.ELECTRON_RENDERER_URL) {
@@ -155,6 +159,7 @@ export class WindowManager {
       win.loadFile(join(moduleDir, '../renderer/index.html'))
     }
 
+    this.hooks.onSessionChanged(this.sessionSnapshot())
     return win
   }
 
@@ -198,6 +203,18 @@ export class WindowManager {
     else this.repoByWindow.set(win.id, repoPath)
     this.hooks.onOpenReposChanged(this.openRepos())
     this.hooks.onMenuTargetChanged()
+    this.hooks.onSessionChanged(this.sessionSnapshot())
+  }
+
+  /** One entry per live window in creation order: the repo it shows — or was
+   *  created to open (pending counts, so a session saved mid-boot doesn't
+   *  read as a welcome window) — or null for the welcome screen. */
+  private sessionSnapshot(): (string | null)[] {
+    return [...this.windows]
+      .filter((win) => !win.isDestroyed())
+      .map(
+        (win) => this.repoByWindow.get(win.id) ?? this.pendingRepoByWindow.get(win.id) ?? null
+      )
   }
 
   /** The repo the application menu should act on: the focused window's. */
