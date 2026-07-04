@@ -138,7 +138,7 @@ const conflicts = (a: PackChain, b: PackChain): boolean =>
  */
 export function packRows(chains: readonly PackChain[], mainId: number): Map<number, number> {
   const rowOf = pack(chains, mainId)
-  improvePlacement(chains, mainId, rowOf)
+  improvePlacement(chains, rowOf)
   compactRows(rowOf)
   return rowOf
 }
@@ -229,9 +229,7 @@ function pack(chains: readonly PackChain[], mainId: number): Map<number, number>
     // A child never packs above its parent: candidates start strictly below
     // it. Release lines are exempt — their spine stack is fixed from row 1.
     const floor =
-      chain.releaseRank !== null || chain.parent === null
-        ? 1
-        : (rowOf.get(chain.parent) ?? 0) + 1
+      chain.releaseRank !== null || chain.parent === null ? 1 : (rowOf.get(chain.parent) ?? 0) + 1
     let row = floor
     if (chain.releaseRank !== null) {
       // Releases: pure first-fit. Cost-driven drift would let a busy window
@@ -274,7 +272,8 @@ function pack(chains: readonly PackChain[], mainId: number): Map<number, number>
       if (otherRow === undefined || stub.other === chain.id) continue
       const hi = Math.max(otherRow, row)
       for (let q = Math.min(otherRow, row) + 1; q < hi; q++) {
-        ;(through[q] ??= []).push(stub.column)
+        through[q] ??= []
+        through[q].push(stub.column)
       }
     }
   }
@@ -295,11 +294,7 @@ function pack(chains: readonly PackChain[], mainId: number): Map<number, number>
  *  Every accepted change strictly shrinks (crossings, total row distance)
  *  lexicographically, so the pass converges; MAX_SWEEPS caps it anyway.
  *  Mutates rowOf. */
-function improvePlacement(
-  chains: readonly PackChain[],
-  mainId: number,
-  rowOf: Map<number, number>
-): void {
+function improvePlacement(chains: readonly PackChain[], rowOf: Map<number, number>): void {
   // Every vertical with both ends placed, deduplicated by (pair, column):
   // mirrored stubs collapse to one segment, and two merges of the same pair
   // at one column draw as one line — one crossing, not two.
@@ -320,7 +315,10 @@ function improvePlacement(
   for (const c of chains) {
     if (c.parent === null) continue
     let list = children.get(c.parent)
-    if (!list) children.set(c.parent, (list = []))
+    if (!list) {
+      list = []
+      children.set(c.parent, list)
+    }
     list.push(c)
   }
 
@@ -360,8 +358,7 @@ function improvePlacement(
     )
   /** Parent above, every child below — with the pair's swapped rows. */
   const floorsHold = (c: PackChain, row: number, otherId: number, otherRow: number): boolean => {
-    const rowAt = (id: number): number | undefined =>
-      id === otherId ? otherRow : rowOf.get(id)
+    const rowAt = (id: number): number | undefined => (id === otherId ? otherRow : rowOf.get(id))
     const parentRow = c.parent === null ? 0 : (rowAt(c.parent) ?? 0)
     if (row <= parentRow) return false
     return (children.get(c.id) ?? []).every((child) => {

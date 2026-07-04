@@ -32,19 +32,13 @@ describe('packRows', () => {
   })
 
   test('non-overlapping chains share a row (density before everything)', () => {
-    const rows = packRows(
-      [chain(1, { start: 0, end: 5 }), chain(2, { start: 7, end: 12 })],
-      MAIN
-    )
+    const rows = packRows([chain(1, { start: 0, end: 5 }), chain(2, { start: 7, end: 12 })], MAIN)
     expect(rows.get(1)).toBe(1)
     expect(rows.get(2)).toBe(1)
   })
 
   test('overlapping chains stack on separate rows', () => {
-    const rows = packRows(
-      [chain(1, { start: 0, end: 5 }), chain(2, { start: 3, end: 12 })],
-      MAIN
-    )
+    const rows = packRows([chain(1, { start: 0, end: 5 }), chain(2, { start: 3, end: 12 })], MAIN)
     expect(rows.get(1)).not.toBe(rows.get(2))
   })
 
