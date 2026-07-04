@@ -120,7 +120,8 @@ export function ErrorDialog({ message, info, ai, onClose }: Props) {
 
       <div className="errdlg__actions">
         <div className="errdlg__actions-left">
-          {!noteOpen && (
+          {/* Hidden once the note streams; back for a retry when it failed. */}
+          {(!noteOpen || (failure && !explanation.generating)) && (
             <button
               ref={explainRef}
               className="btn-ghost btn-ghost--sm"

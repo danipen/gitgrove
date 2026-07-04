@@ -67,7 +67,7 @@ export function AiExplainCommit({ repoPath, hash, onSetupAi }: Props) {
           open={teaserOpen}
           onClose={() => setTeaserOpen(false)}
           title="Explain this commit with AI"
-          body="What changed, why it likely changed and what to watch out for — built from the commit and its history."
+          body="What changed, why it likely changed and what to watch out for — from the commit itself."
           onSetup={onSetupAi}
         />
       </div>
@@ -80,6 +80,17 @@ export function AiExplainCommit({ repoPath, hash, onSetupAi }: Props) {
         <Icon.Sparkle size={13} />
         <span className="ai-note__title">AI explanation</span>
         {explanation.generating && <span className="ai-btn__spinner" aria-hidden />}
+        {failure && !explanation.generating && (
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Try again"
+            data-tip="Try again"
+            onClick={explain}
+          >
+            <Icon.Refresh size={12} />
+          </button>
+        )}
         <button
           type="button"
           className="icon-btn ai-note__close"
