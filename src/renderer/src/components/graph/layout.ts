@@ -7,8 +7,9 @@
 // don't belong to a branch, so branches are reconstructed by walking
 // first-parent chains down from each tip, in priority order (default branch
 // first, so it owns the mainline spine; then release lines, newest version
-// first — see releases.ts; then the checked-out branch; then the rest, newest
-// tip first). Local and remote refs with the same base name
+// first — see releases.ts; then branches whose tip was merged away, so they
+// keep the commits they carried into that merge; then the checked-out branch;
+// then the rest, newest tip first). Local and remote refs with the same base name
 // ("main" / "origin/main") share one chain — the walk starts at the newer tip
 // and passes through the older one. Commits left unclaimed (their branch was
 // deleted after merging) become "unnamed" chains, labelled from the merge
@@ -17,9 +18,10 @@
 // Rows are then PACKED: the mainline keeps row 0 to itself, release lines
 // stack directly beneath it (newest version first — a stable "spine stack"
 // that keeps maintenance branches in the same rows), and every other chain
-// goes to the lowest row where its column span (plus room for its label)
-// doesn't collide — so short-lived branches that never overlap in time share
-// a row instead of staircasing down the canvas.
+// goes to the lowest row BELOW the chain it forked from where its column span
+// (plus room for its label) doesn't collide — child branches hang beneath
+// their parent, and short-lived branches that never overlap in time share a
+// row instead of staircasing down the canvas.
 
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
@@ -47,12 +49,30 @@ export interface GraphRow {
    *  or null for a chain that starts at a root commit. Feeds the
    *  branch-changes view: everything in `base..tip` is what the branch did. */
   baseHash: string | null
+  /** True for a zero-commit branch: a ref pointing at another chain's commit
+   *  (freshly created, nothing committed yet). Its lane is one reserved slot
+   *  right of that anchor commit; tipHash and baseHash both name the anchor,
+   *  so the branch-changes range `base..tip` is honestly empty. */
+  empty: boolean
   /** Palette slot — stable per branch name, 0 reserved for the mainline. */
   color: number
   /** Inclusive column span of the row's nodes. */
   startColumn: number
   endColumn: number
 }
+
+/** Identifies the row whose branch-changes view is open. A tip hash alone is
+ *  ambiguous: every empty branch shares its anchor commit's hash with the
+ *  chain that owns it (and with its fellow empty branches), so selection
+ *  matches on (name, tip) — the pair is unique across rows. */
+export interface BranchSelection {
+  name: string
+  tipHash: string
+}
+
+/** True when `row` is the branch `sel` names — see BranchSelection. */
+export const rowMatchesSelection = (row: GraphRow, sel: BranchSelection | null): boolean =>
+  sel !== null && row.tipHash === sel.tipHash && row.name === sel.name
 
 export interface GraphNode {
   commit: Commit
@@ -65,6 +85,10 @@ export interface GraphNode {
   color: number
   refs: CommitRef[]
   isMerge: boolean
+  /** Palette slot of the branch that merged in (the first merge edge's color)
+   *  — the merge ring the renderer draws around the node. Null when the commit
+   *  isn't a merge or every merged parent fell outside the loaded window. */
+  mergeColor: number | null
   /** The checked-out commit (HEAD) — gets the marker ring. */
   isHead: boolean
   /** Some parents fell outside the loaded window (draw a continuation stub). */
@@ -156,6 +180,8 @@ interface Chain {
   name: string
   kind: GraphRowKind
   tipHash: string
+  /** Zero-commit branch: tipHash is another chain's commit (see GraphRow.empty). */
+  empty?: boolean
 }
 
 /** Strip a known remote prefix: `origin/foo` → base `foo`, marked remote. */
@@ -175,6 +201,15 @@ function isHeadDecoration(refs: string): boolean {
 function branchNameFromMergeSubject(subject: string): string | null {
   const m = subject.match(/^Merge (?:remote-tracking )?branch '([^']+)'/)
   return m ? m[1] : null
+}
+
+/** Every non-first parent in the window: the tips merges pulled in. */
+function collectMergeSourceHashes(commits: readonly Commit[]): Set<string> {
+  const sources = new Set<string>()
+  for (const c of commits) {
+    for (const parent of c.parents.slice(1)) sources.add(parent)
+  }
+  return sources
 }
 
 /** A chain's release-line version — named branches only: an unnamed chain
@@ -216,11 +251,11 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
     }
   })
   // Tips arrive newest-first already (commits are date-ordered); order groups:
-  // default branch, then release lines newest version first, then the
-  // checked-out branch, then by newest tip. Claim order doubles as importance:
-  // pinning a release line lets it claim its own spine before the feature
-  // branches forked from it, whose newer tips would otherwise walk down the
-  // first parents and take its commits.
+  // default branch, then release lines newest version first, then merged-away
+  // branches, then the checked-out branch, then by newest tip. Claim order
+  // doubles as importance: pinning a release line lets it claim its own spine
+  // before the feature branches forked from it, whose newer tips would
+  // otherwise walk down the first parents and take its commits.
   const ordered = [...groups.entries()].sort((a, b) => a[1][0].order - b[1][0].order)
   const named = ordered.map(([base, tips]) => ({ base, tips }))
   const pin = (base: string | null) => {
@@ -229,6 +264,14 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
     if (i > 0) named.unshift(...named.splice(i, 1))
   }
   pin(input.headBranch || null)
+  // A branch whose tip was merged away owns the commits it carried into that
+  // merge: it claims before the checked-out branch and other unmerged tips,
+  // or a branch forked from its middle would walk down the first parents and
+  // steal its spine — leaving the merged branch a single orphaned commit.
+  const mergeSources = collectMergeSourceHashes(input.commits)
+  for (const { base } of named.filter((g) => mergeSources.has(g.tips[0].hash)).reverse()) {
+    pin(base)
+  }
   for (const base of releaseLinesNewestFirst(named, input).reverse()) pin(base)
   pin(input.defaultBranch)
   return named
@@ -261,11 +304,10 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   // (a tip that is a merge source has been merged), structureOnly (merge
   // sources are structure), unnamed-chain naming, and the merge lead-out each
   // chain's packing interval reserves.
-  const mergeSources = new Set<string>()
+  const mergeSources = collectMergeSourceHashes(commits)
   const mergeChildOf = new Map<string, Commit>()
   for (const c of commits) {
     for (const parent of c.parents.slice(1)) {
-      mergeSources.add(parent)
       if (!mergeChildOf.has(parent)) mergeChildOf.set(parent, c)
     }
   }
@@ -299,12 +341,33 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     const hasLocalRef = group.tips.some((t) => !t.isRemote)
     // The newest tip's walk usually passes through the older ones (local behind
     // remote). A genuinely diverged older tip starts its own row, same name.
+    let claimed = false
     for (const tip of group.tips) {
-      claim(tip.hash, {
+      const chain: Chain = {
         name: group.base,
         kind: hasLocalRef ? 'branch' : 'remote',
         tipHash: tip.hash
-      })
+      }
+      if (claim(tip.hash, chain)) claimed = true
+    }
+    // A branch created at another branch's commit with nothing committed yet:
+    // every tip walk found its commits already claimed by a higher-priority
+    // chain. It's still a real branch the user can be on — reserve it an
+    // EMPTY lane anchored at the commit it points to, instead of letting it
+    // vanish from the diagram. Except `origin/HEAD`: its base splits to
+    // "HEAD", which is a pointer at the remote's default branch, not a branch
+    // anyone can be on — an empty "HEAD" lane is pure noise. (When such a ref
+    // genuinely claims commits above, it still shows, as before.)
+    if (!claimed && group.base !== 'HEAD') {
+      const anchor = group.tips.find((t) => chainOf.has(t.hash))
+      if (anchor) {
+        chains.push({
+          name: group.base,
+          kind: hasLocalRef ? 'branch' : 'remote',
+          tipHash: anchor.hash,
+          empty: true
+        })
+      }
     }
   }
 
@@ -325,6 +388,13 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       claim(c.hash, { name, kind: 'unnamed', tipHash: c.hash })
     }
   }
+
+  // HEAD on a zero-commit branch: the ref decoration sits on the anchor
+  // commit (another chain's node), but "you are here" is the empty lane —
+  // it wears isHead (home badge, WIP node) and the anchor node stays plain.
+  const headEmptyChain = input.detached
+    ? -1
+    : chains.findIndex((c) => c.empty && c.name === input.headBranch && c.tipHash === headHash)
 
   // ── Structure-only: collapse the linear runs between structural commits ───
   // A commit survives when it shapes the graph: chain tip or start, merge,
@@ -376,21 +446,63 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     s.end = Math.max(s.end, column)
     s.oldest = c
   }
+  // Empty chains hold no commits: their lane is the single slot just right of
+  // the anchor commit — where their first commit will land. (The anchor is
+  // always kept: it's a claimed commit and a chain tip, so structure-only
+  // keeps it too.)
+  chains.forEach((chain, id) => {
+    if (!chain.empty) return
+    const slot = (columnOf.get(chain.tipHash) ?? -1) + 1
+    span[id].start = slot
+    span[id].end = slot
+  })
 
   // ── Row packing: mainline alone on row 0; everyone else first-fit below ───
   // "As near to main as possible": each chain takes the lowest row whose
   // occupied column intervals don't collide with its own (padded for the
-  // label). The HEAD chain is placed first so it lands closest to the top.
-  const headChain = headHash !== null ? chainOf.get(headHash) : undefined
+  // label) — but never above the chain it forked from: a child branch always
+  // hangs beneath its parent, however new its tip or where HEAD sits.
+  // Packing priority follows the branch the user is ON — the empty lane when
+  // HEAD sits on a zero-commit branch. The mainline fallback stays the anchor
+  // chain: an empty lane can't own the row-0 spine.
+  const anchorHeadChain = headHash !== null ? chainOf.get(headHash) : undefined
+  const headChain = headEmptyChain !== -1 ? headEmptyChain : anchorHeadChain
   const defaultChain = chains.findIndex(
     (c) => c.name === input.defaultBranch && c.kind !== 'unnamed'
   )
-  const mainChain = defaultChain !== -1 ? defaultChain : (headChain ?? (chains.length > 0 ? 0 : -1))
+  const mainChain =
+    defaultChain !== -1 ? defaultChain : (anchorHeadChain ?? (chains.length > 0 ? 0 : -1))
   const rowOfChain = new Map<number, number>()
   if (mainChain >= 0) rowOfChain.set(mainChain, 0)
+  // A chain's fork base: the commit it grew from — for an empty chain, the
+  // anchor commit itself (the lane grows from where its first commit will
+  // fork off).
+  const baseHashOf = (id: number): string | null =>
+    chains[id].empty ? chains[id].tipHash : (span[id].oldest?.parents[0] ?? null)
+  // The chain owning the commit this chain grew from (its fork parent), and
+  // the fork depth below the mainline (mainline 0, branches off it 1, …).
+  // Depth orders the packing parent-before-child, so every child's floor row
+  // is already resolved when its turn comes.
+  const parentChainOf = (id: number): number | undefined => {
+    const base = baseHashOf(id)
+    return base === null ? undefined : chainOf.get(base)
+  }
+  const depths = new Map<number, number>()
+  const depthOf = (id: number): number => {
+    if (id === mainChain) return 0
+    const cached = depths.get(id)
+    if (cached !== undefined) return cached
+    // Chains can't cycle (bases only point at older columns); keeps the walk total.
+    depths.set(id, 1)
+    const parent = parentChainOf(id)
+    const depth = parent === undefined ? 1 : depthOf(parent) + 1
+    depths.set(id, depth)
+    return depth
+  }
   // Release lines pack before everything else, newest version first, so they
   // stack directly under the mainline — maintenance branches always live in
-  // the same rows, whatever else is going on. HEAD's chain follows, then the
+  // the same rows, whatever else is going on. Then by fork depth (parents
+  // before their children), HEAD's chain first within its depth, then the
   // rest by start column so packing stays dense.
   const releaseRank = new Map<number, number>()
   chains
@@ -407,6 +519,8 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     .sort((a, b) => {
       const releases = (releaseRank.get(a) ?? NOT_RELEASE) - (releaseRank.get(b) ?? NOT_RELEASE)
       if (releases !== 0) return releases
+      const depth = depthOf(a) - depthOf(b)
+      if (depth !== 0) return depth
       if (a === headChain) return -1
       if (b === headChain) return 1
       return span[a].start - span[b].start
@@ -418,14 +532,20 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     // lead-in to the left, the merge lead-out to the right (the orthogonal
     // connector runs along the row — see render.ts) — so no other chain on
     // the row ever sits underneath those runs.
-    const forkColumn = columnOf.get(span[id].oldest?.parents[0] ?? '')
-    const mergeChild = mergeChildOf.get(chains[id].tipHash)
+    const forkColumn = columnOf.get(baseHashOf(id) ?? '')
+    // An empty chain's tipHash names another chain's commit — a merge of that
+    // commit is the OWNER's lead-out to reserve, not the empty lane's.
+    const mergeChild = chains[id].empty ? undefined : mergeChildOf.get(chains[id].tipHash)
     const mergeColumn = mergeChild ? columnOf.get(mergeChild.hash) : undefined
     const interval = {
       start: Math.min(span[id].start - LABEL_PAD_COLUMNS, forkColumn ?? Number.MAX_SAFE_INTEGER),
       end: Math.max(span[id].end + 1, mergeColumn ?? -1)
     }
-    let row = 0
+    // A child branch never packs above its parent: the scan starts at the
+    // parent's row, so the first candidate row already sits below it. Release
+    // lines are exempt — their spine stack under the mainline is fixed.
+    const parent = parentChainOf(id)
+    let row = releaseRank.has(id) || parent === undefined ? 0 : (rowOfChain.get(parent) ?? 0)
     while (true) {
       const taken = occupied[row]
       if (!taken?.some((t) => interval.start <= t.end && t.start <= interval.end)) {
@@ -448,11 +568,13 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     kind: chain.kind,
     isHead: false,
     tipHash: chain.tipHash,
-    baseHash: span[id].oldest?.parents[0] ?? null,
+    baseHash: baseHashOf(id),
     color: id === mainChain ? 0 : colorForName(chain.name),
     startColumn: span[id].start,
-    endColumn: span[id].end
+    endColumn: span[id].end,
+    empty: chain.empty === true
   }))
+  if (headEmptyChain !== -1) rows[headEmptyChain].isHead = true
 
   // ── Nodes ──────────────────────────────────────────────────────────────────
   const nodes: GraphNode[] = []
@@ -469,7 +591,10 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       color: rows[chainId].color,
       refs: parseRefs(commit.refs),
       isMerge: commit.parents.length > 1,
-      isHead: commit.hash === headHash,
+      mergeColor: null,
+      // When HEAD is on a zero-commit branch, the marker belongs to the empty
+      // lane (its GraphRow.isHead), never to the anchor commit's node.
+      isHead: commit.hash === headHash && headEmptyChain === -1,
       truncated: false
     }
     nodes.push(node)
@@ -503,6 +628,9 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       // host several chains, so a same-row fork must still draw as a fork.
       const sameChain = chainOf.get(node.commit.hash) === chainOf.get(resolved)
       const kind: GraphEdgeKind = parentIdx > 0 ? 'merge' : sameChain ? 'line' : 'fork'
+      // The node's merge ring wears the first incoming merge edge's color —
+      // octopus merges keep one ring (parents[1]'s branch), not a color wheel.
+      if (kind === 'merge' && node.mergeColor === null) node.mergeColor = target.color
       edges.push({
         kind,
         // Merges carry the source branch's color, forks the new branch's.
@@ -516,6 +644,25 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       })
     })
   }
+
+  // Empty lanes still show WHERE the branch will grow from: a fork connector
+  // from the anchor commit into the reserved slot. Both hashes name the
+  // anchor, so filter dimming treats the connector like the commit it's on.
+  chains.forEach((chain, id) => {
+    if (!chain.empty) return
+    const anchor = nodeByHash.get(chain.tipHash)
+    if (!anchor) return
+    edges.push({
+      kind: 'fork',
+      color: rows[id].color,
+      fromHash: chain.tipHash,
+      toHash: chain.tipHash,
+      fromColumn: span[id].start,
+      fromRow: rowOfChain.get(id) ?? 0,
+      toColumn: anchor.column,
+      toRow: anchor.row
+    })
+  })
 
   rows.sort((a, b) => a.index - b.index || a.startColumn - b.startColumn)
   return { rows, rowCount, nodes, edges, columnCount: kept.length, nodeByHash, headHash }

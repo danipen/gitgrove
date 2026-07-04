@@ -118,11 +118,19 @@ export const nodeY = (row: number): number => MARGIN_Y + row * ROW_H + ROW_H / 2
 export const toWorldX = (view: View, screenX: number): number => (screenX - view.x) / view.scale
 export const toWorldY = (view: View, screenY: number): number => (screenY - view.y) / view.scale
 
-/** World-space size of the whole diagram (an extra column when a WIP node shows). */
-export function contentSize(layout: GraphLayout, wip: boolean): { width: number; height: number } {
-  const columns = layout.columnCount + (wip ? 1 : 0)
+/** World-space size of the whole diagram. `wipColumn` is the WIP node's
+ *  column when it shows, or null. Both it and an empty branch's reserved slot
+ *  can sit past the last commit column, so width follows the rightmost of
+ *  commits, row spans and the WIP node. */
+export function contentSize(
+  layout: GraphLayout,
+  wipColumn: number | null
+): { width: number; height: number } {
+  let last = layout.columnCount - 1
+  for (const row of layout.rows) last = Math.max(last, row.endColumn)
+  if (wipColumn !== null) last = Math.max(last, wipColumn)
   return {
-    width: MARGIN_X * 2 + Math.max(1, columns) * COL_W,
+    width: MARGIN_X * 2 + Math.max(1, last + 1) * COL_W,
     height: MARGIN_Y + Math.max(1, layout.rowCount) * ROW_H + ROW_H / 2
   }
 }

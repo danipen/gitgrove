@@ -30,7 +30,14 @@ import {
   toWorldX,
   type View
 } from './geometry'
-import { BRANCH_COLOR_COUNT, type GraphLayout, type GraphNode, type GraphRow } from './layout'
+import {
+  BRANCH_COLOR_COUNT,
+  type BranchSelection,
+  type GraphLayout,
+  type GraphNode,
+  type GraphRow,
+  rowMatchesSelection
+} from './layout'
 import { type BackportLink, linkedHashes } from './links'
 
 export interface GraphPalette {
@@ -135,8 +142,8 @@ export interface SceneState {
   dpr: number
   palette: GraphPalette
   selectedHash: string | null
-  /** Tip hash of the branch whose changes view is open — its container lights up. */
-  selectedBranchTip: string | null
+  /** The branch whose changes view is open — its container lights up. */
+  selectedBranch: BranchSelection | null
   hoverHash: string | null
   /** Commits kept at full strength while everything else dims (filters/search),
    *  or null when nothing is filtering. */
@@ -150,6 +157,9 @@ export interface SceneState {
 }
 
 const LABEL_FONT = 11
+/** Breathing room the day-header label keeps from its segment's right boundary
+ *  so it never touches the next day's label (drawHeader). */
+const HEADER_LABEL_PAD = 6
 /** Caption font in SCREEN px: captions render map-label style — a constant
  *  on-screen size at any zoom. Size and weight must mirror .graph-tip__subject
  *  in graph.css exactly: the expansion card's first line sits on the caption's
@@ -283,6 +293,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, scene: SceneState): voi
   drawBackportLinks(ctx, scene, c0, c1)
   drawNodes(ctx, scene, c0, c1, labelBoxes, twinsOf(scene.links))
   drawWip(ctx, scene)
+  drawEmptyHeadBadge(ctx, scene, c0, c1)
   drawLabels(ctx, scene, labelBoxes)
 
   drawHeader(ctx, scene)
@@ -315,7 +326,7 @@ function drawContainers(
   const { palette, wip } = scene
   for (const row of scene.layout.rows) {
     if (row.endColumn < c0 - 1 || row.startColumn > c1 + 1) continue
-    const selected = row.tipHash === scene.selectedBranchTip
+    const selected = rowMatchesSelection(row, scene.selectedBranch)
     const y = nodeY(row.index)
     const x0 = nodeX(row.startColumn) - NODE_R - CAPSULE_PAD
     // The HEAD branch's capsule stretches to embrace the WIP node.
@@ -388,8 +399,9 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
     ctx.beginPath()
     if (py === cy) {
       // Same-row hop (criss-cross merge / packed-row fork): a shallow arc.
+      const controlY = py - CAPSULE_HALF_H - 14
       ctx.moveTo(px, py - NODE_R)
-      ctx.quadraticCurveTo((px + cx) / 2, py - CAPSULE_HALF_H - 14, cx, cy - NODE_R)
+      ctx.quadraticCurveTo((px + cx) / 2, controlY, cx, cy - NODE_R)
     } else if (edge.kind === 'fork') {
       // Orthogonal, Plastic-style: drop straight down/up the fork column,
       // then run along the child's row into its first commit. Long runs
@@ -513,7 +525,10 @@ function drawNodes(
     }
 
     // Opaque backing disc: edges and spines terminate BEHIND the commit, so
-    // a dimmed (translucent) node never shows lines through its face.
+    // a dimmed (translucent) node never shows lines through its face. Merge
+    // nodes wear a second ring but keep the same outer size as every other
+    // node (see below), so they share the same backing disc — every line
+    // docks at the ring's outer edge.
     ctx.globalAlpha = 1
     ctx.fillStyle = palette.bg
     ctx.beginPath()
@@ -531,13 +546,19 @@ function drawNodes(
     }
 
     // Face: colored initials disc, covered by the avatar image once loaded.
+    // Merge nodes carry a second (inner) ring, so their face shrinks to sit
+    // inside it — the ring frames the avatar instead of cutting across it. The
+    // face reaches the inner ring's inner edge (10 − 0.75) with the same 0.5px
+    // overlap a normal node's ring has, so the ring sits ON the avatar edge
+    // with no hairline of background between them.
+    const faceR = node.mergeColor !== null ? NODE_R - 2.25 : NODE_R
     const image = avatarImageFor(node.commit.authorName, node.commit.authorEmail)
     ctx.beginPath()
-    ctx.arc(x, y, NODE_R, 0, Math.PI * 2)
+    ctx.arc(x, y, faceR, 0, Math.PI * 2)
     if (image) {
       ctx.save()
       ctx.clip()
-      ctx.drawImage(image, x - NODE_R, y - NODE_R, NODE_R * 2, NODE_R * 2)
+      ctx.drawImage(image, x - faceR, y - faceR, faceR * 2, faceR * 2)
       ctx.restore()
     } else {
       ctx.fillStyle = avatarColor(node.commit.authorEmail || node.commit.authorName)
@@ -552,15 +573,37 @@ function drawNodes(
     // Ring in the branch color; louder states stack on top.
     const isActiveMatch = node.commit.hash === scene.activeMatch
     const isHover = node.commit.hash === scene.hoverHash
-    ctx.lineWidth = isHover || isActiveMatch ? 2.5 : 2
-    ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.color)
-    ctx.beginPath()
-    ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
-    ctx.stroke()
+    const emphasized = isHover || isActiveMatch
+    if (node.mergeColor !== null) {
+      // Merge nodes carry TWO concentric rings, but both are squeezed into the
+      // footprint of a single ring so a merge commit is exactly the same size
+      // as every other node — no ballooning. The outer ring is the INCOMING
+      // branch's color, sitting at the normal ring radius where the merge edge
+      // docks: the green line docks into a green ring, so a merge link can
+      // never be misread as a fork link. This node's own branch color tucks
+      // just inside it, a hair of background between them.
+      ctx.lineWidth = 1.5
+      ctx.strokeStyle = branchStroke(palette, node.color)
+      ctx.beginPath()
+      ctx.arc(x, y, NODE_R - 2, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.lineWidth = emphasized ? 2.5 : 2
+      ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.mergeColor)
+      ctx.beginPath()
+      ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
+      ctx.stroke()
+    } else {
+      ctx.lineWidth = emphasized ? 2.5 : 2
+      ctx.strokeStyle = isActiveMatch ? palette.match : branchStroke(palette, node.color)
+      ctx.beginPath()
+      ctx.arc(x, y, NODE_R + 0.5, 0, Math.PI * 2)
+      ctx.stroke()
+    }
     if (isSelected) {
       // Outer accent ring: "this is picked" — selection only. The home
       // changeset wears the house badge below instead, so being at home
-      // never *looks* like a selection.
+      // never *looks* like a selection. Merge nodes are the same size now, so
+      // it sits at the same radius for every node.
       ctx.lineWidth = 2
       ctx.strokeStyle = palette.accent
       ctx.beginPath()
@@ -596,6 +639,24 @@ function drawNodes(
   }
 }
 
+/** HEAD on a zero-commit branch: no node carries isHead (layout moves it to
+ *  the empty lane's row), so the home badge anchors to the lane's reserved
+ *  slot — where the branch's first commit will land. Centered in the slot,
+ *  not on the shoulder: the shoulder spot sits right under the accent label
+ *  pill, and blue-on-blue melts the badge into it. */
+function drawEmptyHeadBadge(
+  ctx: CanvasRenderingContext2D,
+  scene: SceneState,
+  c0: number,
+  c1: number
+): void {
+  for (const row of scene.layout.rows) {
+    if (!row.empty || !row.isHead) continue
+    if (row.endColumn < c0 || row.startColumn > c1) continue
+    drawHomeBadge(ctx, scene, nodeX(row.startColumn), nodeY(row.index), 'center')
+  }
+}
+
 /** "You are here": a small accent house pinned to the home changeset's
  *  shoulder. A badge, not a ring — the outer accent ring means "selected",
  *  and the two states must never look alike. It behaves like a map pin:
@@ -606,7 +667,11 @@ function drawHomeBadge(
   ctx: CanvasRenderingContext2D,
   scene: SceneState,
   x: number,
-  y: number
+  y: number,
+  /** 'shoulder' pins to a node's top-right (the default, over an avatar);
+   *  'center' sits on the point itself — empty lanes have no avatar to yield
+   *  to, and their shoulder spot collides with the label pill above. */
+  anchor: 'shoulder' | 'center' = 'shoulder'
 ): void {
   const { view, dpr, palette } = scene
   // Tracks the zoom: grows with the nodes when zoomed in, clamped on both
@@ -641,8 +706,9 @@ function drawHomeBadge(
   // skews mirrored pixel coverage by up to ~33% (a lopsided roof), while
   // 0 and 0.5 offsets rasterize exactly.
   const snap = (v: number) => Math.round(v * dpr * 2) / (dpr * 2)
-  const sx = snap(x * view.scale + view.x + NODE_R * view.scale * 0.8)
-  const sy = snap(y * view.scale + view.y - NODE_R * view.scale * 0.8)
+  const off = anchor === 'shoulder' ? NODE_R * view.scale * 0.8 : 0
+  const sx = snap(x * view.scale + view.x + off)
+  const sy = snap(y * view.scale + view.y - off)
   ctx.save()
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   // Below this the house is antialiasing soup: a solid accent mini-pin on
@@ -909,10 +975,26 @@ function drawHeader(ctx: CanvasRenderingContext2D, scene: SceneState): void {
       ctx.lineTo(x + 0.5, HEADER_H - 4)
       ctx.stroke()
     }
-    // Pin the label to the left edge while its day segment is still on screen,
-    // so the current day is always readable mid-pan.
-    const labelX = Math.max(x, 0) + 6
-    const label = truncate(ctx, marks[i].label, Math.max(0, next - labelX - 6))
-    if (label) ctx.fillText(label, labelX, HEADER_H / 2 + 0.5)
+    // Center the label in its day segment's currently-visible span so it stays
+    // readable mid-pan (the sticky effect): as the segment scrolls past the left
+    // edge the label recenters in the space that's left. But it must never spill
+    // past the segment's right boundary onto the next day's label — so we clamp
+    // it left, repositioning as far as we can until it sits right-aligned against
+    // the boundary (with a small margin). If even that won't fit, the label clips
+    // on the left instead of ellipsizing — the date is cut but never mangled.
+    const label = marks[i].label
+    const labelW = ctx.measureText(label).width
+    const visibleLeft = Math.max(x, 0)
+    const visibleRight = Math.min(next, width)
+    let labelX = (visibleLeft + visibleRight) / 2 - labelW / 2
+    labelX = Math.max(labelX, visibleLeft)
+    // Right boundary wins over the left clamp: keep the date off the next day.
+    labelX = Math.min(labelX, next - HEADER_LABEL_PAD - labelW)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(visibleLeft, 0, Math.max(0, visibleRight - visibleLeft), HEADER_H)
+    ctx.clip()
+    ctx.fillText(label, labelX, HEADER_H / 2 + 0.5)
+    ctx.restore()
   }
 }

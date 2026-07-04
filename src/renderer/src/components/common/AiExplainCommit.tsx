@@ -34,9 +34,7 @@ export function useAiExplainCommit(args: AiExplainArgs | null): {
   const [failure, setFailure] = useState<string | null>(null)
   const [teaserOpen, setTeaserOpen] = useState(false)
   const chipRef = useRef<HTMLButtonElement>(null)
-  const explanation = useAiGeneration((e) =>
-    setFailure(e instanceof Error ? e.message : String(e))
-  )
+  const explanation = useAiGeneration((e) => setFailure(e instanceof Error ? e.message : String(e)))
 
   const hash = args?.hash
   // Some hosts remount per commit (keyed by hash), some don't (the Graph's
