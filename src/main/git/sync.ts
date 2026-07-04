@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process'
 import { askpassEnv } from './askpass'
 import { friendlyAuthError } from './askpass-prompt'
 import { locateGit, locateGitLfs } from './bin'
-import { type ProgressHandler, parseProgressText, run, runOnce } from './exec'
+import { type ProgressHandler, parseProgressText, run, runOnce, runRead } from './exec'
 import { getLfsHealth } from './lfs'
 import { openLfsProgressChannel } from './lfs-progress'
 
@@ -60,10 +60,33 @@ export async function pull(
 ): Promise<void> {
   const args = ['-c', 'core.editor=true', 'pull', '--progress']
   if (opts.rebase) args.push('--rebase')
+  else args.push(...(await divergentPullArgs(repoPath)))
   const env = await askpassEnv()
   await withLfsProgress(onProgress, (lfsEnv) =>
     run(repoPath, args, { onProgress, env: { ...env, ...lfsEnv } })
   ).catch(rethrowFriendly(env))
+}
+
+/**
+ * Extra args that tell a plain (non-rebase) pull how to reconcile a *divergent*
+ * branch. Since git 2.27 a bare `git pull` that can't fast-forward aborts with
+ * "fatal: Need to specify how to reconcile divergent branches" unless the
+ * strategy is pinned — via pull.rebase, pull.ff, or a flag. Our toolbar surfaces
+ * Pull the instant the branch is behind, so an ahead+behind (diverged) branch
+ * hits that fatal and strands the user: Pull keeps failing and Push is blocked
+ * for being behind, with no obvious way out.
+ *
+ * So when the user hasn't stated a preference (pull.ff unset) we default to
+ * `--ff`: fast-forward when possible, merge when diverged — the intuitive
+ * behaviour, and enough to satisfy git's reconciliation check. If pull.ff is
+ * set we pass nothing and let their config win; pull.rebase, if set, git honours
+ * over `--ff` regardless (rebase path taken).
+ */
+async function divergentPullArgs(repoPath: string): Promise<string[]> {
+  const pullFf = await runRead(repoPath, ['config', '--get', 'pull.ff'], {
+    tolerateExitCodes: [1]
+  }).catch(() => '')
+  return pullFf.trim() ? [] : ['--ff']
 }
 
 export async function push(
