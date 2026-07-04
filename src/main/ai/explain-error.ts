@@ -28,7 +28,8 @@ export function buildExplainErrorPrompt(request: AiExplainErrorRequest): ChatMes
         : `Upstream is ${request.upstream} (${request.ahead ?? 0} ahead, ${request.behind ?? 0} behind).`
     )
   }
-  if (request.opState) situation.push(`A ${request.opState} is in progress.`)
+  // opState arrives as a progressive ("merging", "rebasing") — see RepoOpKind.
+  if (request.opState) situation.push(`The repository is currently ${request.opState}.`)
 
   const error =
     Buffer.byteLength(request.error, 'utf8') > MAX_ERROR_BYTES

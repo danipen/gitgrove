@@ -931,7 +931,7 @@ export interface AiExplainErrorRequest {
   upstream?: string | null
   ahead?: number
   behind?: number
-  /** Human label of an in-progress operation ("merge", "rebase"), if any. */
+  /** In-progress operation as a progressive ("merging", "rebasing"), if any. */
   opState?: string
 }
 

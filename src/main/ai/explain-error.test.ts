@@ -18,11 +18,11 @@ describe('buildExplainErrorPrompt', () => {
 
   test('the repo situation rides along when known', () => {
     const content = buildExplainErrorPrompt(
-      request({ branch: 'main', upstream: 'origin/main', ahead: 1, behind: 2, opState: 'merge' })
+      request({ branch: 'main', upstream: 'origin/main', ahead: 1, behind: 2, opState: 'merging' })
     )[1].content
     expect(content).toContain('On branch "main".')
     expect(content).toContain('origin/main (1 ahead, 2 behind)')
-    expect(content).toContain('A merge is in progress.')
+    expect(content).toContain('The repository is currently merging.')
   })
 
   test('a branch without upstream says so — that IS the usual explanation', () => {

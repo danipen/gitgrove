@@ -1715,7 +1715,22 @@ export function App() {
           onRevealCommit={revealCommit}
         />
       )}
-      {error && <ErrorDialog message={error} info={appInfo} onClose={() => setError(null)} />}
+      {error && (
+        <ErrorDialog
+          message={error}
+          info={appInfo}
+          ai={{
+            repoPath: repo?.path ?? null,
+            branch: branch?.current,
+            upstream: sync?.upstream,
+            ahead: sync?.ahead,
+            behind: sync?.behind,
+            opState: repoState?.op ?? undefined,
+            onSetupAi: () => setModal({ kind: 'settings', section: 'ai' })
+          }}
+          onClose={() => setError(null)}
+        />
+      )}
       {notice && !error && (
         <Toast kind="success" message={notice} onClose={() => setNotice(null)} />
       )}
