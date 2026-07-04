@@ -1,5 +1,6 @@
 import type { ChangedFile, Commit } from '@shared/types'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { AiExplainCommit } from '@/components/common/AiExplainCommit'
 import { coAuthorsOf, stripCoAuthorTrailers } from '@/lib/coauthors'
 import { type CommitRef, parseRefs, pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
@@ -145,12 +146,15 @@ interface Props {
   commit: Commit
   files: ChangedFile[]
   filesLoading: boolean
+  /** Enables the ✨ Explain affordance (AiExplainCommit); absent in hosts
+   *  that can't offer it (no repo path / no settings access). */
+  ai?: { repoPath: string; onSetupAi: () => void }
 }
 
 // Rendered with `key={commit.hash}` so it remounts per commit — that resets the
 // collapse state and lets the body-overflow probe measure a fresh, collapsed
 // layout without effect-ordering races.
-export function CommitSummary({ commit, files, filesLoading }: Props) {
+export function CommitSummary({ commit, files, filesLoading, ai }: Props) {
   const coAuthors = coAuthorsOf(commit)
 
   return (
@@ -178,6 +182,7 @@ export function CommitSummary({ commit, files, filesLoading }: Props) {
       </div>
 
       <CommitBody commit={commit} />
+      {ai && <AiExplainCommit repoPath={ai.repoPath} hash={commit.hash} onSetupAi={ai.onSetupAi} />}
       <CommitRefs commit={commit} />
     </div>
   )

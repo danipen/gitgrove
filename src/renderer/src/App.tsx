@@ -1566,6 +1566,7 @@ export function App() {
                 }}
                 onFileSelectionChange={setCommitSelCount}
                 onOpenFileHistory={openFileHistory}
+                onSetupAi={() => setModal({ kind: 'settings', section: 'ai' })}
               />
             </div>
           </div>
@@ -1671,6 +1672,10 @@ export function App() {
                     commit={selectedCommit}
                     files={commitFiles}
                     filesLoading={commitFilesLoading}
+                    ai={{
+                      repoPath: repo.path,
+                      onSetupAi: () => setModal({ kind: 'settings', section: 'ai' })
+                    }}
                   />
                 )}
                 <DiffViewer
