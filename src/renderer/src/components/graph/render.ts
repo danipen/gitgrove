@@ -396,23 +396,12 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
     const cy = nodeY(edge.fromRow)
     ctx.strokeStyle = branchStroke(palette, edge.color)
     ctx.globalAlpha = lit ? 0.8 : 0.12
-    // Merge edges end with an arrowhead: back-direction of the path's final
-    // tangent + the path's end point, set per shape below (merges are the one
-    // edge that flows INTO a commit — the arrow states the direction right
-    // where a merge link could be misread as a fork link).
-    let arrowBackX = 0
-    let arrowBackY = 0
-    let endY = cy
     ctx.beginPath()
     if (py === cy) {
       // Same-row hop (criss-cross merge / packed-row fork): a shallow arc.
       const controlY = py - CAPSULE_HALF_H - 14
       ctx.moveTo(px, py - NODE_R)
       ctx.quadraticCurveTo((px + cx) / 2, controlY, cx, cy - NODE_R)
-      // End tangent of a quadratic points from control point to end.
-      arrowBackX = (px + cx) / 2 - cx
-      arrowBackY = controlY - (cy - NODE_R)
-      endY = cy - NODE_R
     } else if (edge.kind === 'fork') {
       // Orthogonal, Plastic-style: drop straight down/up the fork column,
       // then run along the child's row into its first commit. Long runs
@@ -434,69 +423,10 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
       ctx.lineTo(cx - r, py)
       ctx.quadraticCurveTo(cx, py, cx, py + dir * r)
       ctx.lineTo(cx, cy - dir * NODE_R)
-      arrowBackY = -dir
-      endY = cy - dir * NODE_R
     }
     ctx.stroke()
-    if (edge.kind === 'merge') {
-      // The arrowhead is OPAQUE while its line draws at 0.8: a translucent
-      // triangle over a translucent line stacks alpha where they overlap and
-      // renders blotchy. Solid, the arrow simply caps the line (Plastic-style).
-      ctx.globalAlpha = lit ? 1 : 0.12
-      const len = Math.hypot(arrowBackX, arrowBackY) || 1
-      drawMergeArrow(ctx, cx, endY, arrowBackX / len, arrowBackY / len, cx, cy)
-    }
   }
   ctx.globalAlpha = 1
-}
-
-/** Length of the merge arrowhead along the edge, and its half-width — the
- *  round stroke below fattens these by ~1.5px on every side. */
-const ARROW_L = 6.5
-const ARROW_HALF_W = 3.5
-
-/** Filled arrowhead where a merge edge docks into its merge commit, corners
- *  rounded Plastic-style by stroking the triangle with the scene's round
- *  lineJoin in its own color. The tip sits outside the merge node's enlarged
- *  backing disc (NODE_R + 5, see drawNodes) with room for the rounding —
- *  drawNodes paints that disc over the edge, so any part of the arrow inside
- *  it would be flattened. The path's end tangent is effectively straight out
- *  there, so walking back from the path's end along (ux, uy) to the dock
- *  radius lands on the drawn line — arcs and pipes alike. */
-function drawMergeArrow(
-  ctx: CanvasRenderingContext2D,
-  /** The edge path's end point (on the merge node's rim). */
-  ex: number,
-  ey: number,
-  /** Unit vector pointing from the path's end BACK along the path. */
-  ux: number,
-  uy: number,
-  /** Merge commit center. */
-  nx: number,
-  ny: number
-): void {
-  const dockR = NODE_R + 6.5
-  // Solve |end + s·u - center| = dockR for s — where the retreating path
-  // crosses the dock radius; the arrow's tip sits there.
-  const dx = ex - nx
-  const dy = ey - ny
-  const du = dx * ux + dy * uy
-  const s = -du + Math.sqrt(Math.max(0, du * du - (dx * dx + dy * dy) + dockR * dockR))
-  const tx = ex + ux * s
-  const ty = ey + uy * s
-  const bx = tx + ux * ARROW_L
-  const by = ty + uy * ARROW_L
-  ctx.beginPath()
-  ctx.moveTo(tx, ty)
-  ctx.lineTo(bx - uy * ARROW_HALF_W, by + ux * ARROW_HALF_W)
-  ctx.lineTo(bx + uy * ARROW_HALF_W, by - ux * ARROW_HALF_W)
-  ctx.closePath()
-  ctx.fillStyle = ctx.strokeStyle
-  ctx.fill()
-  // Round-joined stroke in the same color plumps the corners into soft caps.
-  ctx.lineWidth = 3
-  ctx.stroke()
-  ctx.lineWidth = 2
 }
 
 // Twin markers: which commits participate in any link. Cached per links array
