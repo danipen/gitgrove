@@ -47,9 +47,7 @@ export function ErrorDialog({ message, info, ai, onClose }: Props) {
   const [teaserOpen, setTeaserOpen] = useState(false)
   const [noteOpen, setNoteOpen] = useState(false)
   const explainRef = useRef<HTMLButtonElement>(null)
-  const explanation = useAiGeneration((e) =>
-    setFailure(e instanceof Error ? e.message : String(e))
-  )
+  const explanation = useAiGeneration((e) => setFailure(e instanceof Error ? e.message : String(e)))
 
   const copy = () => {
     window.gitgrove.clipboardWrite(message)

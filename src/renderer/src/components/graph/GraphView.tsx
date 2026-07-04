@@ -14,7 +14,13 @@ import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
 import { GraphCanvas, type GraphCanvasHandle } from './GraphCanvas'
 import { type AuthorOption, DATE_PRESETS, type DatePresetId, GraphToolbar } from './GraphToolbar'
-import { collectBranchNames, type GraphNode, type GraphRow, layoutGraph } from './layout'
+import {
+  type BranchSelection,
+  collectBranchNames,
+  type GraphNode,
+  type GraphRow,
+  layoutGraph
+} from './layout'
 import { linkableChains, twinHashes } from './links'
 import { relatedBranches } from './related'
 import { releaseLineVersion, releaseVersionWithOverride } from './releases'
@@ -34,8 +40,9 @@ interface Props {
   changesCount: number
   selectedCommit: Commit | null
   onSelectCommit: (commit: Commit | null) => void
-  /** Tip of the branch whose changes view is open, or null. */
-  selectedBranchTip: string | null
+  /** The branch whose changes view is open, or null — matched by (name, tip)
+   *  because empty branches share their tip hash with the anchor's chain. */
+  selectedBranch: BranchSelection | null
   /** A branch label was clicked — open its whole-branch changes view. */
   onSelectBranch: (row: GraphRow) => void
   /** Right-click menu for a commit node — the same one History uses. */
@@ -57,7 +64,7 @@ export function GraphView({
   changesCount,
   selectedCommit,
   onSelectCommit,
-  selectedBranchTip,
+  selectedBranch,
   onSelectBranch,
   commitMenuFor,
   onCheckoutBranch,
@@ -369,7 +376,7 @@ export function GraphView({
             layout={layout}
             theme={theme}
             selectedHash={selectedCommit?.hash ?? null}
-            selectedBranchTip={selectedBranchTip}
+            selectedBranch={selectedBranch}
             matches={matches}
             activeMatch={activeMatch}
             changesCount={changesCount}

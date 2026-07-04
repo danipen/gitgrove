@@ -67,7 +67,12 @@ export function slugFromModelOutput(text: string, taken: Iterable<string> = []):
   // segment ending in '.lock'. Empty segments (from stripped junk) drop out.
   slug = slug
     .split('/')
-    .map((s) => s.replace(/(\.lock)+$/, '').replace(/^[-.]+/, '').replace(/[-.]+$/, ''))
+    .map((s) =>
+      s
+        .replace(/(\.lock)+$/, '')
+        .replace(/^[-.]+/, '')
+        .replace(/[-.]+$/, '')
+    )
     .filter(Boolean)
     .join('/')
 
@@ -123,10 +128,7 @@ export interface BranchNameContext {
 
 export async function gatherBranchNameContext(repoPath: string): Promise<BranchNameContext> {
   // Both reads are lock-free and independent — overlap them.
-  const [snapshot, branches] = await Promise.all([
-    getRepoSnapshot(repoPath),
-    getBranches(repoPath)
-  ])
+  const [snapshot, branches] = await Promise.all([getRepoSnapshot(repoPath), getBranches(repoPath)])
 
   const pieces: string[] = []
   let budget = BRANCH_NAME_CAPS.totalBytes

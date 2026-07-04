@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Commit } from '@shared/types'
-import { collectBranchNames, type GraphInput, layoutGraph } from './layout'
+import { collectBranchNames, type GraphInput, layoutGraph, rowMatchesSelection } from './layout'
 
 /** Minimal commit for layout tests; only hash/parents/refs/subject matter. */
 function commit(hash: string, parents: string[], refs = '', subject = `subject ${hash}`): Commit {
@@ -72,6 +72,37 @@ describe('layoutGraph', () => {
     const merge = layout.edges.find((e) => e.kind === 'merge')
     expect(merge?.fromRow).toBe(0)
     expect(merge?.toRow).toBe(feature.index)
+  })
+
+  test('merge nodes carry the incoming branch color; other nodes carry none', () => {
+    // main: a ── b ───── m (merge)      feature: f1 ── f2
+    const layout = layoutGraph(
+      input([
+        commit('m', ['b', 'f2'], 'HEAD -> main'),
+        commit('f2', ['f1'], 'feature'),
+        commit('f1', ['a']),
+        commit('b', ['a']),
+        commit('a', [])
+      ])
+    )
+    const feature = rowNamed(layout, 'feature')
+    // The merge ring wears the merged-in branch's palette slot — the same
+    // color its merge edge draws in, so line and ring read as one thing.
+    expect(layout.nodeByHash.get('m')?.mergeColor).toBe(feature.color)
+    expect(layout.nodeByHash.get('b')?.mergeColor).toBeNull()
+    expect(layout.nodeByHash.get('f2')?.mergeColor).toBeNull()
+  })
+
+  test('a merge whose merged parent is outside the window gets no merge color', () => {
+    // m's second parent never loaded: still isMerge, but there is no incoming
+    // edge to color a ring after — the node draws as a plain commit.
+    const layout = layoutGraph(
+      input([commit('m', ['b', 'zzz'], 'HEAD -> main'), commit('b', ['a']), commit('a', [])])
+    )
+    const m = layout.nodeByHash.get('m')
+    expect(m?.isMerge).toBe(true)
+    expect(m?.mergeColor).toBeNull()
+    expect(m?.truncated).toBe(true)
   })
 
   test('local and remote refs with one base name share a single row', () => {
@@ -346,6 +377,64 @@ describe('layoutGraph', () => {
     expect(rowNamed(layout, 'feature').baseHash).toBe('y2')
   })
 
+  test('a merged branch keeps its spine from a newer branch forked off its middle', () => {
+    // The PR #74 / #75 shape: gen (g1─g2─g3─g4) merged into main, while the
+    // checked-out extra forked from g3 and kept going (e1─e2). Without the
+    // merged-tip pin, extra's newer tip walks down through g3─g2─g1 and
+    // steals them, leaving gen a single orphaned commit (g4).
+    const layout = layoutGraph(
+      input(
+        [
+          commit('e2', ['e1'], 'HEAD -> extra'),
+          commit('m2', ['m1', 'g4'], 'main', 'Merge pull request #74 from danipen/gen'),
+          commit('g4', ['g3'], 'gen'),
+          commit('e1', ['g3']),
+          commit('g3', ['g2']),
+          commit('g2', ['g1']),
+          commit('g1', ['m1']),
+          commit('m1', [])
+        ],
+        { headBranch: 'extra' }
+      )
+    )
+    const gen = rowNamed(layout, 'gen')
+    for (const hash of ['g1', 'g2', 'g3', 'g4']) {
+      expect(layout.nodeByHash.get(hash)?.chain).toBe(gen.chain)
+    }
+    // extra owns only its unique commits and forks from gen's g3.
+    const extra = rowNamed(layout, 'extra')
+    expect(layout.nodeByHash.get('e1')?.chain).toBe(extra.chain)
+    expect(extra.baseHash).toBe('g3')
+    expect(gen.baseHash).toBe('m1')
+    // And the child branch hangs BELOW the branch it grew from, even though
+    // it's checked out and has the newer tip.
+    expect(gen.index).toBe(1)
+    expect(extra.index).toBe(2)
+  })
+
+  test('child branches pack below their parent, grandchildren below both', () => {
+    // parent (merged into main) ← child (HEAD, forked from p1) ← grandchild
+    // (forked from c1): each fork level hangs one row further from the
+    // mainline, whatever the tip order says.
+    const layout = layoutGraph(
+      input(
+        [
+          commit('gg1', ['c1'], 'grandchild'),
+          commit('c2', ['c1'], 'HEAD -> child'),
+          commit('M', ['a', 'p2'], 'main', "Merge branch 'parent'"),
+          commit('p2', ['p1'], 'parent'),
+          commit('c1', ['p1']),
+          commit('p1', ['a']),
+          commit('a', [])
+        ],
+        { headBranch: 'child' }
+      )
+    )
+    expect(rowNamed(layout, 'parent').index).toBe(1)
+    expect(rowNamed(layout, 'child').index).toBe(2)
+    expect(rowNamed(layout, 'grandchild').index).toBe(3)
+  })
+
   test('hideMerged keeps release lines even when merged up into main', () => {
     // Merge-up workflow: 11.x merged into main makes 11.x's tip a merge
     // source, but the release line must survive the filter — it isn't done.
@@ -426,5 +515,129 @@ describe('layoutGraph', () => {
     )
     const columns = layout.nodes.map((n) => n.column)
     expect(columns).toEqual([...columns].sort((x, y) => x - y))
+  })
+})
+
+describe('empty branches (zero-commit refs)', () => {
+  test("a branch pointing at another chain's commit gets an empty lane", () => {
+    const layout = layoutGraph(input([commit('b', ['a'], 'HEAD -> main, fresh'), commit('a', [])]))
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    expect(fresh.kind).toBe('branch')
+    // tip and base both name the anchor: the branch-changes range is empty.
+    expect(fresh.tipHash).toBe('b')
+    expect(fresh.baseHash).toBe('b')
+    // One reserved slot right of the anchor, on its own row below main.
+    expect(fresh.startColumn).toBe(2)
+    expect(fresh.endColumn).toBe(2)
+    expect(fresh.index).toBeGreaterThan(rowNamed(layout, 'main').index)
+    // It claimed no commits — main keeps its whole spine…
+    expect(layout.nodes.every((n) => n.chain !== fresh.chain)).toBe(true)
+    expect(layout.nodeByHash.get('b')?.row).toBe(0)
+    // …and a fork connector reaches from the anchor into the reserved slot.
+    const fork = layout.edges.find((e) => e.kind === 'fork')
+    expect(fork?.toColumn).toBe(1)
+    expect(fork?.toRow).toBe(0)
+    expect(fork?.fromColumn).toBe(2)
+    expect(fork?.fromRow).toBe(fresh.index)
+    // HEAD is on main, so main keeps the marker.
+    expect(rowNamed(layout, 'main').isHead).toBe(true)
+    expect(fresh.isHead).toBe(false)
+    expect(layout.nodeByHash.get('b')?.isHead).toBe(true)
+  })
+
+  test('HEAD on an empty branch moves the home marker to the empty lane', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> fresh, main'), commit('a', [])], { headBranch: 'fresh' })
+    )
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    expect(fresh.isHead).toBe(true)
+    expect(rowNamed(layout, 'main').isHead).toBe(false)
+    // The anchor node stays plain: home lives on the empty lane now.
+    expect(layout.nodeByHash.get('b')?.isHead).toBe(false)
+    // headHash still names the anchor commit (jump-to-home target).
+    expect(layout.headHash).toBe('b')
+  })
+
+  test('an empty branch anchored mid-spine hangs beside its anchor', () => {
+    const layout = layoutGraph(
+      input([commit('c', ['b'], 'HEAD -> main'), commit('b', ['a'], 'fresh'), commit('a', [])])
+    )
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    // Anchor b sits at column 1; the slot is the next column, one row down.
+    expect(fresh.startColumn).toBe(2)
+    expect(fresh.index).toBeGreaterThan(0)
+  })
+
+  test('a remote-only zero-commit ref becomes an empty remote lane', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, origin/fresh'), commit('a', [])])
+    )
+    const fresh = rowNamed(layout, 'fresh')
+    expect(fresh.empty).toBe(true)
+    expect(fresh.kind).toBe('remote')
+  })
+
+  test('two empty branches at one commit stack on separate rows', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, one, two'), commit('a', [])])
+    )
+    const one = rowNamed(layout, 'one')
+    const two = rowNamed(layout, 'two')
+    expect(one.empty).toBe(true)
+    expect(two.empty).toBe(true)
+    // Same reserved slot column — the packer must give them separate rows.
+    expect(one.startColumn).toBe(two.startColumn)
+    expect(one.index).not.toBe(two.index)
+  })
+
+  test('empty branches appear in the branch filter list', () => {
+    const names = collectBranchNames(
+      input([commit('b', ['a'], 'HEAD -> main, fresh'), commit('a', [])])
+    )
+    expect(names).toContain('fresh')
+  })
+
+  test('selection matches one row even when empty branches share a tip hash', () => {
+    // main, one and two all point at commit b: selecting 'one' must light
+    // only 'one' — a tip-hash-only match would light all three.
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, one, two'), commit('a', [])])
+    )
+    const selection = { name: 'one', tipHash: 'b' }
+    const lit = layout.rows.filter((r) => rowMatchesSelection(r, selection))
+    expect(lit).toHaveLength(1)
+    expect(lit[0].name).toBe('one')
+    expect(layout.rows.some((r) => rowMatchesSelection(r, null))).toBe(false)
+  })
+
+  test('origin/HEAD never becomes an empty lane (still shows when it owns commits)', () => {
+    // origin/HEAD rides the default branch's tip: a pointer, not a branch.
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, origin/HEAD'), commit('a', [])])
+    )
+    expect(layout.rows.some((r) => r.name === 'HEAD')).toBe(false)
+    // But a HEAD ref that claims commits of its own keeps its row, as before.
+    const claimed = layoutGraph(
+      input([
+        commit('h', ['a'], 'origin/HEAD'),
+        commit('b', ['a'], 'HEAD -> main'),
+        commit('a', [])
+      ])
+    )
+    const headRow = claimed.rows.find((r) => r.name === 'HEAD')
+    expect(headRow?.empty).toBe(false)
+  })
+
+  test('local and remote refs at an already-claimed commit share one empty lane', () => {
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, fresh, origin/fresh'), commit('a', [])])
+    )
+    const rows = layout.rows.filter((r) => r.name === 'fresh')
+    expect(rows).toHaveLength(1)
+    expect(rows[0].kind).toBe('branch')
+    expect(rows[0].empty).toBe(true)
   })
 })

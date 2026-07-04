@@ -83,4 +83,13 @@ describe('relatedBranches', () => {
     expect(relatedBranches(layout, 'main', 1)).toEqual(new Set(['main']))
     expect(relatedBranches(layout, 'ghost', 1)).toEqual(new Set(['ghost']))
   })
+
+  test('an empty branch is one hop from the branch owning its anchor commit', () => {
+    // 'fresh' points at main's tip with no commits of its own: focusing on
+    // either side must reach the other, or focus-on-fresh would hide main and
+    // let fresh claim the whole spine.
+    const layout = layoutGraph(input([commit('m', ['a'], 'HEAD -> main, fresh'), commit('a', [])]))
+    expect(relatedBranches(layout, 'fresh', 1)).toEqual(new Set(['fresh', 'main']))
+    expect(relatedBranches(layout, 'main', 1)).toEqual(new Set(['main', 'fresh']))
+  })
 })

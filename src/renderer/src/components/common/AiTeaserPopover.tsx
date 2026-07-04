@@ -26,8 +26,8 @@ export function AiTeaserPopover({ anchor, open, onClose, title, body, onSetup }:
           <Icon.Sparkle size={15} /> {title}
         </div>
         <p className="ai-teaser__body">
-          {body} Connect OpenAI, Anthropic, Gemini, a local Ollama or any compatible endpoint —
-          your key, sent only to your provider.
+          {body} Connect OpenAI, Anthropic, Gemini, a local Ollama or any compatible endpoint — your
+          key, sent only to your provider.
         </p>
         <button
           type="button"
