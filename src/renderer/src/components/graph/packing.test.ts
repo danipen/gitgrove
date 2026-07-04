@@ -4,7 +4,8 @@ import { type PackChain, packRows } from './packing'
 const MAIN = 0
 
 /** A chain hanging off the mainline unless overridden. Defaults make the
- *  whole footprint capsule (no soft zones), so interval tests read plainly. */
+ *  whole footprint capsule with a minimal pill, so interval tests read
+ *  plainly. */
 function chain(id: number, overrides: Partial<PackChain> = {}): PackChain {
   const start = overrides.start ?? 0
   const end = overrides.end ?? 0
@@ -14,6 +15,7 @@ function chain(id: number, overrides: Partial<PackChain> = {}): PackChain {
     end,
     capStart: start,
     capEnd: end,
+    labelEnd: overrides.capStart ?? start,
     parent: MAIN,
     releaseRank: null,
     isHead: false,
@@ -100,27 +102,28 @@ describe('packRows', () => {
     expect(rows.get(3)).toBe(1)
   })
 
-  test('a label pad may sit over a neighbor\'s merge lead-out (shares the row)', () => {
-    // a's capsule ends at 10 but its lead-out runs to column 15; b's label
-    // pad occupies 13–15. Pads mask connector lines, so the row is shared —
-    // under a whole-interval rule this 3-column graze would cost b a row.
-    const a = chain(1, { start: 0, end: 15, capStart: 0, capEnd: 10 })
-    const b = chain(2, { start: 13, end: 21, capStart: 16, capEnd: 20 })
+  test("a long pill may hang over a neighbor's connector runs (shares the row)", () => {
+    // a is a 1-commit branch whose pill reaches column 12, over b's fork
+    // lead-in (10–15). Pills mask connector lines (opaque base), so the row
+    // is shared — a whole-interval rule would cost one of them a row.
+    const a = chain(1, { start: 0, end: 4, capStart: 0, capEnd: 3, labelEnd: 12 })
+    const b = chain(2, { start: 10, end: 21, capStart: 16, capEnd: 20, labelEnd: 19 })
     const rows = packRows([a, b], MAIN)
     expect(rows.get(1)).toBe(1)
     expect(rows.get(2)).toBe(1)
   })
 
-  test('a label pad never covers a neighbor\'s commits', () => {
-    // b's pad (8–10) would sit on a's capsule tail — that hides real nodes,
-    // so they must not share the row.
-    const a = chain(1, { start: 0, end: 11, capStart: 0, capEnd: 10 })
-    const b = chain(2, { start: 8, end: 21, capStart: 11, capEnd: 20 })
+  test("a pill never reaches a neighbor's label anchor or commits", () => {
+    // a's pill reaches column 15 — past b's first commit (14), where b's own
+    // pill anchors. Overlapping pills (or a pill over commits) hide ink, so
+    // they must not share the row.
+    const a = chain(1, { start: 0, end: 4, capStart: 0, capEnd: 3, labelEnd: 15 })
+    const b = chain(2, { start: 12, end: 21, capStart: 14, capEnd: 20, labelEnd: 18 })
     const rows = packRows([a, b], MAIN)
     expect(rows.get(1)).not.toBe(rows.get(2))
   })
 
-  test('a merge lead-out never runs under a neighbor\'s capsule', () => {
+  test("a merge lead-out never runs under a neighbor's capsule", () => {
     // a's lead-out (11–15) would pass beneath b's commits starting at 12.
     const a = chain(1, { start: 0, end: 15, capStart: 0, capEnd: 10 })
     const b = chain(2, { start: 12, end: 21, capStart: 12, capEnd: 20 })

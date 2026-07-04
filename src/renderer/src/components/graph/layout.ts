@@ -28,6 +28,8 @@
 
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
+// Value import from geometry is safe: geometry's layout imports are type-only.
+import { COL_W } from './geometry'
 import { type PackChain, packRows, type VerticalStub } from './packing'
 import { compareReleaseVersions, releaseVersionWithOverride } from './releases'
 
@@ -167,9 +169,17 @@ export interface GraphInput {
   structureOnly?: boolean
 }
 
-/** Columns reserved left of a chain's first node so its label never overlaps
- *  the previous chain sharing the row. */
-const LABEL_PAD_COLUMNS = 3
+/** Estimated width of a row's label pill, in columns. The pill anchors at
+ *  the first commit and extends RIGHT (geometry.ts labelRect) — past the
+ *  capsule when the name outsizes a short branch — so the packer must know
+ *  its reach to keep pills on a shared row from colliding. An estimate, not
+ *  a measurement: layout stays pure and deterministic (measured widths vary
+ *  by platform font and only exist after first paint). Mirrors render.ts
+ *  labelWidthFor's 6.2 px/char fallback plus the pill's 16px padding and a
+ *  little air before the next pill. */
+function labelColumns(name: string): number {
+  return Math.ceil((name.length * 6.2 + 16 + 8) / COL_W)
+}
 
 /** A branch tip: one exact ref name resolved to the commit it points at. */
 interface Tip {
@@ -519,10 +529,10 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   const packChains: PackChain[] = []
   chains.forEach((chain, id) => {
     if (id === mainChain) return
-    // Reserve the chain's whole visual footprint: the label pad and the fork
-    // lead-in to the left, the merge lead-out to the right (the orthogonal
-    // connector runs along the row — see render.ts) — so no other chain on
-    // the row ever sits underneath those runs.
+    // Reserve the chain's whole visual footprint: the fork lead-in to the
+    // left and the merge lead-out to the right (orthogonal connector runs
+    // along the row — see render.ts), plus the label pill's reach in the
+    // band above (see labelColumns).
     const forkColumn = columnOf.get(baseHashOf(id) ?? '')
     // An empty chain's tipHash names another chain's commit — a merge of that
     // commit is the OWNER's lead-out to reserve, not the empty lane's.
@@ -530,10 +540,11 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     const mergeColumn = mergeChild ? columnOf.get(mergeChild.hash) : undefined
     packChains.push({
       id,
-      start: Math.min(span[id].start - LABEL_PAD_COLUMNS, forkColumn ?? Number.MAX_SAFE_INTEGER),
+      start: Math.min(span[id].start, forkColumn ?? Number.MAX_SAFE_INTEGER),
       end: Math.max(span[id].end + 1, mergeColumn ?? -1),
       capStart: span[id].start,
       capEnd: span[id].end,
+      labelEnd: span[id].start + labelColumns(chain.name) - 1,
       parent: parentChainOf(id) ?? null,
       releaseRank: releaseRank.get(id) ?? null,
       isHead: id === headChain,

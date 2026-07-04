@@ -9,9 +9,9 @@
 //   row count stays minimal for the footprints given), and a chain never
 //   opens a new row while an existing row can host it: clarity never buys
 //   itself a taller diagram. Footprints themselves are zoned (see PackChain)
-//   so row-sharing is exactly as tight as the pixels allow — a label pad
-//   grazing a neighbor's merge lead-out shares the row instead of dropping
-//   below it for a touch no eye can see.
+//   so row-sharing is exactly as tight as the pixels allow — a label pill
+//   hanging over a neighbor's merge lead-out shares the row instead of
+//   dropping below it for a touch no eye can see.
 // - CLARITY. Every chain hangs off the diagram by a handful of VERTICAL
 //   connectors (the fork drop from its parent, the merge lead-out into its
 //   target, one per merge it received — see render.ts for the orthogonal
@@ -48,26 +48,35 @@ export interface VerticalStub {
   other: number
 }
 
-/** One chain as the packer sees it. Its footprint has three zones:
+/** One chain as the packer sees it. Its footprint has two layers, matching
+ *  what the renderer actually draws (see geometry.ts labelRect):
  *
- *    [start … capStart-1]  soft head: label pad + fork lead-in
+ *  On the row spine —
+ *    [start … capStart-1]  fork lead-in run (a connector line)
  *    [capStart … capEnd]   capsule: the commits and spine
- *    [capEnd+1 … end]      soft tail: breathing column + merge lead-out run
+ *    [capEnd+1 … end]      breathing column + merge lead-out run
  *
- *  Zones let row-sharing be exactly as tight as the pixels allow: nothing may
- *  overlap a capsule, and two label pads may not collide, but a label pad MAY
- *  sit over another chain's soft tail — the pill's opaque base masks the
- *  connector line behind it, so no ink is lost. That one relaxation is what
- *  lets a branch tuck beside a neighbor whose lead-out barely grazes its
- *  label's air, instead of dropping a whole row for a 1–3 column touch. */
+ *  In the label band above it —
+ *    [capStart … labelEnd] the label pill, anchored at the first commit and
+ *                          extending RIGHT — past the capsule when the name
+ *                          outsizes a short branch.
+ *
+ *  Zones let row-sharing be exactly as tight as the pixels allow: nothing
+ *  solid may overlap a capsule, and two pills may not collide, but a pill
+ *  MAY hang over a neighbor's connector runs — its opaque base masks the
+ *  line behind it, so no ink is lost. That relaxation lets a branch tuck
+ *  beside a neighbor whose lead-out barely grazes it, instead of dropping a
+ *  whole row for a touch no eye can see. */
 export interface PackChain {
   id: number
-  /** Full reserved footprint (all three zones) — what verticals cross. */
+  /** The connector-line footprint on the spine: lead-in … lead-out. */
   start: number
   end: number
   /** The capsule zone. layout.ts always leaves end ≥ capEnd + 1. */
   capStart: number
   capEnd: number
+  /** Right edge of the label pill (estimated — see layout.ts), ≥ capStart. */
+  labelEnd: number
   /** Chain owning the commit this one forked from — its row floor — or null
    *  for a chain that starts at a root commit (or off-window). */
   parent: number | null
@@ -112,13 +121,15 @@ interface Vertical {
 }
 
 /** Whether two footprints may NOT share a row (see PackChain's zones):
- *  pads and capsules never overlap each other, and a capsule never sits on
- *  a soft tail (a connector run through commits) — but a pad over a soft
- *  tail is fine, so near-miss endpoint touches stop costing whole rows. */
+ *  a capsule tolerates nothing over it — not lines, not pills, not another
+ *  capsule (the breathing column keeps them a col apart) — and two pills
+ *  must not collide in the label band. Everything else overlaps freely:
+ *  pills over connector runs, run over run. */
 const conflicts = (a: PackChain, b: PackChain): boolean =>
-  (a.start <= b.capEnd && b.start <= a.capEnd) || // pad∪capsule vs pad∪capsule
-  (a.capStart <= b.end && b.capEnd < a.capEnd) || // a's capsule on b's tail
-  (b.capStart <= a.end && a.capEnd < b.capEnd) // b's capsule on a's tail
+  (a.capStart <= b.end && b.start <= a.capEnd) || // a's capsule vs b's lines
+  (b.capStart <= a.end && a.start <= b.capEnd) || // b's capsule vs a's lines
+  // Label band: each chain's solid extent is its pill plus its capsule.
+  (a.capStart <= Math.max(b.labelEnd, b.capEnd) && b.capStart <= Math.max(a.labelEnd, a.capEnd))
 
 /**
  * Pack every chain onto a row. `chains` excludes the mainline; `mainId` (the
@@ -183,9 +194,9 @@ function pack(chains: readonly PackChain[], mainId: number): Map<number, number>
 
   const fits = (row: number, c: PackChain): boolean => !taken[row]?.some((t) => conflicts(c, t))
   // A vertical crosses a chain where it would cut visible ink: the capsule
-  // or the lead-out run. Verticals behind a label pad are masked by the
-  // pill's opaque base — pricing those would make chains dodge crossings
-  // no eye can see.
+  // or the lead-out run. Verticals behind the label pill are masked by its
+  // opaque base — pricing those would make chains dodge crossings no eye
+  // can see.
   const covered = (row: number, column: number): boolean =>
     taken[row]?.some((t) => t.capStart <= column && column <= t.end) === true
 
