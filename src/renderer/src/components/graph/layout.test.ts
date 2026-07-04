@@ -335,11 +335,12 @@ describe('layoutGraph', () => {
     expect(kinds).toEqual(['fork', 'line', 'line', 'merge'])
   })
 
-  test('packing reserves the merge lead-out so connector runs stay clear', () => {
+  test('a label pad over a merge lead-out still shares the row', () => {
     // early sits at column 2 but merges two columns later at m1 (column 4):
-    // its connector runs along the row to column 4. late's reservation starts
-    // at column 4 — without the lead-out they'd share row 1 and the connector
-    // would run under late's footprint; with it, late moves down a row.
+    // its connector runs along the row to column 4, under late's LABEL PAD
+    // (columns 4–6). A pad masks connector lines (the pill base is opaque),
+    // so the two share row 1 — only a capsule or another pad would push
+    // late down a row (see packing.test.ts for those cases).
     const layout = layoutGraph(
       input([
         commit('m2', ['c5', 'y'], 'HEAD -> main', "Merge branch 'late'"),
@@ -354,7 +355,7 @@ describe('layoutGraph', () => {
       ])
     )
     expect(rowNamed(layout, 'early').index).toBe(1)
-    expect(rowNamed(layout, 'late').index).toBe(2)
+    expect(rowNamed(layout, 'late').index).toBe(1)
   })
 
   test('release lines stack directly under the mainline, newest version first', () => {

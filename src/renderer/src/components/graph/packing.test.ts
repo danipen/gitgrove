@@ -3,12 +3,17 @@ import { type PackChain, packRows } from './packing'
 
 const MAIN = 0
 
-/** A chain hanging off the mainline unless overridden. */
+/** A chain hanging off the mainline unless overridden. Defaults make the
+ *  whole footprint capsule (no soft zones), so interval tests read plainly. */
 function chain(id: number, overrides: Partial<PackChain> = {}): PackChain {
+  const start = overrides.start ?? 0
+  const end = overrides.end ?? 0
   return {
     id,
-    start: 0,
-    end: 0,
+    start,
+    end,
+    capStart: start,
+    capEnd: end,
     parent: MAIN,
     releaseRank: null,
     isHead: false,
@@ -93,6 +98,34 @@ describe('packRows', () => {
       MAIN
     )
     expect(rows.get(3)).toBe(1)
+  })
+
+  test('a label pad may sit over a neighbor\'s merge lead-out (shares the row)', () => {
+    // a's capsule ends at 10 but its lead-out runs to column 15; b's label
+    // pad occupies 13–15. Pads mask connector lines, so the row is shared —
+    // under a whole-interval rule this 3-column graze would cost b a row.
+    const a = chain(1, { start: 0, end: 15, capStart: 0, capEnd: 10 })
+    const b = chain(2, { start: 13, end: 21, capStart: 16, capEnd: 20 })
+    const rows = packRows([a, b], MAIN)
+    expect(rows.get(1)).toBe(1)
+    expect(rows.get(2)).toBe(1)
+  })
+
+  test('a label pad never covers a neighbor\'s commits', () => {
+    // b's pad (8–10) would sit on a's capsule tail — that hides real nodes,
+    // so they must not share the row.
+    const a = chain(1, { start: 0, end: 11, capStart: 0, capEnd: 10 })
+    const b = chain(2, { start: 8, end: 21, capStart: 11, capEnd: 20 })
+    const rows = packRows([a, b], MAIN)
+    expect(rows.get(1)).not.toBe(rows.get(2))
+  })
+
+  test('a merge lead-out never runs under a neighbor\'s capsule', () => {
+    // a's lead-out (11–15) would pass beneath b's commits starting at 12.
+    const a = chain(1, { start: 0, end: 15, capStart: 0, capEnd: 10 })
+    const b = chain(2, { start: 12, end: 21, capStart: 12, capEnd: 20 })
+    const rows = packRows([a, b], MAIN)
+    expect(rows.get(1)).not.toBe(rows.get(2))
   })
 
   test('release lines keep the spine stack: first-fit by rank, no drift', () => {

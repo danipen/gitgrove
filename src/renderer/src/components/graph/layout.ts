@@ -532,6 +532,8 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       id,
       start: Math.min(span[id].start - LABEL_PAD_COLUMNS, forkColumn ?? Number.MAX_SAFE_INTEGER),
       end: Math.max(span[id].end + 1, mergeColumn ?? -1),
+      capStart: span[id].start,
+      capEnd: span[id].end,
       parent: parentChainOf(id) ?? null,
       releaseRank: releaseRank.get(id) ?? null,
       isHead: id === headChain,
