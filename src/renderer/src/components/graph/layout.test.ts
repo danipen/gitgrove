@@ -238,6 +238,28 @@ describe('layoutGraph', () => {
     expect(kinds.filter((k) => k === 'fork')).toHaveLength(2)
   })
 
+  test('a branch nested inside a longer-lived one packs above it', () => {
+    // feat forked first but merges LAST; fix forks and merges back entirely
+    // within feat's lifetime. Fork-order packing would give feat row 1 and
+    // slice fix's fork/merge connectors through its capsule — merge-column
+    // order nests the family crossing-free: fix rides row 1, feat hangs
+    // below with its verticals falling outside fix's span.
+    const layout = layoutGraph(
+      input([
+        commit('m2', ['m1', 'f2'], 'HEAD -> main', "Merge branch 'feat'"),
+        commit('f2', ['f1'], 'feat'),
+        commit('m1', ['b', 'x1'], '', "Merge branch 'fix'"),
+        commit('x1', ['b'], 'fix'),
+        commit('b', ['a']),
+        commit('f1', ['a']),
+        commit('a', [])
+      ])
+    )
+    expect(rowNamed(layout, 'fix').index).toBe(1)
+    expect(rowNamed(layout, 'feat').index).toBe(2)
+    expect(layout.rowCount).toBe(3)
+  })
+
   test('branch base hash feeds the branch-changes view', () => {
     const layout = layoutGraph(
       input([
@@ -313,11 +335,12 @@ describe('layoutGraph', () => {
     expect(kinds).toEqual(['fork', 'line', 'line', 'merge'])
   })
 
-  test('packing reserves the merge lead-out so connector runs stay clear', () => {
+  test('a label pad over a merge lead-out still shares the row', () => {
     // early sits at column 2 but merges two columns later at m1 (column 4):
-    // its connector runs along the row to column 4. late's reservation starts
-    // at column 4 — without the lead-out they'd share row 1 and the connector
-    // would run under late's footprint; with it, late moves down a row.
+    // its connector runs along the row to column 4, under late's LABEL PAD
+    // (columns 4–6). A pad masks connector lines (the pill base is opaque),
+    // so the two share row 1 — only a capsule or another pad would push
+    // late down a row (see packing.test.ts for those cases).
     const layout = layoutGraph(
       input([
         commit('m2', ['c5', 'y'], 'HEAD -> main', "Merge branch 'late'"),
@@ -332,7 +355,7 @@ describe('layoutGraph', () => {
       ])
     )
     expect(rowNamed(layout, 'early').index).toBe(1)
-    expect(rowNamed(layout, 'late').index).toBe(2)
+    expect(rowNamed(layout, 'late').index).toBe(1)
   })
 
   test('release lines stack directly under the mainline, newest version first', () => {

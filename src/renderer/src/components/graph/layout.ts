@@ -15,16 +15,22 @@
 // deleted after merging) become "unnamed" chains, labelled from the merge
 // commit's subject when it records the branch name.
 //
-// Rows are then PACKED: the mainline keeps row 0 to itself, release lines
-// stack directly beneath it (newest version first — a stable "spine stack"
-// that keeps maintenance branches in the same rows), and every other chain
-// goes to the lowest row BELOW the chain it forked from where its column span
-// (plus room for its label) doesn't collide — child branches hang beneath
-// their parent, and short-lived branches that never overlap in time share a
-// row instead of staircasing down the canvas.
+// Rows are then PACKED (see packing.ts): the mainline keeps row 0 to itself,
+// release lines stack directly beneath it (newest version first — a stable
+// "spine stack" that keeps maintenance branches in the same rows), and every
+// other chain goes to a row BELOW the chain it forked from where its column
+// span (plus room for its label) doesn't collide — child branches hang
+// beneath their parent, and short-lived branches that never overlap in time
+// share a row instead of staircasing down the canvas. Among the rows that
+// fit, the packer picks the one whose connector lines cross the least, so a
+// branch that merges back sooner sits closer to its parent and long-lived
+// branches sink below the families nested inside their lifetime.
 
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
+// Value import from geometry is safe: geometry's layout imports are type-only.
+import { COL_W } from './geometry'
+import { type PackChain, packRows, type VerticalStub } from './packing'
 import { compareReleaseVersions, releaseVersionWithOverride } from './releases'
 
 export type GraphRowKind = 'branch' | 'remote' | 'detached' | 'unnamed'
@@ -163,9 +169,17 @@ export interface GraphInput {
   structureOnly?: boolean
 }
 
-/** Columns reserved left of a chain's first node so its label never overlaps
- *  the previous chain sharing the row. */
-const LABEL_PAD_COLUMNS = 3
+/** Estimated width of a row's label pill, in columns. The pill anchors at
+ *  the first commit and extends RIGHT (geometry.ts labelRect) — past the
+ *  capsule when the name outsizes a short branch — so the packer must know
+ *  its reach to keep pills on a shared row from colliding. An estimate, not
+ *  a measurement: layout stays pure and deterministic (measured widths vary
+ *  by platform font and only exist after first paint). Mirrors render.ts
+ *  labelWidthFor's 6.2 px/char fallback plus the pill's 16px padding and a
+ *  little air before the next pill. */
+function labelColumns(name: string): number {
+  return Math.ceil((name.length * 6.2 + 16 + 8) / COL_W)
+}
 
 /** A branch tip: one exact ref name resolved to the commit it points at. */
 interface Tip {
@@ -457,11 +471,12 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     span[id].end = slot
   })
 
-  // ── Row packing: mainline alone on row 0; everyone else first-fit below ───
-  // "As near to main as possible": each chain takes the lowest row whose
-  // occupied column intervals don't collide with its own (padded for the
-  // label) — but never above the chain it forked from: a child branch always
-  // hangs beneath its parent, however new its tip or where HEAD sits.
+  // ── Row packing: mainline alone on row 0; everyone else packed below ──────
+  // "As near to main as possible, crossing as little as possible": the packer
+  // (packing.ts) reuses rows wherever footprints allow — never opening a new
+  // row while an existing one fits — and among the fitting rows takes the one
+  // whose connector verticals cross the least. A child branch never packs
+  // above the chain it forked from, however new its tip or where HEAD sits.
   // Packing priority follows the branch the user is ON — the empty lane when
   // HEAD sits on a zero-commit branch. The mainline fallback stays the anchor
   // chain: an empty lane can't own the row-0 spine.
@@ -472,38 +487,18 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   )
   const mainChain =
     defaultChain !== -1 ? defaultChain : (anchorHeadChain ?? (chains.length > 0 ? 0 : -1))
-  const rowOfChain = new Map<number, number>()
-  if (mainChain >= 0) rowOfChain.set(mainChain, 0)
   // A chain's fork base: the commit it grew from — for an empty chain, the
   // anchor commit itself (the lane grows from where its first commit will
   // fork off).
   const baseHashOf = (id: number): string | null =>
     chains[id].empty ? chains[id].tipHash : (span[id].oldest?.parents[0] ?? null)
-  // The chain owning the commit this chain grew from (its fork parent), and
-  // the fork depth below the mainline (mainline 0, branches off it 1, …).
-  // Depth orders the packing parent-before-child, so every child's floor row
-  // is already resolved when its turn comes.
+  // The chain owning the commit this chain grew from (its fork parent).
   const parentChainOf = (id: number): number | undefined => {
     const base = baseHashOf(id)
     return base === null ? undefined : chainOf.get(base)
   }
-  const depths = new Map<number, number>()
-  const depthOf = (id: number): number => {
-    if (id === mainChain) return 0
-    const cached = depths.get(id)
-    if (cached !== undefined) return cached
-    // Chains can't cycle (bases only point at older columns); keeps the walk total.
-    depths.set(id, 1)
-    const parent = parentChainOf(id)
-    const depth = parent === undefined ? 1 : depthOf(parent) + 1
-    depths.set(id, depth)
-    return depth
-  }
-  // Release lines pack before everything else, newest version first, so they
-  // stack directly under the mainline — maintenance branches always live in
-  // the same rows, whatever else is going on. Then by fork depth (parents
-  // before their children), HEAD's chain first within its depth, then the
-  // rest by start column so packing stays dense.
+  // Release lines stack directly under the mainline, newest version first —
+  // maintenance branches always live in the same rows, whatever else is on.
   const releaseRank = new Map<number, number>()
   chains
     .map((chain, id) => ({ id, version: releaseVersionOfChain(chain, input) }))
@@ -512,53 +507,53 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     .forEach((entry, rank) => {
       releaseRank.set(entry.id, rank)
     })
-  const NOT_RELEASE = Number.MAX_SAFE_INTEGER
-  const others = chains
-    .map((_, id) => id)
-    .filter((id) => id !== mainChain)
-    .sort((a, b) => {
-      const releases = (releaseRank.get(a) ?? NOT_RELEASE) - (releaseRank.get(b) ?? NOT_RELEASE)
-      if (releases !== 0) return releases
-      const depth = depthOf(a) - depthOf(b)
-      if (depth !== 0) return depth
-      if (a === headChain) return -1
-      if (b === headChain) return 1
-      return span[a].start - span[b].start
-    })
-  // Occupied intervals per row (rows 1+); n chains → tiny arrays, linear scan.
-  const occupied: { start: number; end: number }[][] = []
-  for (const id of others) {
-    // Reserve the chain's whole visual footprint: the label pad and the fork
-    // lead-in to the left, the merge lead-out to the right (the orthogonal
-    // connector runs along the row — see render.ts) — so no other chain on
-    // the row ever sits underneath those runs.
+  // Every vertical connector the diagram will draw, as stubs on both of its
+  // end chains (see render.ts for the routing): the fork drop at a chain's
+  // base column, and one per merge at the merge commit's column — the tip
+  // lead-out and received update-merges alike. The packer prices candidate
+  // rows by the crossings these verticals cause.
+  const stubsOf: VerticalStub[][] = chains.map(() => [])
+  const addStubPair = (a?: number, b?: number, column?: number) => {
+    if (a === undefined || b === undefined || a === b || column === undefined) return
+    stubsOf[a].push({ column, other: b })
+    stubsOf[b].push({ column, other: a })
+  }
+  chains.forEach((_, id) => {
+    addStubPair(id, parentChainOf(id), columnOf.get(baseHashOf(id) ?? ''))
+  })
+  for (const c of kept) {
+    for (const parent of c.parents.slice(1)) {
+      addStubPair(chainOf.get(parent), chainOf.get(c.hash), columnOf.get(c.hash))
+    }
+  }
+  const packChains: PackChain[] = []
+  chains.forEach((chain, id) => {
+    if (id === mainChain) return
+    // Reserve the chain's whole visual footprint: the fork lead-in to the
+    // left and the merge lead-out to the right (orthogonal connector runs
+    // along the row — see render.ts), plus the label pill's reach in the
+    // band above (see labelColumns).
     const forkColumn = columnOf.get(baseHashOf(id) ?? '')
     // An empty chain's tipHash names another chain's commit — a merge of that
     // commit is the OWNER's lead-out to reserve, not the empty lane's.
     const mergeChild = chains[id].empty ? undefined : mergeChildOf.get(chains[id].tipHash)
     const mergeColumn = mergeChild ? columnOf.get(mergeChild.hash) : undefined
-    const interval = {
-      start: Math.min(span[id].start - LABEL_PAD_COLUMNS, forkColumn ?? Number.MAX_SAFE_INTEGER),
-      end: Math.max(span[id].end + 1, mergeColumn ?? -1)
-    }
-    // A child branch never packs above its parent: the scan starts at the
-    // parent's row, so the first candidate row already sits below it. Release
-    // lines are exempt — their spine stack under the mainline is fixed.
-    const parent = parentChainOf(id)
-    let row = releaseRank.has(id) || parent === undefined ? 0 : (rowOfChain.get(parent) ?? 0)
-    while (true) {
-      const taken = occupied[row]
-      if (!taken?.some((t) => interval.start <= t.end && t.start <= interval.end)) {
-        const rowIntervals = taken ?? []
-        if (!taken) occupied[row] = rowIntervals
-        rowIntervals.push(interval)
-        rowOfChain.set(id, row + 1)
-        break
-      }
-      row++
-    }
-  }
-  const rowCount = chains.length === 0 ? 0 : occupied.length + 1
+    packChains.push({
+      id,
+      start: Math.min(span[id].start, forkColumn ?? Number.MAX_SAFE_INTEGER),
+      end: Math.max(span[id].end + 1, mergeColumn ?? -1),
+      capStart: span[id].start,
+      capEnd: span[id].end,
+      labelEnd: span[id].start + labelColumns(chain.name) - 1,
+      parent: parentChainOf(id) ?? null,
+      releaseRank: releaseRank.get(id) ?? null,
+      isHead: id === headChain,
+      stubs: stubsOf[id]
+    })
+  })
+  const rowOfChain = packRows(packChains, mainChain)
+  let rowCount = 0
+  for (const row of rowOfChain.values()) rowCount = Math.max(rowCount, row + 1)
 
   // ── Rows (one per chain), colors, and the sorted output list ──────────────
   const rows: GraphRow[] = chains.map((chain, id) => ({

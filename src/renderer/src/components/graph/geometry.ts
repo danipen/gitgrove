@@ -8,8 +8,11 @@ import type { GraphLayout, GraphNode, GraphRow } from './layout'
 // World-space metrics (scaled by the view's zoom when drawn).
 export const COL_W = 44
 // Row pitch leaves clear air between a node's subject text (below the node)
-// and the next row's label band — they must never touch (see render.ts).
-export const ROW_H = 72
+// and the next row's label band — they must never touch (see render.ts). It's
+// sized so a SELECTED branch's halo+ring (screen-fixed, ±8px around the
+// capsule — see drawContainers) clears the caption below it at every zoom, the
+// same even embrace a selected commit node wears.
+export const ROW_H = 78
 export const NODE_R = 12
 /** Left/right padding before the first and after the last column. */
 export const MARGIN_X = 28
@@ -24,15 +27,18 @@ export const LABEL_GAP = 4
  *  half its height. Shared by the renderer and hit-testing — the capsule is
  *  itself a click target (it IS the branch). */
 export const CAPSULE_PAD = 10
-export const CAPSULE_HALF_H = 19
-/** Caption line under a node (subject text). The capsule edge is world-space
- *  but caption glyphs are screen-fixed (render.ts SUBJECT_FONT), so the gap
- *  between them must be screen-fixed too — a world-space anchor sinks the
- *  text into the capsule when zooming out and floats it far below when
- *  zooming in. SCREEN px from the capsule's bottom edge down to the text
- *  line's CENTER when the corridor is roomy: 13px type spans ~5px of ink
- *  above its center, so 11 leaves ~6px of clear air under the capsule. */
-export const CAPTION_GAP_SCREEN = 11
+export const CAPSULE_HALF_H = 17
+/** Caption line under a node (subject text). WORLD gap from the capsule's
+ *  bottom edge down to the caption line's CENTER when the corridor is roomy.
+ *  A WORLD distance (not screen) so the caption sits the same fraction below
+ *  the capsule at EVERY zoom — it scales WITH the diagram, staying in exact
+ *  proportion with the world-scaled selection halo/ring (drawContainers), just
+ *  like a selected node's caption does. Sized to clear that halo (which reaches
+ *  RING_HALO=6 world px below the capsule — see drawContainers) with room for
+ *  the caption's own ink above its center (~5 screen px). Only the TEXT is
+ *  screen-fixed size (render.ts SUBJECT_FONT); at low zoom its now-large world
+ *  footprint is kept off the rails by the squeeze in captionCenterOffset. */
+export const CAPTION_GAP_WORLD = 11
 /** SCREEN height of the caption's hit band (13px type plus slop). */
 export const CAPTION_BAND_H = 21
 /** Approximate SCREEN ink extents of a caption line around its middle
@@ -89,17 +95,24 @@ export function captionWidth(layout: GraphLayout, node: GraphNode): number {
 /** WORLD offset from a row's center down to its caption line's center at a
  *  zoom level. Shared by the renderer, the hover-card anchor and hit-testing.
  *
- *  The caption lives in a corridor between two world-space rails: its own
- *  capsule's bottom edge above, and the next row's label band below. When the
- *  corridor is roomy the caption hugs the capsule with the design gap; when
- *  zooming out squeezes the corridor, the remaining slack is split evenly so
- *  the text keeps equal air on both sides instead of invading the labels. */
+ *  The caption sits a fixed WORLD gap below the capsule (CAPTION_GAP_WORLD), so
+ *  its distance scales with zoom and stays in proportion with the world-scaled
+ *  selection halo/ring — the whole selection reads the same at any zoom. The
+ *  one screen-fixed thing is the TEXT size, so in WORLD units the ink grows as
+ *  you zoom out; the caption lives in a corridor between two world rails (the
+ *  capsule's bottom edge above, the next row's label band below), so at low
+ *  zoom that fat world-ink is clamped to keep it off both rails. */
 export function captionCenterOffset(scale: number): number {
   const railBottom = ROW_H - NODE_R - LABEL_GAP - LABEL_H
-  const corridor = (railBottom - CAPSULE_HALF_H) * scale
-  const slack = corridor - CAPTION_INK_ABOVE - CAPTION_INK_BELOW
-  const air = Math.max(1, Math.min(CAPTION_GAP_SCREEN - CAPTION_INK_ABOVE, slack / 2))
-  return CAPSULE_HALF_H + (air + CAPTION_INK_ABOVE) / scale
+  const inkAbove = CAPTION_INK_ABOVE / scale
+  const inkBelow = CAPTION_INK_BELOW / scale
+  // Window the caption CENTER can occupy without its ink crossing either rail.
+  const lo = CAPSULE_HALF_H + inkAbove
+  const hi = railBottom - inkBelow
+  // Aim for the proportional gap; at low zoom the window collapses (large world
+  // ink) so center within it instead — the text never overlaps a rail.
+  const target = CAPSULE_HALF_H + CAPTION_GAP_WORLD
+  return lo <= hi ? Math.min(Math.max(target, lo), hi) : (lo + hi) / 2
 }
 
 /** Pan/zoom: screen = world * scale + offset. */

@@ -3,15 +3,20 @@ import type { Commit } from '@shared/types'
 import {
   CAPSULE_HALF_H,
   CAPTION_FULL_ZOOM,
+  CAPTION_GAP_WORLD,
   CAPTION_INK_ABOVE,
   CAPTION_INK_BELOW,
   captionAlpha,
   captionCenterOffset,
   contentSize,
   hitTest,
+  LABEL_GAP,
+  LABEL_H,
+  NODE_R,
   neighborNode,
   nodeX,
   nodeY,
+  ROW_H,
   rowEndpoint
 } from './geometry'
 import { type GraphInput, layoutGraph } from './layout'
@@ -119,7 +124,7 @@ describe('graph geometry', () => {
     expect(neighborNode(layout, m, 'ArrowRight')).toBeNull()
   })
 
-  test('the caption hit band rides a screen-fixed gap below the capsule', () => {
+  test('the caption hit band sits a world-fixed gap below the capsule', () => {
     const layout = sampleLayout()
     const m = layout.nodeByHash.get('m')
     if (!m) throw new Error('missing node')
@@ -138,27 +143,30 @@ describe('graph geometry', () => {
         () => 30,
         scale
       )
-    // At zoom 1 the classic band: nodeY + 26 is the caption line's center.
-    expect(at(nodeY(m.row) + 26, 1)?.type).toBe('node')
-    // Zoomed in, the gap shrinks in WORLD units (constant on screen): the
-    // world point that hit at zoom 1 now lies below the band…
-    expect(at(nodeY(m.row) + 36, 3)).toBeNull()
-    // …while a point hugging the capsule edge hits.
-    expect(at(nodeY(m.row) + 22, 3)?.type).toBe('node')
+    // The caption rides a fixed WORLD gap below the capsule (its screen distance
+    // scales with zoom), so the SAME world point lands in its band at any zoom.
+    const center = captionCenterOffset(1)
+    expect(captionCenterOffset(3)).toBeCloseTo(center)
+    expect(at(nodeY(m.row) + center, 1)?.type).toBe('node')
+    expect(at(nodeY(m.row) + center, 3)?.type).toBe('node')
+    // A point up near the capsule edge sits in the gap above the band — no hit.
+    expect(at(nodeY(m.row) + CAPSULE_HALF_H + 1, 3)).toBeNull()
   })
 
-  test('a squeezed caption splits its air between capsule and next label band', () => {
-    // Roomy corridor (zoom 2): the design gap below the capsule (11 screen px
-    // to the text center — see CAPTION_GAP_SCREEN).
-    expect(captionCenterOffset(2)).toBeCloseTo(CAPSULE_HALF_H + 11 / 2)
-    // Squeezed corridor (zoom 0.9): equal screen air above the ink and below
-    // it, and the ink stays clear of the next row's label band, 38 world px
-    // below the row center.
-    const offset = captionCenterOffset(0.9)
-    const airAbove = (offset - CAPSULE_HALF_H) * 0.9 - CAPTION_INK_ABOVE
-    const airBelow = (38 - offset) * 0.9 - CAPTION_INK_BELOW
-    expect(airAbove).toBeCloseTo(airBelow)
-    expect(airBelow).toBeGreaterThan(0)
+  test('the caption keeps a proportional gap, clear of both rails at every zoom', () => {
+    // The next row's label band starts this many world px below the row center.
+    const railBottom = ROW_H - NODE_R - LABEL_GAP - LABEL_H
+    // The caption center sits the fixed WORLD gap below the capsule — the SAME
+    // at every zoom, so on screen it scales in proportion with the diagram.
+    expect(captionCenterOffset(2)).toBeCloseTo(CAPSULE_HALF_H + CAPTION_GAP_WORLD)
+    expect(captionCenterOffset(3)).toBeCloseTo(CAPSULE_HALF_H + CAPTION_GAP_WORLD)
+    // At every visible zoom the screen-fixed ink stays clear of both rails: the
+    // capsule above and the next row's label band below.
+    for (const scale of [0.9, 1, 2, 3]) {
+      const offset = captionCenterOffset(scale)
+      expect(offset - CAPTION_INK_ABOVE / scale).toBeGreaterThan(CAPSULE_HALF_H)
+      expect(offset + CAPTION_INK_BELOW / scale).toBeLessThan(railBottom)
+    }
   })
 
   test('the caption layer is all-or-nothing: full at zoom 1, gone below the fade', () => {

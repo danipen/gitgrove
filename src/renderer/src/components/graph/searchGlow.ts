@@ -3,9 +3,9 @@
 // wider corona and lands with a brief sonar ping. Kept free of canvas types
 // so the geometry and color math are directly testable.
 
-/** How far past the node radius a hit's glow fades to nothing (world px). */
+/** A hit's halo blur radius in WORLD px (drawHitGlow scales it to device). */
 export const HIT_GLOW = 9
-/** The current hit's corona reaches further — "you are here" among hits. */
+/** The current hit's halo reaches further — "you are here" among hits. */
 export const ACTIVE_GLOW = 16
 
 /** Duration of the arrival ping (ms) — GraphCanvas drives pulse 0→1 over it. */
