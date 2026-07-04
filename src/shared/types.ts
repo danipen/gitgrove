@@ -901,6 +901,40 @@ export interface AiChunk {
   text: string
 }
 
+/**
+ * Ask AI to name a branch for the pending working-tree changes. The context
+ * (file list, diffs, existing branch names for the naming convention) is
+ * gathered in main from the lock-free read side — the request is just the id.
+ */
+export interface AiBranchNameRequest {
+  requestId: string
+}
+
+/** Ask AI to explain one commit. Commits are immutable, so answers cache per hash. */
+export interface AiExplainCommitRequest {
+  requestId: string
+  hash: string
+}
+
+/**
+ * Ask AI to turn a git failure into plain words plus one next step. The repo
+ * fields come from the renderer's already-loaded state (no extra git calls —
+ * an error explainer must never queue behind the very op that just failed).
+ */
+export interface AiExplainErrorRequest {
+  requestId: string
+  /** The failure text exactly as shown to the user (git stderr, mostly). */
+  error: string
+  /** Current branch name, when a repo is open. */
+  branch?: string
+  /** `origin/main`-style upstream ref, or null when the branch has none. */
+  upstream?: string | null
+  ahead?: number
+  behind?: number
+  /** In-progress operation as a progressive ("merging", "rebasing"), if any. */
+  opState?: string
+}
+
 /** Lifecycle of an auto-update check, pushed from main to the renderer. */
 export type UpdateState =
   | 'checking'

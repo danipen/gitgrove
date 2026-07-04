@@ -4,10 +4,13 @@
 
 import type {
   AddAccountResult,
+  AiBranchNameRequest,
   AiChunk,
   AiCommitRequest,
   AiConnectInput,
   AiConnectResult,
+  AiExplainCommitRequest,
+  AiExplainErrorRequest,
   AiStatus,
   AppInfo,
   AvatarLookupResult,
@@ -159,6 +162,9 @@ export const IPC = {
   aiSetModel: 'ai:set-model',
   aiDisconnect: 'ai:disconnect',
   aiCommitMessage: 'ai:commit-message',
+  aiBranchName: 'ai:branch-name',
+  aiExplainCommit: 'ai:explain-commit',
+  aiExplainError: 'ai:explain-error',
   aiCancel: 'ai:cancel',
   // clone
   cloneRepo: 'repo:clone',
@@ -516,6 +522,24 @@ export interface GitGroveApi {
    * cancellation (aiCancel), which resolves with what was generated so far.
    */
   aiCommitMessage(repoPath: string, request: AiCommitRequest): Promise<string>
+  /**
+   * Suggest a branch name for the pending working-tree changes. Streams like
+   * aiCommitMessage; resolves with a ready-to-use, ref-valid slug (sanitized
+   * in main), or '' when the changes gave the model nothing to name.
+   */
+  aiBranchName(repoPath: string, request: AiBranchNameRequest): Promise<string>
+  /**
+   * Explain a commit: what changed and why it likely changed. Streams like
+   * aiCommitMessage. Commits are immutable, so main caches answers per
+   * hash+model — a repeat click answers instantly and costs nothing.
+   */
+  aiExplainCommit(repoPath: string, request: AiExplainCommitRequest): Promise<string>
+  /**
+   * Turn a git failure into plain words plus one suggested next step.
+   * `repoPath` is null when no repo is open (clone failures). Streams like
+   * aiCommitMessage.
+   */
+  aiExplainError(repoPath: string | null, request: AiExplainErrorRequest): Promise<string>
   /** Cancel a running generation by its requestId. */
   aiCancel(requestId: string): Promise<void>
   // ── Clone ──

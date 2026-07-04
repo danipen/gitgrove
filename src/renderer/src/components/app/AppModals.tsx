@@ -48,6 +48,8 @@ interface Props {
   /** True while a merge/rebase/… owns the working tree. */
   opInFlight: boolean
   busy: boolean
+  /** Open Settings → AI (the create-branch ✨ teaser's one button). */
+  onSetupAi: () => void
   /** Run a modal-confirmed op: spinner, close, errors → toast. */
   runModalOp: (fn: () => Promise<unknown>) => Promise<void>
   /** Merge/squash/rebase a branch; owns the outcome notice + conflict flow. */
@@ -72,6 +74,7 @@ export function AppModals({
   dirtyCount,
   opInFlight,
   busy,
+  onSetupAi,
   runModalOp,
   onMerge,
   onCreateBranch,
@@ -98,6 +101,8 @@ export function AppModals({
     case 'new-branch':
       return (
         <CreateBranchDialog
+          repoPath={repoPath}
+          onSetupAi={onSetupAi}
           current={branch?.current ?? ''}
           detached={branch?.detached ?? false}
           defaultBranch={branch?.defaultBranch ?? null}

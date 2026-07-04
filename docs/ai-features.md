@@ -15,7 +15,7 @@ everything needed; AI features are mostly *prompt assembly over existing reads*.
 
 ## Tier 1 — daily drivers (do these first)
 
-### 1. Commit message generation ✨
+### 1. Commit message generation ✨ — SHIPPED
 **Where:** `CommitComposer` (Changes tab).
 **UX:** one sparkle button (or auto ghost-text in the empty summary field, Tab to accept).
 **Engine — why ours beats everyone else's:**
@@ -27,9 +27,13 @@ everything needed; AI features are mostly *prompt assembly over existing reads*.
   single setting.
 - Amend mode: include the previous message (`lastCommitMessage`) as the base to refine.
 
-### 2. Branch name from pending changes
+### 2. Branch name from pending changes — SHIPPED
 **Where:** `CreateBranchDialog` — exactly the flow you described. The dialog already
 handles dirty state via `PendingChangesChoice` (bring/leave changes).
+**As built:** the suggestion streams in as ghost text on open (Tab accepts; Enter on the
+empty field accepts and creates); every model answer is forced through
+`slugFromModelOutput` (main/ai/branch-name.ts) so only ref-valid, collision-free slugs
+reach the dialog.
 **UX:** the name field is prefilled with a suggested slug (`fix/stash-panel-empty-state`)
 as placeholder ghost text; typing replaces it, Enter accepts it.
 **Engine:** working diff summary → slug, constrained by `validateRefName` and the repo's
@@ -51,9 +55,12 @@ conflict region. Accept writes the file + `markResolved`. **Never auto-applies.*
 Same engine reused for cherry-pick, rebase, revert and stash-apply conflicts for free
 (they all flow through the same `RepoState` + `ConflictPanel`).
 
-### 4. "Explain this" — commits and diffs
+### 4. "Explain this" — commits and diffs — SHIPPED for commits
 **Where:** context menu / one icon in `DiffViewer`, `CommitSummary`, and the Graph
 detail pane.
+**As built:** `AiExplainCommit` (shared card) under the commit body in the History
+summary and the Graph detail pane; answers cached per hash+model in a main-process LRU.
+Working-tree / single-diff explain: still open.
 **UX:** hover-card or side-note: what changed, why it likely changed, what to watch out
 for. Works on a commit, a file diff, or the whole working tree.
 **Engine:** `commitDiff`/`workingDiff` + the commit message + touched files' recent
@@ -93,8 +100,11 @@ repo instantly.
 **Engine:** the reblame walk already exists; feed the chain of commits + messages +
 diffs for that line. This turns blame from *who* into *why*.
 
-### 9. Error → plain English + one fix
+### 9. Error → plain English + one fix — SHIPPED in ErrorDialog
 **Where:** `ErrorDialog` and op-failure banners.
+**As built:** ✨ Explain in the failure modal; the repo situation (branch, upstream,
+ahead/behind, mid-op) comes from renderer state — zero git calls, so the explainer never
+queues behind the op that just failed. Op-failure banners: still open.
 **UX:** git's stderr ("non-fast-forward", "refusing to merge unrelated histories")
 becomes one human sentence plus **one** suggested action button (pull --rebase, force
 push with lease…). Destructive suggestions still confirm once, per house rules.
@@ -107,10 +117,14 @@ obvious bugs — as dismissible notes, never a gate.
 **Engine:** `getUnpushedCommits` + `rangeDiff`. Secrets check can be regex-first
 (free, offline) with AI only for the fuzzy cases.
 
-### 11. Auto-named stashes
+### 11. Auto-named stashes — PARTIAL (manual ✨ shipped; invisible auto-naming rejected)
 **Where:** `stashSave` (Stash mode in `CommitComposer`, auto-stash on switch).
 **UX:** invisible. Stashes are just… named ("wip: half-migrated GraphToolbar filters")
 instead of "WIP on main". `StashPanel` becomes readable for free.
+**Decision (2026-07):** the composer's Stash mode ✨ names stashes on demand. Naming
+auto-stashes invisibly was rejected: it would either make the stash write wait on the
+model (breaks *git never waits on AI*) or rewrite the stash after the fact
+(drop+store — not worth the data risk for a label).
 
 ### 12. Release notes from the Graph
 **Where:** Graph tab — release lines and tags are already first-class (`releases.ts`,
@@ -164,9 +178,14 @@ src/main/ai/
 
 ## Suggested build order
 
-1. Settings pane + `src/main/ai/` provider layer (unlocks everything)
-2. Commit messages (#1) — highest daily value, simplest context
-3. Branch names (#2) + stash names (#11) — same machinery, nearly free
-4. Explain this (#4) + error explainer (#9) — read-only, low risk
-5. Conflict resolution (#3) — the differentiator; ship when it's *great*
+1. ~~Settings pane + `src/main/ai/` provider layer (unlocks everything)~~ ✅
+2. ~~Commit messages (#1) — highest daily value, simplest context~~ ✅
+3. ~~Branch names (#2) + stash names (#11) — same machinery, nearly free~~ ✅
+4. ~~Explain this (#4) + error explainer (#9) — read-only, low risk~~ ✅ (commits + ErrorDialog)
+5. Conflict resolution (#3) — the differentiator; ship when it's *great* ← **next**
 6. Rebase copilot (#5), PR descriptions (#6), ask-your-repo (#7), the rest
+
+Shared renderer machinery to reuse for whatever ships next: `useAiGeneration`
+(lib/ai.ts — streaming with cancel/supersede semantics), `AiTeaserPopover` and
+`AiExplainCommit` (components/common), the `.ai-note` / `.ai-field` styles
+(features/ai.css). Main-side: the `generate` runner in ipc/ai.ts.

@@ -3,16 +3,63 @@
 // broadcast — another window's composer must not receive this one's text)
 // and are cancellable by requestId. The API key never crosses to a renderer:
 // it arrives once in aiConnect and lives encrypted in the AI store.
+//
+// Every feature (commit messages, branch names, explanations) funnels through
+// one `generate` runner, so streaming, cancellation and error mapping behave
+// identically on every AI surface.
 
 import { IPC } from '@shared/ipc'
-import type { AiChunk, AiCommitRequest, AiConnectInput, AiConnectResult } from '@shared/types'
+import type {
+  AiBranchNameRequest,
+  AiChunk,
+  AiCommitRequest,
+  AiConnectInput,
+  AiConnectResult,
+  AiExplainCommitRequest,
+  AiExplainErrorRequest
+} from '@shared/types'
 import { ipcMain } from 'electron'
+import {
+  buildBranchNamePrompt,
+  gatherBranchNameContext,
+  slugFromModelOutput
+} from '../ai/branch-name'
 import { aiStore } from '../ai/cipher'
 import { AiRequestError, streamChat, verifyEndpoint } from '../ai/client'
 import { gatherCommitContext } from '../ai/commit-context'
 import { buildCommitPrompt } from '../ai/commit-prompt'
+import { buildExplainCommitPrompt, gatherExplainCommitContext } from '../ai/explain-commit'
+import { buildExplainErrorPrompt } from '../ai/explain-error'
+import type { ChatMessage } from '../ai/providers'
 import { resolveBaseUrl } from '../ai/providers'
 import type { HandlerDeps } from './context'
+
+/**
+ * Commits are immutable, so explanations cache forever — keyed by model too,
+ * because switching models legitimately changes the answer. Small LRU: a
+ * session revisits recent commits, not hundreds.
+ */
+const EXPLAIN_CACHE_MAX = 80
+const explainCache = new Map<string, string>()
+
+function cacheGet(key: string): string | undefined {
+  const hit = explainCache.get(key)
+  if (hit !== undefined) {
+    // Refresh recency (Map iterates in insertion order — delete + set = LRU).
+    explainCache.delete(key)
+    explainCache.set(key, hit)
+  }
+  return hit
+}
+
+function cachePut(key: string, value: string): void {
+  explainCache.set(key, value)
+  while (explainCache.size > EXPLAIN_CACHE_MAX) {
+    const oldest = explainCache.keys().next().value
+    if (oldest === undefined) break
+    explainCache.delete(oldest)
+  }
+}
 
 export function registerAiHandlers(deps: HandlerDeps): void {
   const { broadcast } = deps
@@ -61,41 +108,93 @@ export function registerAiHandlers(deps: HandlerDeps): void {
 
   // One AbortController per running generation, keyed by the renderer-chosen
   // requestId — cancel is a plain lookup, and a window can run several
-  // generations (composer now, branch names later) without cross-talk.
+  // generations (composer, branch name, an explanation) without cross-talk.
   const inFlight = new Map<string, AbortController>()
+
+  /**
+   * Run one streaming generation: resolve the endpoint, gather + build the
+   * prompt (lazily — gathering only starts when a backend exists), stream
+   * tokens to the asking window, map stable failure codes to calm copy.
+   */
+  async function generate(
+    sender: Electron.WebContents,
+    requestId: string,
+    messages: () => Promise<ChatMessage[]>
+  ): Promise<string> {
+    const endpoint = aiStore().endpoint()
+    // The renderer gates its buttons on aiStatus, so this only races a
+    // just-disconnected backend — answer like any other failed generation.
+    if (!endpoint) throw new Error('No AI backend is connected — set one up in Settings.')
+    const controller = new AbortController()
+    inFlight.set(requestId, controller)
+    try {
+      return await streamChat(endpoint, await messages(), {
+        signal: controller.signal,
+        onText: (text) => {
+          if (sender.isDestroyed()) return
+          const chunk: AiChunk = { requestId, text }
+          sender.send(IPC.aiChunk, chunk)
+        }
+      })
+    } catch (err) {
+      // Stable codes become calm copy here, so every AI surface fails the
+      // same way and no renderer ever parses provider error strings.
+      if (err instanceof AiRequestError) {
+        if (err.code === 'unauthorized')
+          throw new Error('The AI endpoint rejected the key — reconnect it in Settings.')
+        throw new Error(err.message)
+      }
+      throw err
+    } finally {
+      inFlight.delete(requestId)
+    }
+  }
 
   ipcMain.handle(
     IPC.aiCommitMessage,
-    async (e, repoPath: string, request: AiCommitRequest): Promise<string> => {
-      const endpoint = aiStore().endpoint()
-      // The renderer gates the button on aiStatus, so this only races a
-      // just-disconnected backend — answer like any other failed generation.
-      if (!endpoint) throw new Error('No AI backend is connected — set one up in Settings.')
-      const controller = new AbortController()
-      inFlight.set(request.requestId, controller)
-      try {
-        const context = await gatherCommitContext(repoPath, request)
-        return await streamChat(endpoint, buildCommitPrompt(context), {
-          signal: controller.signal,
-          onText: (text) => {
-            if (e.sender.isDestroyed()) return
-            const chunk: AiChunk = { requestId: request.requestId, text }
-            e.sender.send(IPC.aiChunk, chunk)
-          }
-        })
-      } catch (err) {
-        // Stable codes become calm copy here, so every AI surface fails the
-        // same way and no renderer ever parses provider error strings.
-        if (err instanceof AiRequestError) {
-          if (err.code === 'unauthorized')
-            throw new Error('The AI endpoint rejected the key — reconnect it in Settings.')
-          throw new Error(err.message)
-        }
-        throw err
-      } finally {
-        inFlight.delete(request.requestId)
-      }
+    (e, repoPath: string, request: AiCommitRequest): Promise<string> =>
+      generate(e.sender, request.requestId, async () =>
+        buildCommitPrompt(await gatherCommitContext(repoPath, request))
+      )
+  )
+
+  ipcMain.handle(
+    IPC.aiBranchName,
+    async (e, repoPath: string, request: AiBranchNameRequest): Promise<string> => {
+      // Gather once, outside the prompt closure — the collision set (existing
+      // branch names) is needed again to sanitize the answer.
+      const context = await gatherBranchNameContext(repoPath)
+      const raw = await generate(e.sender, request.requestId, async () =>
+        buildBranchNamePrompt(context.prompt)
+      )
+      // The stream shows the raw text forming; the resolved value is the
+      // cleaned, ref-valid, collision-free slug the dialog can trust blindly.
+      return slugFromModelOutput(raw, context.takenNames)
     }
+  )
+
+  ipcMain.handle(
+    IPC.aiExplainCommit,
+    async (e, repoPath: string, request: AiExplainCommitRequest): Promise<string> => {
+      const endpoint = aiStore().endpoint()
+      const key = endpoint
+        ? `${endpoint.provider}\0${endpoint.model}\0${repoPath}\0${request.hash}`
+        : null
+      const cached = key ? cacheGet(key) : undefined
+      // A cache hit answers instantly through the invoke result — no chunks.
+      if (cached !== undefined) return cached
+      const text = await generate(e.sender, request.requestId, async () =>
+        buildExplainCommitPrompt(await gatherExplainCommitContext(repoPath, request.hash))
+      )
+      if (key && text) cachePut(key, text)
+      return text
+    }
+  )
+
+  ipcMain.handle(
+    IPC.aiExplainError,
+    (e, _repoPath: string | null, request: AiExplainErrorRequest): Promise<string> =>
+      generate(e.sender, request.requestId, async () => buildExplainErrorPrompt(request))
   )
 
   ipcMain.handle(IPC.aiCancel, (_e, requestId: string) => {

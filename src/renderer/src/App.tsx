@@ -1279,6 +1279,7 @@ export function App() {
         dirtyCount={changes.length}
         opInFlight={!!repoState?.op}
         busy={modalBusy}
+        onSetupAi={() => setModal({ kind: 'settings', section: 'ai' })}
         runModalOp={runModalOp}
         onMerge={performMerge}
         onCreateBranch={performCreateBranch}
@@ -1565,6 +1566,7 @@ export function App() {
                 }}
                 onFileSelectionChange={setCommitSelCount}
                 onOpenFileHistory={openFileHistory}
+                onSetupAi={() => setModal({ kind: 'settings', section: 'ai' })}
               />
             </div>
           </div>
@@ -1670,6 +1672,10 @@ export function App() {
                     commit={selectedCommit}
                     files={commitFiles}
                     filesLoading={commitFilesLoading}
+                    ai={{
+                      repoPath: repo.path,
+                      onSetupAi: () => setModal({ kind: 'settings', section: 'ai' })
+                    }}
                   />
                 )}
                 <DiffViewer
@@ -1709,7 +1715,22 @@ export function App() {
           onRevealCommit={revealCommit}
         />
       )}
-      {error && <ErrorDialog message={error} info={appInfo} onClose={() => setError(null)} />}
+      {error && (
+        <ErrorDialog
+          message={error}
+          info={appInfo}
+          ai={{
+            repoPath: repo?.path ?? null,
+            branch: branch?.current,
+            upstream: sync?.upstream,
+            ahead: sync?.ahead,
+            behind: sync?.behind,
+            opState: repoState?.op ?? undefined,
+            onSetupAi: () => setModal({ kind: 'settings', section: 'ai' })
+          }}
+          onClose={() => setError(null)}
+        />
+      )}
       {notice && !error && (
         <Toast kind="success" message={notice} onClose={() => setNotice(null)} />
       )}

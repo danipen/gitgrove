@@ -5,7 +5,7 @@
 // renderer only ever sees text.
 
 import type { AiCommitOptions, AiErrorCode, AiProvider, AiStatus } from '@shared/types'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /** One provider card in the settings onboarding, in display order. */
 export interface AiProviderChoice {
@@ -117,6 +117,94 @@ export function useAiStatus(): AiStatus | null | undefined {
     }
   }, [])
   return status
+}
+
+/** One streaming generation a component can render as it forms. */
+export interface AiGeneration {
+  /** The text so far — streams while `generating`, final once it stops. */
+  text: string
+  generating: boolean
+  /**
+   * Start a generation. `invoke` gets the requestId to pass to the
+   * window.gitgrove.ai* call; the hook wires its chunks into `text`. Resolves
+   * with the final text, or null when this run failed or was superseded.
+   * A newer run() supersedes an older one (its stream is cancelled).
+   */
+  run(invoke: (requestId: string) => Promise<string>): Promise<string | null>
+  /** Cancel the running generation (resolves run() with the partial text). */
+  stop(): void
+  /** Clear the text (e.g. when the input it described changed). */
+  reset(): void
+}
+
+/**
+ * Drive one streaming AI generation with React state — for surfaces that
+ * RENDER the stream (ghost text, explanation cards). The composer keeps its
+ * own ref-based plumbing instead: it forwards chunks into input fields and
+ * deliberately avoids a re-render per token.
+ *
+ * Unmount cancels the stream — dialogs and per-commit cards come and go, and
+ * an orphaned generation must not keep billing the user's endpoint.
+ */
+export function useAiGeneration(onError?: (e: unknown) => void): AiGeneration {
+  const [text, setText] = useState('')
+  const [generating, setGenerating] = useState(false)
+  const requestIdRef = useRef<string | null>(null)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+
+  useEffect(() => {
+    const unsubscribe = window.gitgrove.onAiChunk((chunk) => {
+      if (chunk.requestId !== requestIdRef.current) return
+      setText((t) => t + chunk.text)
+    })
+    return () => {
+      unsubscribe()
+      const requestId = requestIdRef.current
+      requestIdRef.current = null
+      if (requestId) window.gitgrove.aiCancel(requestId).catch(() => {})
+    }
+  }, [])
+
+  const run = useCallback(async (invoke: (requestId: string) => Promise<string>) => {
+    const requestId = crypto.randomUUID()
+    requestIdRef.current = requestId
+    setText('')
+    setGenerating(true)
+    try {
+      const result = await invoke(requestId)
+      if (requestIdRef.current !== requestId) return null
+      // The resolved text is authoritative (a branch-name run resolves with
+      // the sanitized slug, a cached explanation never streamed at all).
+      setText(result)
+      return result
+    } catch (e) {
+      if (requestIdRef.current === requestId) onErrorRef.current?.(e)
+      return null
+    } finally {
+      if (requestIdRef.current === requestId) {
+        requestIdRef.current = null
+        setGenerating(false)
+      }
+    }
+  }, [])
+
+  const stop = useCallback(() => {
+    const requestId = requestIdRef.current
+    if (requestId) window.gitgrove.aiCancel(requestId).catch(() => {})
+  }, [])
+
+  const reset = useCallback(() => {
+    // Also cancels a run still in flight — reset means "this text (and any
+    // text still forming) no longer describes the input".
+    const requestId = requestIdRef.current
+    requestIdRef.current = null
+    if (requestId) window.gitgrove.aiCancel(requestId).catch(() => {})
+    setText('')
+    setGenerating(false)
+  }, [])
+
+  return { text, generating, run, stop, reset }
 }
 
 export const DEFAULT_AI_COMMIT_OPTIONS: AiCommitOptions = {
