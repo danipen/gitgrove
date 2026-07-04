@@ -25,7 +25,7 @@ import {
   toWorldY,
   type View
 } from './geometry'
-import type { GraphLayout, GraphNode, GraphRow } from './layout'
+import type { BranchSelection, GraphLayout, GraphNode, GraphRow } from './layout'
 import { type BackportLink, twinHashes } from './links'
 import {
   captionMetrics,
@@ -55,8 +55,10 @@ interface Props {
   layout: GraphLayout
   theme: 'dark' | 'light'
   selectedHash: string | null
-  /** Tip of the branch whose changes view is open — its container lights up. */
-  selectedBranchTip: string | null
+  /** The branch whose changes view is open — its container lights up. Matched
+   *  by (name, tip): empty branches share their tip hash with the anchor's
+   *  chain, so a hash alone would light every one of them (layout.ts). */
+  selectedBranch: BranchSelection | null
   /** Commits kept at full strength while the rest dim; null = no filter. */
   matches: ReadonlySet<string> | null
   /** The current search hit (louder ring). */
@@ -141,7 +143,7 @@ export function GraphCanvas({
   layout,
   theme,
   selectedHash,
-  selectedBranchTip,
+  selectedBranch,
   matches,
   activeMatch,
   changesCount,
@@ -189,7 +191,7 @@ export function GraphCanvas({
   const sceneRef = useRef({
     layout,
     selectedHash,
-    selectedBranchTip,
+    selectedBranch,
     matches,
     activeMatch,
     wip,
@@ -199,7 +201,7 @@ export function GraphCanvas({
   sceneRef.current = {
     layout,
     selectedHash,
-    selectedBranchTip,
+    selectedBranch,
     matches,
     activeMatch,
     wip,
@@ -225,7 +227,7 @@ export function GraphCanvas({
       dpr,
       palette: paletteRef.current,
       selectedHash: s.selectedHash,
-      selectedBranchTip: s.selectedBranchTip,
+      selectedBranch: s.selectedBranch,
       hoverHash: hoverRef.current,
       matches: s.matches,
       activeMatch: s.activeMatch,
@@ -436,7 +438,7 @@ export function GraphCanvas({
   // biome-ignore lint/correctness/useExhaustiveDependencies: these values aren't read by invalidate — they're the intentional redraw triggers
   useEffect(invalidate, [
     selectedHash,
-    selectedBranchTip,
+    selectedBranch,
     matches,
     activeMatch,
     wip,

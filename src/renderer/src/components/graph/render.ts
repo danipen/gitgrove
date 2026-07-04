@@ -30,7 +30,14 @@ import {
   toWorldX,
   type View
 } from './geometry'
-import { BRANCH_COLOR_COUNT, type GraphLayout, type GraphNode, type GraphRow } from './layout'
+import {
+  BRANCH_COLOR_COUNT,
+  type BranchSelection,
+  type GraphLayout,
+  type GraphNode,
+  type GraphRow,
+  rowMatchesSelection
+} from './layout'
 import { type BackportLink, linkedHashes } from './links'
 
 export interface GraphPalette {
@@ -135,8 +142,8 @@ export interface SceneState {
   dpr: number
   palette: GraphPalette
   selectedHash: string | null
-  /** Tip hash of the branch whose changes view is open — its container lights up. */
-  selectedBranchTip: string | null
+  /** The branch whose changes view is open — its container lights up. */
+  selectedBranch: BranchSelection | null
   hoverHash: string | null
   /** Commits kept at full strength while everything else dims (filters/search),
    *  or null when nothing is filtering. */
@@ -316,7 +323,7 @@ function drawContainers(
   const { palette, wip } = scene
   for (const row of scene.layout.rows) {
     if (row.endColumn < c0 - 1 || row.startColumn > c1 + 1) continue
-    const selected = row.tipHash === scene.selectedBranchTip
+    const selected = rowMatchesSelection(row, scene.selectedBranch)
     const y = nodeY(row.index)
     const x0 = nodeX(row.startColumn) - NODE_R - CAPSULE_PAD
     // The HEAD branch's capsule stretches to embrace the WIP node.
@@ -599,7 +606,9 @@ function drawNodes(
 
 /** HEAD on a zero-commit branch: no node carries isHead (layout moves it to
  *  the empty lane's row), so the home badge anchors to the lane's reserved
- *  slot — where the branch's first commit will land. */
+ *  slot — where the branch's first commit will land. Centered in the slot,
+ *  not on the shoulder: the shoulder spot sits right under the accent label
+ *  pill, and blue-on-blue melts the badge into it. */
 function drawEmptyHeadBadge(
   ctx: CanvasRenderingContext2D,
   scene: SceneState,
@@ -609,7 +618,7 @@ function drawEmptyHeadBadge(
   for (const row of scene.layout.rows) {
     if (!row.empty || !row.isHead) continue
     if (row.endColumn < c0 || row.startColumn > c1) continue
-    drawHomeBadge(ctx, scene, nodeX(row.startColumn), nodeY(row.index))
+    drawHomeBadge(ctx, scene, nodeX(row.startColumn), nodeY(row.index), 'center')
   }
 }
 
@@ -623,7 +632,11 @@ function drawHomeBadge(
   ctx: CanvasRenderingContext2D,
   scene: SceneState,
   x: number,
-  y: number
+  y: number,
+  /** 'shoulder' pins to a node's top-right (the default, over an avatar);
+   *  'center' sits on the point itself — empty lanes have no avatar to yield
+   *  to, and their shoulder spot collides with the label pill above. */
+  anchor: 'shoulder' | 'center' = 'shoulder'
 ): void {
   const { view, dpr, palette } = scene
   // Tracks the zoom: grows with the nodes when zoomed in, clamped on both
@@ -658,8 +671,9 @@ function drawHomeBadge(
   // skews mirrored pixel coverage by up to ~33% (a lopsided roof), while
   // 0 and 0.5 offsets rasterize exactly.
   const snap = (v: number) => Math.round(v * dpr * 2) / (dpr * 2)
-  const sx = snap(x * view.scale + view.x + NODE_R * view.scale * 0.8)
-  const sy = snap(y * view.scale + view.y - NODE_R * view.scale * 0.8)
+  const off = anchor === 'shoulder' ? NODE_R * view.scale * 0.8 : 0
+  const sx = snap(x * view.scale + view.x + off)
+  const sy = snap(y * view.scale + view.y - off)
   ctx.save()
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   // Below this the house is antialiasing soup: a solid accent mini-pin on

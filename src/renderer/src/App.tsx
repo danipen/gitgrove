@@ -17,7 +17,7 @@ import type {
   SyncStatus,
   UndoSnapshot
 } from '@shared/types'
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AboutDialog } from './components/app/AboutDialog'
 import { AppModals, type Modal } from './components/app/AppModals'
 import { CloneDialog } from './components/app/CloneDialog'
@@ -391,6 +391,14 @@ export function App() {
     selectRangeFile,
     resetRange
   } = useBranchRange({ getRepoPath, fail, loadRangeDiff, clearDiff })
+
+  // The Graph's lit-up container, identified by (name, tip) — a tip hash
+  // alone is ambiguous: empty branches share it with their anchor's chain.
+  // Memoized so the canvas' redraw trigger only fires when it truly changes.
+  const selectedGraphBranch = useMemo(
+    () => (branchRange ? { name: branchRange.name, tipHash: branchRange.head } : null),
+    [branchRange]
+  )
 
   /** Select a commit, dismissing any open branch-changes view. */
   const selectCommitOnly = useCallback(
@@ -1605,7 +1613,7 @@ export function App() {
                   clearDiff()
                 }
               }}
-              selectedBranchTip={branchRange?.head ?? null}
+              selectedBranch={selectedGraphBranch}
               onSelectBranch={(row) => {
                 resetDetail()
                 clearDiff()

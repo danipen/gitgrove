@@ -61,6 +61,19 @@ export interface GraphRow {
   endColumn: number
 }
 
+/** Identifies the row whose branch-changes view is open. A tip hash alone is
+ *  ambiguous: every empty branch shares its anchor commit's hash with the
+ *  chain that owns it (and with its fellow empty branches), so selection
+ *  matches on (name, tip) — the pair is unique across rows. */
+export interface BranchSelection {
+  name: string
+  tipHash: string
+}
+
+/** True when `row` is the branch `sel` names — see BranchSelection. */
+export const rowMatchesSelection = (row: GraphRow, sel: BranchSelection | null): boolean =>
+  sel !== null && row.tipHash === sel.tipHash && row.name === sel.name
+
 export interface GraphNode {
   commit: Commit
   /** The chain (GraphRow.chain) that claimed this commit. */
@@ -337,8 +350,11 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     // every tip walk found its commits already claimed by a higher-priority
     // chain. It's still a real branch the user can be on — reserve it an
     // EMPTY lane anchored at the commit it points to, instead of letting it
-    // vanish from the diagram.
-    if (!claimed) {
+    // vanish from the diagram. Except `origin/HEAD`: its base splits to
+    // "HEAD", which is a pointer at the remote's default branch, not a branch
+    // anyone can be on — an empty "HEAD" lane is pure noise. (When such a ref
+    // genuinely claims commits above, it still shows, as before.)
+    if (!claimed && group.base !== 'HEAD') {
       const anchor = group.tips.find((t) => chainOf.has(t.hash))
       if (anchor) {
         chains.push({

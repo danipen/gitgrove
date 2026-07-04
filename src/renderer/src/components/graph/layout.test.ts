@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { Commit } from '@shared/types'
-import { collectBranchNames, type GraphInput, layoutGraph } from './layout'
+import { collectBranchNames, type GraphInput, layoutGraph, rowMatchesSelection } from './layout'
 
 /** Minimal commit for layout tests; only hash/parents/refs/subject matter. */
 function commit(hash: string, parents: string[], refs = '', subject = `subject ${hash}`): Commit {
@@ -567,6 +567,33 @@ describe('empty branches (zero-commit refs)', () => {
       input([commit('b', ['a'], 'HEAD -> main, fresh'), commit('a', [])])
     )
     expect(names).toContain('fresh')
+  })
+
+  test('selection matches one row even when empty branches share a tip hash', () => {
+    // main, one and two all point at commit b: selecting 'one' must light
+    // only 'one' — a tip-hash-only match would light all three.
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, one, two'), commit('a', [])])
+    )
+    const selection = { name: 'one', tipHash: 'b' }
+    const lit = layout.rows.filter((r) => rowMatchesSelection(r, selection))
+    expect(lit).toHaveLength(1)
+    expect(lit[0].name).toBe('one')
+    expect(layout.rows.some((r) => rowMatchesSelection(r, null))).toBe(false)
+  })
+
+  test('origin/HEAD never becomes an empty lane (still shows when it owns commits)', () => {
+    // origin/HEAD rides the default branch's tip: a pointer, not a branch.
+    const layout = layoutGraph(
+      input([commit('b', ['a'], 'HEAD -> main, origin/HEAD'), commit('a', [])])
+    )
+    expect(layout.rows.some((r) => r.name === 'HEAD')).toBe(false)
+    // But a HEAD ref that claims commits of its own keeps its row, as before.
+    const claimed = layoutGraph(
+      input([commit('h', ['a'], 'origin/HEAD'), commit('b', ['a'], 'HEAD -> main'), commit('a', [])])
+    )
+    const headRow = claimed.rows.find((r) => r.name === 'HEAD')
+    expect(headRow?.empty).toBe(false)
   })
 
   test('local and remote refs at an already-claimed commit share one empty lane', () => {
