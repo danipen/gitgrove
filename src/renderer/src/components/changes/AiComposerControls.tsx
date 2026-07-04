@@ -172,9 +172,9 @@ export function AiComposerControls({
             <Icon.Sparkle size={15} /> {verb} with AI
           </div>
           <p className="ai-teaser__body">
-            Connect OpenAI, Anthropic, Gemini, a local Ollama or any compatible endpoint — your
-            key, sent only to your provider. GitGrove writes the message from exactly the changes
-            you selected.
+            Connect OpenAI, Anthropic, Gemini, a local Ollama or any compatible endpoint — your key,
+            sent only to your provider. GitGrove writes the message from exactly the changes you
+            selected.
           </p>
           <button
             type="button"

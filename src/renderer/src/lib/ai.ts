@@ -140,6 +140,9 @@ export function splitCommitMessage(text: string): { summary: string; description
   if (newline < 0) return { summary: cleaned, description: '' }
   return {
     summary: cleaned.slice(0, newline).trim(),
-    description: cleaned.slice(newline + 1).replace(/^\n+/, '').trimEnd()
+    description: cleaned
+      .slice(newline + 1)
+      .replace(/^\n+/, '')
+      .trimEnd()
   }
 }

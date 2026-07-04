@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { AiCommitOptions } from '@shared/types'
-import { buildCommitPrompt, capPatch, type CommitPromptInput } from './commit-prompt'
+import { buildCommitPrompt, type CommitPromptInput, capPatch } from './commit-prompt'
 
 const options = (over: Partial<AiCommitOptions> = {}): AiCommitOptions => ({
   length: 'medium',
