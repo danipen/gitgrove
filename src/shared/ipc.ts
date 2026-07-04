@@ -52,6 +52,7 @@ import type {
 export const IPC = {
   pickRepo: 'repo:pick',
   openRepo: 'repo:open',
+  openRepoNewWindow: 'repo:open-new-window',
   initialRepoPath: 'repo:initial-path',
   trustRepo: 'repo:trust',
   recentRepos: 'repo:recent',
@@ -212,8 +213,16 @@ export interface GitGroveApi {
   /** Open a known path as a repository. */
   openRepo(path: string): Promise<RepoOpenResult>
   /**
-   * The repository requested on launch (via `--repo` or GITGROVE_OPEN_REPO), or
-   * null. Consumed once: a later reload returns null so it doesn't reopen.
+   * Open a repository in a brand-new window, leaving this window untouched —
+   * the repo switcher's "Open in New Window". The new window boots straight
+   * into the repo (it arrives through initialRepoPath).
+   */
+  openRepoInNewWindow(path: string): Promise<void>
+  /**
+   * The repository this window should open on boot: what "Open in New Window"
+   * or a second-instance `--repo` created it for, or — first window only —
+   * the repo named on the command line (`--repo` / GITGROVE_OPEN_REPO). Null
+   * otherwise. Consumed once: a later reload returns null so it doesn't reopen.
    */
   initialRepoPath(): Promise<string | null>
   /** Trust a folder git flagged as untrusted (persist a safe.directory exception), then open it. */

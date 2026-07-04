@@ -88,6 +88,17 @@ export function useTheme(): {
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
+  // Follow theme changes made in *other* GitGrove windows: localStorage is
+  // shared across windows, and 'storage' fires only in the windows that didn't
+  // write — so every window flips together and this never loops.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY) setPrefState(readThemePref())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
   const resolved: ResolvedTheme = pref === 'system' ? system : pref
 
   useEffect(() => {

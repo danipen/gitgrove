@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test'
-import { MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, type Rect, sanitizeWindowState } from './window-state'
+import {
+  cascadeBounds,
+  MIN_WINDOW_HEIGHT,
+  MIN_WINDOW_WIDTH,
+  type Rect,
+  sanitizeWindowState
+} from './window-state'
 
 // A 1920x1080 primary whose work area starts below a 40px menu/task bar.
 const primary: Rect = { x: 0, y: 40, width: 1920, height: 1040 }
@@ -123,5 +129,51 @@ describe('sanitizeWindowState', () => {
   test('degrades to defaults when no displays are reported', () => {
     const state = sanitizeWindowState(saved({ x: 0, y: 0, width: 1200, height: 800 }), [])
     expect(state.bounds).toBeNull()
+  })
+})
+
+describe('cascadeBounds', () => {
+  test('offsets down-right from the source window, keeping its size', () => {
+    const source = { x: 100, y: 140, width: 1200, height: 800 }
+    expect(cascadeBounds(source, primary)).toEqual({ x: 128, y: 168, width: 1200, height: 800 })
+  })
+
+  test('wraps back to the work area edge when the offset would overflow', () => {
+    // Source sits flush against the bottom-right of the primary work area.
+    const source = { x: 720, y: 280, width: 1200, height: 800 }
+    const result = cascadeBounds(source, primary)
+    // x wraps (748 + 1200 > 1920) and y wraps (308 + 800 > 1080).
+    expect(result).toEqual({ x: primary.x, y: primary.y, width: 1200, height: 800 })
+  })
+
+  test('wraps each axis independently', () => {
+    const source = { x: 720, y: 100, width: 1200, height: 800 }
+    const result = cascadeBounds(source, primary)
+    expect(result.x).toBe(primary.x) // horizontal overflow wraps…
+    expect(result.y).toBe(128) // …vertical still cascades
+  })
+
+  test('clamps an oversized source to the work area', () => {
+    const source = { x: 0, y: 38, width: 2560, height: 1440 }
+    const result = cascadeBounds(source, laptop)
+    expect(result.width).toBe(laptop.width)
+    expect(result.height).toBe(laptop.height)
+  })
+
+  test('never returns a window below the app minimum size', () => {
+    const source = { x: 10, y: 50, width: 200, height: 100 }
+    const result = cascadeBounds(source, primary)
+    expect(result.width).toBe(MIN_WINDOW_WIDTH)
+    expect(result.height).toBe(MIN_WINDOW_HEIGHT)
+  })
+
+  test('respects a secondary display work area origin', () => {
+    const source = { x: 2000, y: 60, width: 1600, height: 1200 }
+    expect(cascadeBounds(source, external)).toEqual({
+      x: 2028,
+      y: 88,
+      width: 1600,
+      height: 1200
+    })
   })
 })

@@ -15,10 +15,17 @@ import { getRecentRepos, removeRecentRepo } from '../store'
 import type { HandlerDeps } from './context'
 
 export function registerRepoHandlers(deps: HandlerDeps): void {
-  const { getWindow, openRepoAtPath, takeInitialRepoPath, trustRepo, opProgressTo } = deps
+  const {
+    windowFrom,
+    openRepoAtPath,
+    openRepoInNewWindow,
+    takeInitialRepoPath,
+    trustRepo,
+    opProgressTo
+  } = deps
 
-  ipcMain.handle(IPC.pickRepo, async () => {
-    const window = getWindow()
+  ipcMain.handle(IPC.pickRepo, async (e) => {
+    const window = windowFrom(e.sender)
     if (!window) return null
     const result = await dialog.showOpenDialog(window, {
       title: 'Open Git Repository',
@@ -26,12 +33,13 @@ export function registerRepoHandlers(deps: HandlerDeps): void {
       buttonLabel: 'Open'
     })
     if (result.canceled || result.filePaths.length === 0) return null
-    return openRepoAtPath(result.filePaths[0])
+    return openRepoAtPath(result.filePaths[0], window)
   })
 
-  ipcMain.handle(IPC.openRepo, (_e, path: string) => openRepoAtPath(path))
-  ipcMain.handle(IPC.initialRepoPath, () => takeInitialRepoPath())
-  ipcMain.handle(IPC.trustRepo, (_e, path: string) => trustRepo(path))
+  ipcMain.handle(IPC.openRepo, (e, path: string) => openRepoAtPath(path, windowFrom(e.sender)))
+  ipcMain.handle(IPC.openRepoNewWindow, (_e, path: string) => openRepoInNewWindow(path))
+  ipcMain.handle(IPC.initialRepoPath, (e) => takeInitialRepoPath(windowFrom(e.sender)))
+  ipcMain.handle(IPC.trustRepo, (e, path: string) => trustRepo(path, windowFrom(e.sender)))
 
   ipcMain.handle(IPC.recentRepos, () => getRecentRepos())
   ipcMain.handle(IPC.removeRecent, (_e, path: string) => removeRecentRepo(path))
@@ -59,7 +67,7 @@ export function registerRepoHandlers(deps: HandlerDeps): void {
   ipcMain.handle(
     IPC.checkout,
     async (
-      _e,
+      e,
       repoPath: string,
       branch: string,
       opts?: { changes?: BranchChangesAction }
@@ -69,7 +77,7 @@ export function registerRepoHandlers(deps: HandlerDeps): void {
         repoPath,
         branch,
         opts,
-        opProgressTo(repoPath, 'checkout')
+        opProgressTo(e.sender, repoPath, 'checkout')
       )
       return { branch: await getBranches(repoPath), outcome }
     }

@@ -1,19 +1,10 @@
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, nativeImage, shell } from 'electron'
-
-// The main bundle is emitted as ESM (package.json "type": "module"), where
-// __dirname is not defined — reconstruct it from the module URL.
-const moduleDir = dirname(fileURLToPath(import.meta.url))
-
-// In a packaged build the app's icon comes from the .app/.exe bundle. While
-// developing we run inside the generic Electron binary, so point the dock /
-// window icon at build/icon.png (sits two levels up from out/main) ourselves.
-const devIconPath = join(moduleDir, '../../build/icon.png')
+import { app, type BrowserWindow, Menu, nativeImage } from 'electron'
 
 import { IPC } from '@shared/ipc'
-import type { GitAvailability, RepoOpenResult } from '@shared/types'
+import type { GitAvailability, RepoOpenResult, UpdateStatus } from '@shared/types'
 import { REPO_URL } from './app-info'
 import { resolveStartupRepo } from './cli'
 import { gitVersion, locateGit, resetGitLocation } from './git/bin'
@@ -27,17 +18,20 @@ import {
 import { registerIpc } from './ipc'
 import { buildMenu, type MenuContext } from './menu'
 import { getRecentRepo, rememberRepo } from './store'
-import { initAutoUpdater } from './updater'
+import { checkForUpdates, initAutoUpdater } from './updater'
 import { RepoWatcher } from './watcher'
-import {
-  DEFAULT_WINDOW_HEIGHT,
-  DEFAULT_WINDOW_WIDTH,
-  MIN_WINDOW_HEIGHT,
-  MIN_WINDOW_WIDTH
-} from './window-state'
-import { loadWindowState, trackWindowState } from './window-state-store'
+import { WindowManager } from './windows'
 
 const isDev = !app.isPackaged
+
+// One process, many windows. A second launch (double-clicking the app again,
+// `gitgrove --repo <path>` from a shell) must join the running instance: two
+// processes would race each other on the recents store, the window-state file
+// and the accounts cipher. The running instance reacts in 'second-instance'
+// below — it opens the requested repo in a new window, or just raises a window.
+if (!app.requestSingleInstanceLock()) {
+  app.quit()
+}
 
 // Chromium's OSCrypt encrypts its own on-disk data (cookies, storage) with a
 // key it keeps in the OS secret store — the macOS keychain entry "GitGrove
@@ -69,113 +63,55 @@ if (process.env.GITGROVE_DEBUG_PORT) {
   app.commandLine.appendSwitch('remote-debugging-port', process.env.GITGROVE_DEBUG_PORT)
 }
 
-let mainWindow: BrowserWindow | null = null
-
 // A repository named on the command line (`--repo <path>`) or via
 // GITGROVE_OPEN_REPO, opened once the renderer mounts. Read exactly once (the
-// renderer asks for it on startup) so a later reload returns to the welcome
-// screen instead of reopening it.
+// first window's renderer asks for it on startup) so a later reload returns to
+// the welcome screen instead of reopening it. Windows created for a specific
+// repo ("Open in New Window", second-instance `--repo`) carry their own
+// pending repo inside the WindowManager instead.
 let startupRepoPath = resolveStartupRepo(process.argv, process.env)
-function takeInitialRepoPath(): string | null {
-  const path = startupRepoPath
-  startupRepoPath = null
-  return path
-}
-
-// Path of the repo currently open in the renderer, mirrored here so the
-// application menu's repo actions (Reveal in Finder, Open in Terminal, …) know
-// what to act on. Null until the first repo opens; the Repository menu items
-// are disabled while it is.
-let currentRepoPath: string | null = null
-
-const menuContext: MenuContext = {
-  getWindow: () => mainWindow,
-  getRepoPath: () => currentRepoPath
-}
 
 const watcher = new RepoWatcher((repoPath) => {
-  mainWindow?.webContents.send(IPC.repoChanged, repoPath)
+  // Every window gets the ping; each renderer refreshes only when the path
+  // matches its own open repo (see useOsIntegration), so windows on other
+  // repos — and the welcome screen — stay untouched.
+  windows.broadcast(IPC.repoChanged, repoPath)
 })
 
-function createWindow(): void {
-  // Last session's geometry, already reconciled against the monitors attached
-  // right now (the display it was on may be gone — see window-state.ts).
-  const windowState = loadWindowState()
-  mainWindow = new BrowserWindow({
-    ...(windowState.bounds ?? { width: DEFAULT_WINDOW_WIDTH, height: DEFAULT_WINDOW_HEIGHT }),
-    minWidth: MIN_WINDOW_WIDTH,
-    minHeight: MIN_WINDOW_HEIGHT,
-    show: false,
-    backgroundColor: '#0c0d10',
-    // Window icon is used on Windows/Linux (ignored on macOS); only needed in
-    // dev — packaged builds carry the icon in the executable.
-    ...(isDev ? { icon: devIconPath } : {}),
-    // macOS keeps its inset traffic lights. On Windows/Linux we hide the native
-    // title bar and menu bar so the app's toolbar acts as the title bar, with
-    // custom window controls (see WindowControls) painted into it — Alt still
-    // reveals the menu bar on demand.
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    trafficLightPosition: { x: 16, y: 18 },
-    autoHideMenuBar: process.platform !== 'darwin',
-    webPreferences: {
-      preload: join(moduleDir, '../preload/index.js'),
-      sandbox: false,
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  })
+const windows = new WindowManager({
+  onOpenReposChanged: (openRepos) => watcher.sync(openRepos),
+  onMenuTargetChanged: () => rebuildMenuIfTargetChanged()
+})
 
-  mainWindow.on('ready-to-show', () => {
-    // Maximize/full-screen must wait until here: maximize() implicitly shows
-    // the window, which before ready-to-show would flash an unpainted frame.
-    if (windowState.isMaximized) mainWindow?.maximize()
-    if (windowState.isFullScreen) mainWindow?.setFullScreen(true)
-    mainWindow?.show()
-  })
+// The menu's only window-dependent state is the focused window's repo (its
+// Repository actions capture the path at build time). Focus changes fire on
+// every app switch, so rebuild only when that repo actually differs.
+let menuRepoPath: string | null | undefined // undefined = menu never built
+function rebuildMenuIfTargetChanged(): void {
+  const repoPath = windows.repoOfFocusedWindow()
+  if (repoPath === menuRepoPath) return
+  menuRepoPath = repoPath
+  buildMenu(menuContext)
+}
 
-  trackWindowState(mainWindow)
+// Update pushes go to every window: the "restart to update" banner is
+// app-wide state, and whichever window the user answers from wins.
+const pushUpdateStatus = (status: UpdateStatus) => windows.broadcast(IPC.updateStatus, status)
 
-  // Keep the renderer's custom window controls (Windows/Linux) in sync with the
-  // real maximize state so the maximize/restore glyph matches the window.
-  const emitMaximized = () =>
-    mainWindow?.webContents.send(IPC.windowMaximized, mainWindow.isMaximized())
-  mainWindow.on('maximize', emitMaximized)
-  mainWindow.on('unmaximize', emitMaximized)
-
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
-    return { action: 'deny' }
-  })
-
-  // A renderer reload (Ctrl/Cmd+R) drops back to the welcome screen with no repo
-  // open, but our mirrored currentRepoPath survives here in the main process.
-  // Clear it on every page load so the Repository menu's actions don't keep
-  // targeting the previously opened repo; openRepoAtPath re-sets it when the
-  // user opens one again.
-  mainWindow.webContents.on('did-start-loading', () => {
-    if (currentRepoPath !== null) {
-      currentRepoPath = null
-      buildMenu(menuContext)
-    }
-  })
-
-  if (isDev && process.env.ELECTRON_RENDERER_URL) {
-    mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
-  } else {
-    mainWindow.loadFile(join(moduleDir, '../renderer/index.html'))
-  }
-
-  mainWindow.on('closed', () => {
-    mainWindow = null
-  })
+const menuContext: MenuContext = {
+  getWindow: () => windows.focusedWindow(),
+  getRepoPath: () => windows.repoOfFocusedWindow(),
+  newWindow: () => windows.createWindow(),
+  checkForUpdates: () => void checkForUpdates(pushUpdateStatus, true)
 }
 
 /**
- * Open a folder, resolve it to a repo root, persist as recent, watch it.
+ * Open a folder, resolve it to a repo root, persist as recent, watch it, and
+ * associate it with the window that asked (menu targeting + watcher set).
  * Returns a cheap summary (current branch only) so the renderer can switch
  * instantly; branches and status are fetched separately by the renderer.
  */
-async function openRepoAtPath(rawPath: string): Promise<RepoOpenResult> {
+async function openRepoAtPath(rawPath: string, win: BrowserWindow | null): Promise<RepoOpenResult> {
   // The folder is gone (a recent whose directory was deleted/moved): hand the
   // renderer the recovery screen with the last-known name + clone URL, rather
   // than failing as "not a git repository". git can't be queried on a path
@@ -208,11 +144,8 @@ async function openRepoAtPath(rawPath: string): Promise<RepoOpenResult> {
   // vanishes — best-effort, never block opening on it.
   const remoteUrl = await getRemoteCloneUrl(root).catch(() => null)
   rememberRepo({ path: summary.path, name: summary.name, remoteUrl })
-  watcher.watch(root)
-  // Point the application menu's repo actions at the now-open repo (and enable
-  // them if this is the first one).
-  currentRepoPath = summary.path
-  buildMenu(menuContext)
+  // Point the menu's repo actions and the watcher at the now-open repo.
+  if (win && !win.isDestroyed()) windows.setOpenRepo(win, summary.path)
   return { ok: true, summary }
 }
 
@@ -222,7 +155,7 @@ async function openRepoAtPath(rawPath: string): Promise<RepoOpenResult> {
  * trust sticks across sessions and tools), and opens. If the folder is already
  * trusted by the time we get here, this just opens it.
  */
-async function trustRepo(rawPath: string): Promise<RepoOpenResult> {
+async function trustRepo(rawPath: string, win: BrowserWindow | null): Promise<RepoOpenResult> {
   try {
     await resolveRepoRoot(rawPath)
   } catch (e) {
@@ -232,7 +165,7 @@ async function trustRepo(rawPath: string): Promise<RepoOpenResult> {
       throw e
     }
   }
-  return openRepoAtPath(rawPath)
+  return openRepoAtPath(rawPath, win)
 }
 
 /**
@@ -251,6 +184,27 @@ async function checkGit(force: boolean): Promise<GitAvailability> {
   }
 }
 
+// A second launch routed its argv here (see requestSingleInstanceLock above).
+// `--repo <path>` opens that repo in a new window — this is how "open two
+// GitGroves" behaves on Windows/Linux; a bare relaunch raises a window (or
+// recreates one if all were closed, e.g. on macOS with the app still running).
+app.on('second-instance', (_e, argv) => {
+  const repoPath = resolveStartupRepo(argv, {})
+  if (repoPath) {
+    windows.createWindow(repoPath)
+    return
+  }
+  if (windows.windowCount() === 0) {
+    windows.createWindow()
+    return
+  }
+  const win = windows.focusedWindow()
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+})
+
 app.whenReady().then(() => {
   app.setAboutPanelOptions({
     applicationName: app.getName(),
@@ -260,26 +214,46 @@ app.whenReady().then(() => {
     website: REPO_URL
   })
 
-  // macOS ignores the BrowserWindow icon and shows the bundle icon in the dock;
-  // in dev that's the generic Electron icon, so override it explicitly.
-  if (isDev && process.platform === 'darwin' && app.dock) {
-    const img = nativeImage.createFromPath(devIconPath)
-    if (!img.isEmpty()) app.dock.setIcon(img)
+  if (process.platform === 'darwin' && app.dock) {
+    // macOS ignores the BrowserWindow icon and shows the bundle icon in the
+    // dock; in dev that's the generic Electron icon, so override it explicitly.
+    if (isDev) {
+      // build/icon.png sits two levels up from out/main (ESM: no __dirname).
+      const devIconPath = join(dirname(fileURLToPath(import.meta.url)), '../../build/icon.png')
+      const img = nativeImage.createFromPath(devIconPath)
+      if (!img.isEmpty()) app.dock.setIcon(img)
+    }
+    // Finder-style dock menu: right-click the dock icon → "New Window".
+    app.dock.setMenu(
+      Menu.buildFromTemplate([{ label: 'New Window', click: () => windows.createWindow() }])
+    )
   }
 
   registerIpc({
-    getWindow: () => mainWindow,
+    windowFrom: (sender) => windows.windowFrom(sender),
+    focusedWindow: () => windows.focusedWindow(),
+    broadcast: (channel, ...args) => windows.broadcast(channel, ...args),
     openRepoAtPath,
-    takeInitialRepoPath,
+    openRepoInNewWindow: (path) => void windows.createWindow(path),
+    // The CLI repo belongs to the first window; windows created for a repo
+    // ("Open in New Window") consume their own pending path instead.
+    takeInitialRepoPath: (win) => {
+      const pending = win ? windows.takePendingRepo(win) : null
+      if (pending) return pending
+      const path = startupRepoPath
+      startupRepoPath = null
+      return path
+    },
     trustRepo,
-    checkGit
+    checkGit,
+    checkForUpdates: (manual) => checkForUpdates(pushUpdateStatus, manual)
   })
-  buildMenu(menuContext)
-  createWindow()
-  initAutoUpdater(() => mainWindow)
+  rebuildMenuIfTargetChanged()
+  windows.createWindow()
+  initAutoUpdater(pushUpdateStatus)
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    if (windows.windowCount() === 0) windows.createWindow()
   })
 })
 

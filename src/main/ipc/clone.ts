@@ -10,12 +10,15 @@ import * as gitSync from '../git/sync'
 import type { HandlerDeps } from './context'
 
 export function registerCloneHandlers(deps: HandlerDeps): void {
-  const { getWindow } = deps
+  const { windowFrom } = deps
 
-  ipcMain.handle(IPC.cloneRepo, async (_e, url: string, targetPath: string) => {
+  ipcMain.handle(IPC.cloneRepo, async (e, url: string, targetPath: string) => {
     const target = expandHome(targetPath)
+    // Progress goes to the window whose clone dialog is running, not to
+    // whichever window is focused — the user may be working elsewhere meanwhile.
     const dest = await gitSync.clone(url, target, (phase, percent) => {
-      getWindow()?.webContents.send(IPC.cloneProgress, { phase, percent, done: false })
+      if (!e.sender.isDestroyed())
+        e.sender.send(IPC.cloneProgress, { phase, percent, done: false })
     })
     // The next clone should land beside this one — remember the parent folder.
     rememberCloneBaseDir(dirname(target))
@@ -23,8 +26,8 @@ export function registerCloneHandlers(deps: HandlerDeps): void {
   })
   ipcMain.handle(IPC.defaultCloneDir, () => getCloneBaseDir())
   ipcMain.handle(IPC.checkCloneTarget, (_e, targetPath: string) => cloneTargetState(targetPath))
-  ipcMain.handle(IPC.pickDirectory, async (_e, title?: string) => {
-    const window = getWindow()
+  ipcMain.handle(IPC.pickDirectory, async (e, title?: string) => {
+    const window = windowFrom(e.sender)
     if (!window) return null
     const result = await dialog.showOpenDialog(window, {
       title: title ?? 'Choose Folder',
