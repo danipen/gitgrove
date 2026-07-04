@@ -101,11 +101,11 @@ export function CreateBranchDialog({
   // field greets the user with a name already forming. Only when a backend is
   // connected, there are changes to name from, and no caller-provided name.
   const autoRan = useRef(false)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fire once when the status resolves
   useEffect(() => {
     if (autoRan.current || !aiStatus || !canSuggest || initialName) return
     autoRan.current = true
     suggest()
-    // biome-ignore lint/correctness/useExhaustiveDependencies: fire once when the status resolves
   }, [aiStatus])
 
   // The ghost shows while the field is empty: the streaming raw text as it
