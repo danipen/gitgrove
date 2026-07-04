@@ -161,6 +161,18 @@ export function RepoSwitcher({ repo, onOpenRepo, onPickRepo, onClone }: Props) {
     const { repo: target, isRecent, remote } = m
     const items: ContextMenuItem[] = [
       {
+        // A second repo side by side without touching this window. The new
+        // window boots straight into the repo; closing the popover mirrors the
+        // left-click open gesture, whose job is likewise done.
+        label: 'Open in New Window',
+        icon: <Icon.NewWindow size={15} />,
+        onClick: () => {
+          close()
+          window.gitgrove.openRepoInNewWindow(target.path)
+        }
+      },
+      {},
+      {
         label: 'Copy Repo Name',
         icon: <Icon.Copy size={15} />,
         onClick: () => window.gitgrove.clipboardWrite(target.name)

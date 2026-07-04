@@ -53,6 +53,31 @@ export class RepoWatcher {
     this.watchers.set(repoPath, handles)
   }
 
+  /**
+   * Reconcile the watched set with the repos currently open across all
+   * windows: start watching newly opened ones, stop watching repos no window
+   * shows anymore. Keeping orphaned watchers alive would burn fs events (and
+   * on Linux, inotify watches) on repos nobody is looking at.
+   */
+  sync(openRepos: ReadonlySet<string>): void {
+    for (const repoPath of openRepos) this.watch(repoPath)
+    for (const repoPath of [...this.watchers.keys()]) {
+      if (!openRepos.has(repoPath)) this.unwatch(repoPath)
+    }
+  }
+
+  unwatch(repoPath: string): void {
+    const handles = this.watchers.get(repoPath)
+    if (!handles) return
+    for (const h of handles) h.close()
+    this.watchers.delete(repoPath)
+    const timer = this.timers.get(repoPath)
+    if (timer) {
+      clearTimeout(timer)
+      this.timers.delete(repoPath)
+    }
+  }
+
   unwatchAll(): void {
     for (const handles of this.watchers.values()) {
       for (const h of handles) h.close()

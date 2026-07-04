@@ -13,11 +13,11 @@ export function registerStagingHandlers(deps: HandlerDeps): void {
 
   ipcMain.handle(
     IPC.discardFiles,
-    async (_e, repoPath: string, files: DiscardItem[], untrackedPaths: string[]) => {
+    async (e, repoPath: string, files: DiscardItem[], untrackedPaths: string[]) => {
       const { trashPaths, resetPaths, checkoutPaths } = gitWrite.planDiscard(files, untrackedPaths)
       // Big discards take real time (one trash call per file, then the git
       // steps) — report determinate progress so the dialog can show a bar.
-      const progress = opProgressTo(repoPath, 'discard')
+      const progress = opProgressTo(e.sender, repoPath, 'discard')
       let lastPercent = -1
       for (let i = 0; i < trashPaths.length; i++) {
         await shell.trashItem(join(repoPath, trashPaths[i])).catch(() => {})

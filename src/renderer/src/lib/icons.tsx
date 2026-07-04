@@ -305,6 +305,15 @@ export const Icon = {
       <path d="M19 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h6" />
     </Svg>
   ),
+  // Two cascaded app windows (title bar hinted by the inner line) — the repo
+  // switcher's "Open in New Window".
+  NewWindow: (p: IconProps) => (
+    <Svg {...p}>
+      <rect x="8" y="8" width="13" height="11" rx="2" />
+      <path d="M8 11.5h13" />
+      <path d="M16 5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2" />
+    </Svg>
+  ),
   // GitHub's PR-state octicons (fill, 16-grid like the octocat mark) so the PR
   // badge reads exactly as it does on github.com: a merged or closed glyph.
   PrMerged: ({ size = 16, ...p }: IconProps) => (

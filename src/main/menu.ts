@@ -17,12 +17,20 @@ import {
 } from 'electron'
 import { REPO_URL } from './app-info'
 import { getRemoteWebUrl } from './git/read'
-import { checkForUpdates } from './updater'
 
-/** What the menu needs from the app: the live window and the open repo path. */
+/**
+ * What the menu needs from the app. GitGrove is multi-window: `getWindow` is
+ * the *focused* window and `getRepoPath` the repo open in it — the menu is
+ * rebuilt whenever focus moves or a window's repo changes, so its Repository
+ * actions always target the window the user is looking at.
+ */
 export interface MenuContext {
   getWindow(): BrowserWindow | null
   getRepoPath(): string | null
+  /** Open a fresh window (File ▸ New Window / the macOS dock menu). */
+  newWindow(): void
+  /** Run a manual update check; status is pushed to every window. */
+  checkForUpdates(): void
 }
 
 export function buildMenu(ctx: MenuContext): void {
@@ -45,7 +53,7 @@ export function buildMenu(ctx: MenuContext): void {
               },
               {
                 label: 'Check for Updates…',
-                click: () => checkForUpdates(getWindow, true)
+                click: () => ctx.checkForUpdates()
               },
               { type: 'separator' as const },
               {
@@ -66,6 +74,15 @@ export function buildMenu(ctx: MenuContext): void {
     {
       label: 'File',
       submenu: [
+        {
+          // Cmd/Ctrl+N, the platform convention (Finder, editors, browsers).
+          // The new window opens on the welcome screen; "Open in New Window"
+          // on a repo (repo switcher) is the one-gesture path to a second repo.
+          label: 'New Window',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => ctx.newWindow()
+        },
+        { type: 'separator' },
         {
           label: 'Open Repository…',
           accelerator: 'CmdOrCtrl+O',
@@ -216,7 +233,7 @@ export function buildMenu(ctx: MenuContext): void {
               { type: 'separator' as const },
               {
                 label: 'Check for Updates…',
-                click: () => checkForUpdates(getWindow, true)
+                click: () => ctx.checkForUpdates()
               },
               {
                 label: `About ${app.name}`,

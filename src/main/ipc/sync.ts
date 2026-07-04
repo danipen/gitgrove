@@ -8,18 +8,18 @@ import type { HandlerDeps } from './context'
 export function registerSyncHandlers(deps: HandlerDeps): void {
   const { opProgressTo } = deps
 
-  ipcMain.handle(IPC.fetch, (_e, repoPath: string, remote?: string, opts?: { quiet?: boolean }) =>
-    gitSync.fetch(repoPath, remote, opProgressTo(repoPath, 'fetch'), opts)
+  ipcMain.handle(IPC.fetch, (e, repoPath: string, remote?: string, opts?: { quiet?: boolean }) =>
+    gitSync.fetch(repoPath, remote, opProgressTo(e.sender, repoPath, 'fetch'), opts)
   )
-  ipcMain.handle(IPC.pull, (_e, repoPath: string, opts?: { rebase?: boolean }) =>
-    gitSync.pull(repoPath, opts, opProgressTo(repoPath, 'pull'))
+  ipcMain.handle(IPC.pull, (e, repoPath: string, opts?: { rebase?: boolean }) =>
+    gitSync.pull(repoPath, opts, opProgressTo(e.sender, repoPath, 'pull'))
   )
   ipcMain.handle(
     IPC.push,
     (
-      _e,
+      e,
       repoPath: string,
       opts?: { setUpstream?: { remote: string; branch: string }; forceWithLease?: boolean }
-    ) => gitSync.push(repoPath, opts, opProgressTo(repoPath, 'push'))
+    ) => gitSync.push(repoPath, opts, opProgressTo(e.sender, repoPath, 'push'))
   )
 }

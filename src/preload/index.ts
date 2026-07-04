@@ -17,6 +17,7 @@ const api: GitGroveApi = {
   platform: process.platform,
   pickRepo: () => ipcRenderer.invoke(IPC.pickRepo),
   openRepo: (path) => ipcRenderer.invoke(IPC.openRepo, path),
+  openRepoInNewWindow: (path) => ipcRenderer.invoke(IPC.openRepoNewWindow, path),
   initialRepoPath: () => ipcRenderer.invoke(IPC.initialRepoPath),
   trustRepo: (path) => ipcRenderer.invoke(IPC.trustRepo, path),
   recentRepos: () => ipcRenderer.invoke(IPC.recentRepos),
@@ -141,6 +142,11 @@ const api: GitGroveApi = {
     const listener = (_e: unknown, repoPath: string) => handler(repoPath)
     ipcRenderer.on(IPC.repoChanged, listener)
     return () => ipcRenderer.removeListener(IPC.repoChanged, listener)
+  },
+  onOpenRepoRequest: (handler) => {
+    const listener = (_e: unknown, path: string) => handler(path)
+    ipcRenderer.on(IPC.openRepoRequest, listener)
+    return () => ipcRenderer.removeListener(IPC.openRepoRequest, listener)
   },
   onMenuOpenRepo: (handler) => {
     const listener = () => handler()

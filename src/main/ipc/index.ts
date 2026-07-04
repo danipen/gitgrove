@@ -27,9 +27,12 @@ import { registerWorktreeHandlers } from './worktrees'
 export type { IpcContext } from './context'
 
 export function registerIpc(ctx: IpcContext): void {
-  const opProgressTo: OpProgressFactory = (repoPath, kind) => (phase, percent) => {
+  // Progress goes back to the renderer that started the op — not broadcast:
+  // another window busy on the same repo must not see this op's fill.
+  const opProgressTo: OpProgressFactory = (sender, repoPath, kind) => (phase, percent) => {
+    if (sender.isDestroyed()) return
     const progress: OpProgress = { repoPath, kind, phase, percent }
-    ctx.getWindow()?.webContents.send(IPC.opProgress, progress)
+    sender.send(IPC.opProgress, progress)
   }
   const deps: HandlerDeps = { ...ctx, opProgressTo }
 

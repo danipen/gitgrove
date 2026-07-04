@@ -21,7 +21,7 @@ import { getGlobalIdentity, getIdentity, setGlobalIdentity, setIdentity } from '
 import type { HandlerDeps } from './context'
 
 export function registerAccountHandlers(deps: HandlerDeps): void {
-  const { getWindow } = deps
+  const { focusedWindow, broadcast } = deps
 
   // ── Commit identity ──
   ipcMain.handle(IPC.getIdentity, (_e, repoPath: string) => getIdentity(repoPath))
@@ -48,7 +48,12 @@ export function registerAccountHandlers(deps: HandlerDeps): void {
   setCredentialResponder((prompt, signal) => {
     const silent = answerFromAccounts(accountsStore(), prompt)
     if (silent !== null) return Promise.resolve(silent)
-    const window = getWindow()
+    // The prompt goes to the window the user is working in — the op that hit
+    // it almost always started there, and popping the same dialog in every
+    // window would leave orphaned copies (each window closes only the dialog
+    // it answered). Dismissals broadcast instead: focus may have moved since,
+    // and only the window showing that requestId reacts.
+    const window = focusedWindow()
     // No window to ask — cancel so the operation fails fast instead of hanging.
     if (!window) return Promise.resolve(null)
     const requestId = `credential-${++credentialSeq}`
@@ -62,7 +67,7 @@ export function registerAccountHandlers(deps: HandlerDeps): void {
       // git operation has already failed.
       signal.addEventListener('abort', () => {
         settle(null)
-        getWindow()?.webContents.send(IPC.credentialDismiss, requestId)
+        broadcast(IPC.credentialDismiss, requestId)
       })
       const request: CredentialPromptRequest = { requestId, ...prompt }
       window.webContents.send(IPC.credentialPrompt, request)
@@ -86,7 +91,7 @@ export function registerAccountHandlers(deps: HandlerDeps): void {
       const answer = answerFromAccounts(accountsStore(), pending.prompt)
       if (answer !== null) {
         pending.settle(answer)
-        getWindow()?.webContents.send(IPC.credentialDismiss, requestId)
+        broadcast(IPC.credentialDismiss, requestId)
       }
     }
   }
@@ -99,7 +104,8 @@ export function registerAccountHandlers(deps: HandlerDeps): void {
   const afterConnect = async (host: string) => {
     await rejectStoredCredential(host)
     answerPendingPromptsFor(host)
-    getWindow()?.webContents.send(IPC.accountsChanged)
+    // Every window's settings pane and clone dialog shows the accounts list.
+    broadcast(IPC.accountsChanged)
   }
 
   ipcMain.handle(IPC.accountsList, () => accountsStore().listAccounts())
@@ -110,26 +116,30 @@ export function registerAccountHandlers(deps: HandlerDeps): void {
   ipcMain.handle(IPC.accountsLookupAvatar, (_e, email: string) =>
     lookupAvatarUrl(accountsStore(), email)
   )
-  ipcMain.handle(IPC.accountRepos, (_e, accountId: string) => {
+  ipcMain.handle(IPC.accountRepos, (e, accountId: string) => {
     const store = accountsStore()
     const account = store.listAccounts().find((a) => a.id === accountId)
     const token = account && store.getTokenForHost(account.host)
     if (!account || !token) throw new Error('That account is no longer connected.')
+    // Pages stream back to the window whose picker asked for them.
     return fetchRepositories(account.host, token, fetch, (repos) => {
-      getWindow()?.webContents.send(IPC.accountReposPage, { accountId, repos })
+      if (!e.sender.isDestroyed()) e.sender.send(IPC.accountReposPage, { accountId, repos })
     })
   })
 
   // One sign-in at a time: a newly started flow supersedes (aborts) the old.
   let oauthInFlight: AbortController | null = null
-  ipcMain.handle(IPC.accountsBeginOAuth, async (_e, host: string, clientId?: string) => {
+  ipcMain.handle(IPC.accountsBeginOAuth, async (e, host: string, clientId?: string) => {
     oauthInFlight?.abort()
     const controller = new AbortController()
     oauthInFlight = controller
     const result = await connectViaOAuth(accountsStore(), host, {
       clientId,
       signal: controller.signal,
-      onDeviceCode: (info) => getWindow()?.webContents.send(IPC.accountsDeviceCode, info)
+      // The user code belongs in the window whose sign-in dialog is open.
+      onDeviceCode: (info) => {
+        if (!e.sender.isDestroyed()) e.sender.send(IPC.accountsDeviceCode, info)
+      }
     })
     if (oauthInFlight === controller) oauthInFlight = null
     if (result.ok) await afterConnect(result.account.host)
@@ -149,6 +159,6 @@ export function registerAccountHandlers(deps: HandlerDeps): void {
     // The OS helper still holds the token git stored on the last success —
     // sign-out must actually sign the machine out, not just forget metadata.
     if (removed) await rejectStoredCredential(removed.host)
-    getWindow()?.webContents.send(IPC.accountsChanged)
+    broadcast(IPC.accountsChanged)
   })
 }

@@ -12,6 +12,7 @@
 // open the wrong thing. An explicit flag keeps the intent unambiguous.
 
 const REPO_FLAG = '--repo'
+const NEW_WINDOW_FLAG = '--new-window'
 
 /**
  * Resolve the repository to open on startup from the process argv and env, or
@@ -33,4 +34,14 @@ export function resolveStartupRepo(argv: readonly string[], env: NodeJS.ProcessE
   }
   const fromEnv = env.GITGROVE_OPEN_REPO
   return fromEnv && fromEnv.trim() !== '' ? fromEnv : null
+}
+
+/**
+ * Whether the invocation asks for a fresh window (`--new-window`) — used by
+ * launcher shortcuts (the Windows Jump List's "New Window" task, the Linux
+ * desktop action) whose relaunch is routed into the running instance by the
+ * single-instance lock.
+ */
+export function hasNewWindowFlag(argv: readonly string[]): boolean {
+  return argv.includes(NEW_WINDOW_FLAG)
 }

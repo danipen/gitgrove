@@ -1212,9 +1212,18 @@ export function App() {
 
   useEffect(() => window.gitgrove.onShowAbout(() => setAboutOpen(true)), [])
 
-  // Open the repository named on the command line / GITGROVE_OPEN_REPO at
-  // launch. Main hands it over once (then forgets it), so this fires only for
-  // the first mount — a reload drops back to the welcome screen as usual.
+  // Window title = the open repo, so multiple GitGrove windows stay tellable
+  // apart in the Window menu, Alt-Tab/Mission Control and the taskbar. (The
+  // in-window title bar is custom, so this never paints inside the app.)
+  useEffect(() => {
+    document.title = repo ? `${repo.name} — GitGrove` : 'GitGrove'
+  }, [repo])
+
+  // Open the repository this window was created for: "Open in New Window", a
+  // second-instance `--repo`, or (first window) the command line /
+  // GITGROVE_OPEN_REPO. Main hands it over once (then forgets it), so this
+  // fires only for the first mount — a reload drops back to the welcome
+  // screen as usual.
   useEffect(() => {
     window.gitgrove
       .initialRepoPath()
@@ -1223,6 +1232,13 @@ export function App() {
       })
       .catch(() => {})
   }, [openRepoByPath])
+
+  // A dock-menu / Jump List recent aimed at this window (it was idling on the
+  // welcome screen, so main reused it instead of opening a sibling window).
+  useEffect(
+    () => window.gitgrove.onOpenRepoRequest((path) => openRepoByPath(path)),
+    [openRepoByPath]
+  )
 
   // Git LFS health of the open repo + the one-click enable — see useLfs.
   const { lfsHealth, lfsDismissed, dismissLfs, lfsEnabling, enableLfs, probeLfsHealth } = useLfs(

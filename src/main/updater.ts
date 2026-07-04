@@ -26,9 +26,8 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { promisify } from 'node:util'
 
-import { IPC } from '@shared/ipc'
 import type { UpdateStatus } from '@shared/types'
-import { app, type BrowserWindow, shell } from 'electron'
+import { app, shell } from 'electron'
 import electronUpdater, { type UpdateInfo } from 'electron-updater'
 
 import { REPO_URL } from './app-info'
@@ -55,16 +54,19 @@ let manualMode = false
 // Absolute path of a .dmg we've downloaded and are waiting for the user to open.
 let pendingInstallFile: string | null = null
 
-/** Push an UpdateStatus to the renderer, stamped with version + manual flag. */
+/**
+ * Delivers an UpdateStatus to the renderers. The app shell implements this as
+ * a broadcast to every window: an available update is app-wide state, so the
+ * banner belongs in all of them.
+ */
+export type UpdateStatusPush = (status: UpdateStatus) => void
+
+/** Push an UpdateStatus to the renderers, stamped with version + manual flag. */
 function pushStatus(
-  getWindow: () => BrowserWindow | null,
+  push: UpdateStatusPush,
   status: Omit<UpdateStatus, 'version' | 'manual'>
 ): void {
-  getWindow()?.webContents.send(IPC.updateStatus, {
-    ...status,
-    version,
-    manual: manualCheck
-  } satisfies UpdateStatus)
+  push({ ...status, version, manual: manualCheck } satisfies UpdateStatus)
 }
 
 /** Flatten electron-updater's string | {note}[] release notes to plain text. */
@@ -130,9 +132,9 @@ async function downloadFile(
  */
 async function downloadForManualInstall(
   info: UpdateInfo,
-  getWindow: () => BrowserWindow | null
+  pushRaw: UpdateStatusPush
 ): Promise<void> {
-  const push = pushStatus.bind(null, getWindow)
+  const push = pushStatus.bind(null, pushRaw)
 
   try {
     // latest-mac.yml lists every arch's artifacts and the update-available
@@ -173,21 +175,21 @@ async function downloadForManualInstall(
   }
 }
 
-export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
+export function initAutoUpdater(pushRaw: UpdateStatusPush): void {
   if (initialized) return
   initialized = true
 
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
-  const push = pushStatus.bind(null, getWindow)
+  const push = pushStatus.bind(null, pushRaw)
 
   autoUpdater.on('checking-for-update', () => push({ state: 'checking' }))
   autoUpdater.on('update-available', (info) => {
     // Unsigned macOS: take over the download so Squirrel never tries (and fails)
     // to validate. Everywhere else electron-updater downloads automatically.
     if (manualMode) {
-      void downloadForManualInstall(info, getWindow)
+      void downloadForManualInstall(info, pushRaw)
     } else {
       push({ state: 'available', newVersion: info.version, notes: notesToText(info.releaseNotes) })
     }
@@ -211,29 +213,22 @@ export function initAutoUpdater(getWindow: () => BrowserWindow | null): void {
       autoUpdater.autoInstallOnAppQuit = false
     }
     setTimeout(() => {
-      void checkForUpdates(getWindow, false)
+      void checkForUpdates(pushRaw, false)
       // Keep checking while the app is open; unref so a pending timer never
       // holds the process alive past quit.
-      setInterval(() => void checkForUpdates(getWindow, false), PERIODIC_CHECK_INTERVAL_MS).unref()
+      setInterval(() => void checkForUpdates(pushRaw, false), PERIODIC_CHECK_INTERVAL_MS).unref()
     }, INITIAL_CHECK_DELAY_MS)
   })
 }
 
-export async function checkForUpdates(
-  getWindow: () => BrowserWindow | null,
-  manual: boolean
-): Promise<void> {
+export async function checkForUpdates(push: UpdateStatusPush, manual: boolean): Promise<void> {
   manualCheck = manual
 
   // electron-updater throws ("update checking is disabled…") for unpackaged
   // builds. Tell the user plainly when they ask; stay silent on auto-checks.
   if (!app.isPackaged) {
     if (manual) {
-      getWindow()?.webContents.send(IPC.updateStatus, {
-        state: 'dev',
-        version,
-        manual: true
-      } satisfies UpdateStatus)
+      push({ state: 'dev', version, manual: true } satisfies UpdateStatus)
     }
     return
   }
@@ -241,7 +236,7 @@ export async function checkForUpdates(
   try {
     await autoUpdater.checkForUpdates()
   } catch (err) {
-    getWindow()?.webContents.send(IPC.updateStatus, {
+    push({
       state: 'error',
       version,
       manual,

@@ -78,10 +78,24 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+  # Explorer folder context menu ("Open in GitGrove" → `--repo "<folder>"`),
+  # registered per-user at install and removed at uninstall.
+  include: build/installer.nsh
 
 linux:
   icon: build/icon.png
   category: Development
   artifactName: ${productName}-${version}-Linux-${arch}.${ext}
+  # Launcher right-click → "New Window" (GNOME/KDE read [Desktop Action]s from
+  # the .desktop file — the platform has no runtime API, so unlike the macOS
+  # dock menu / Windows Jump List this stays static: no recents list here).
+  # `AppRun --no-sandbox` mirrors the main Exec electron-builder writes for
+  # AppImage; integrators (AppImageLauncher/appimaged) rewrite it to the
+  # AppImage's real path. `--new-window` is routed by the single-instance lock.
+  desktop:
+    desktopActions:
+      NewWindow:
+        Name: New Window
+        Exec: AppRun --no-sandbox --new-window
   target:
     - AppImage

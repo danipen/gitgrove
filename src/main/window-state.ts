@@ -129,6 +129,28 @@ function centerIn(workArea: Rect, width: number, height: number): Rect {
   }
 }
 
+// How far a new window is offset from the one it cascades from — enough to
+// read both title bars, small enough to keep the windows visually related.
+const CASCADE_OFFSET = 28
+
+/**
+ * Bounds for a window opened *next to* an existing one (File ▸ New Window,
+ * "Open in New Window"): same size, offset down-right so both stay readable.
+ * When the offset would push an edge past the work area, that axis snaps back
+ * to the work area's origin — the classic cascade wrap — so any number of new
+ * windows stays fully on-screen. Size is clamped to the work area first, so
+ * the wrap test is against the size the window will actually get.
+ */
+export function cascadeBounds(source: Rect, workArea: Rect): Rect {
+  const width = Math.min(Math.max(source.width, MIN_WINDOW_WIDTH), workArea.width)
+  const height = Math.min(Math.max(source.height, MIN_WINDOW_HEIGHT), workArea.height)
+  let x = source.x + CASCADE_OFFSET
+  let y = source.y + CASCADE_OFFSET
+  if (x + width > workArea.x + workArea.width) x = workArea.x
+  if (y + height > workArea.y + workArea.height) y = workArea.y
+  return { x, y, width, height }
+}
+
 /**
  * Reconcile a previously saved window state (raw JSON, untrusted) with the
  * current display work areas. Guarantees of the result:
