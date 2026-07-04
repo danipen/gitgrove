@@ -157,6 +157,9 @@ export interface SceneState {
 }
 
 const LABEL_FONT = 11
+/** Breathing room the day-header label keeps from its segment's right boundary
+ *  so it never touches the next day's label (drawHeader). */
+const HEADER_LABEL_PAD = 6
 /** Caption font in SCREEN px: captions render map-label style — a constant
  *  on-screen size at any zoom. Size and weight must mirror .graph-tip__subject
  *  in graph.css exactly: the expansion card's first line sits on the caption's
@@ -940,10 +943,26 @@ function drawHeader(ctx: CanvasRenderingContext2D, scene: SceneState): void {
       ctx.lineTo(x + 0.5, HEADER_H - 4)
       ctx.stroke()
     }
-    // Pin the label to the left edge while its day segment is still on screen,
-    // so the current day is always readable mid-pan.
-    const labelX = Math.max(x, 0) + 6
-    const label = truncate(ctx, marks[i].label, Math.max(0, next - labelX - 6))
-    if (label) ctx.fillText(label, labelX, HEADER_H / 2 + 0.5)
+    // Center the label in its day segment's currently-visible span so it stays
+    // readable mid-pan (the sticky effect): as the segment scrolls past the left
+    // edge the label recenters in the space that's left. But it must never spill
+    // past the segment's right boundary onto the next day's label — so we clamp
+    // it left, repositioning as far as we can until it sits right-aligned against
+    // the boundary (with a small margin). If even that won't fit, the label clips
+    // on the left instead of ellipsizing — the date is cut but never mangled.
+    const label = marks[i].label
+    const labelW = ctx.measureText(label).width
+    const visibleLeft = Math.max(x, 0)
+    const visibleRight = Math.min(next, width)
+    let labelX = (visibleLeft + visibleRight) / 2 - labelW / 2
+    labelX = Math.max(labelX, visibleLeft)
+    // Right boundary wins over the left clamp: keep the date off the next day.
+    labelX = Math.min(labelX, next - HEADER_LABEL_PAD - labelW)
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(visibleLeft, 0, Math.max(0, visibleRight - visibleLeft), HEADER_H)
+    ctx.clip()
+    ctx.fillText(label, labelX, HEADER_H / 2 + 0.5)
+    ctx.restore()
   }
 }
