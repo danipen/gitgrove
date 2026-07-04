@@ -14,6 +14,7 @@
 
 import type { AppInfo } from '@shared/types'
 import { useRef, useState } from 'react'
+import { AiNoteBody } from '@/components/common/AiExplainCommit'
 import { AiTeaserPopover } from '@/components/common/AiTeaserPopover'
 import { DialogShell } from '@/components/common/Dialog'
 import { useAiGeneration, useAiStatus } from '@/lib/ai'
@@ -101,14 +102,11 @@ export function ErrorDialog({ message, info, ai, onClose }: Props) {
             <span className="ai-note__title">What this means</span>
             {explanation.generating && <span className="ai-btn__spinner" aria-hidden />}
           </div>
-          {failure ? (
-            <p className="ai-note__body ai-note__body--error">{failure}</p>
-          ) : (
-            <p className="ai-note__body">
-              {explanation.text}
-              {explanation.generating && <span className="ai-note__caret" aria-hidden />}
-            </p>
-          )}
+          <AiNoteBody
+            text={explanation.text}
+            failure={failure}
+            streaming={explanation.generating}
+          />
         </div>
       )}
 

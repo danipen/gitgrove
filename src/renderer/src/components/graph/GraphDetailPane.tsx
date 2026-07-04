@@ -7,7 +7,7 @@
 
 import type { ChangedFile, Commit } from '@shared/types'
 import { useEffect } from 'react'
-import { AiExplainCommit } from '@/components/common/AiExplainCommit'
+import { useAiExplainCommit } from '@/components/common/AiExplainCommit'
 import { copyPathItems } from '@/components/common/copyPathItems'
 import { useFileFilter } from '@/components/common/FileFilter'
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
@@ -53,6 +53,7 @@ function CommitHead({
   repoPath: string
   onSetupAi: () => void
 }) {
+  const explain = useAiExplainCommit({ repoPath, hash: commit.hash, onSetupAi })
   return (
     <div className="graph-detail__head">
       <div className="graph-detail__title">
@@ -65,11 +66,11 @@ function CommitHead({
           {commit.subject}
         </div>
       </div>
-      <CommitMeta commit={commit} />
+      <CommitMeta commit={commit} extra={explain.trigger} />
       {/* Keyed by hash: switching commits remounts the body, resetting its
           collapse state and re-probing overflow (see CommitBody). */}
       <CommitBody key={commit.hash} commit={commit} />
-      <AiExplainCommit repoPath={repoPath} hash={commit.hash} onSetupAi={onSetupAi} />
+      {explain.card}
       <CommitRefs key={`refs-${commit.hash}`} commit={commit} />
     </div>
   )

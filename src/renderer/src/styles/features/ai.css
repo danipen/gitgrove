@@ -251,42 +251,47 @@
   background: var(--bg-panel);
 }
 
-/* ── "Explain" trigger + explanation note (AiExplainCommit.tsx, ErrorDialog's
-   explainer). The trigger is a quiet text affordance in the commit views; the
-   note is the streamed answer: one calm card, dismissible, no chrome beyond a
-   title and a close. */
-.ai-explain {
-  margin-top: 2px;
-}
-.ai-explain__trigger {
+/* ── "Explain" chip + explanation note (AiExplainCommit.tsx, ErrorDialog's
+   explainer). The chip is a small pill that lives IN the commit meta row
+   (author · date · sha · ✨ Explain) — a bordered shape among neighbours, never
+   bare text floating in whitespace. The note is the streamed answer: one calm
+   card, real paragraphs, ghost head actions. */
+.ai-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px 2px 6px;
-  border: none;
-  border-radius: var(--radius-sm);
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
   background: none;
-  font-size: 11.5px;
+  font-size: 11px;
+  line-height: 16px;
   color: var(--fg-muted);
   cursor: pointer;
 }
-.ai-explain__trigger:hover {
+.ai-chip svg {
+  transition: filter 0.2s ease;
+}
+.ai-chip:hover {
+  border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent);
 }
 /* Same hover twinkle as .ai-btn — one sparkle personality everywhere. */
-.ai-explain__trigger svg {
-  transition: filter 0.2s ease;
-}
-.ai-explain__trigger:hover svg {
+.ai-chip:hover svg {
   filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.55));
   animation: ai-twinkle 0.55s ease;
+}
+/* Open note: the chip reads pressed, and clicking it again closes. */
+.ai-chip.is-active {
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 .ai-note {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   margin-top: 6px;
   padding: 9px 11px;
   border: 1px solid var(--border);
@@ -302,20 +307,49 @@
   font-weight: 600;
   color: var(--fg);
 }
+.ai-note__head > svg {
+  color: var(--accent);
+}
 .ai-note__title {
   flex: 1;
 }
-.ai-note__close {
-  margin: -3px -4px -3px 0;
-}
-.ai-note__body {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.55;
+/* Head actions (retry, close): ghosts — visible shape only on hover, so the
+   card's chrome never competes with the text it frames. */
+.ai-note__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: -2px 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
   color: var(--fg-muted);
+  cursor: pointer;
+}
+.ai-note__action:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* The answer as paragraphs: models separate thoughts with blank lines; a
+   pre-wrapped blob would render each as a full empty line — too airy. Tight
+   line-height inside a paragraph, a small gap between them (AiNoteBody). */
+.ai-note__body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  user-select: text;
+}
+.ai-note__body p {
+  margin: 0;
+  line-height: 1.45;
+  /* Single newlines ("- " bullets) stay literal inside a paragraph. */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  user-select: text;
 }
 .ai-note__body--error {
   color: var(--danger);
