@@ -9,6 +9,7 @@
 import type { BranchChangesAction, BranchInfo, Commit, MergeKind, ResetMode } from '@shared/types'
 import { ConfirmDialog, PromptDialog, validateRefName } from '@/components/common/Dialog'
 import { InteractiveRebaseDialog } from '@/components/history/InteractiveRebaseDialog'
+import type { SettingsSection } from '@/components/settings/SettingsDialog'
 import { CreateBranchDialog, type CreateBranchRequest } from './CreateBranchDialog'
 import { MergeDialog } from './MergeDialog'
 import { SubmodulesDialog } from './SubmodulesDialog'
@@ -17,7 +18,7 @@ import { WorktreesDialog } from './WorktreesDialog'
 
 /** App-level modal dialogs (branch/tag/reset/rebase/clone/worktrees/…). */
 export type Modal =
-  | { kind: 'settings' }
+  | { kind: 'settings'; section?: SettingsSection }
   | { kind: 'clone'; initial?: { url: string; baseDir: string } }
   | { kind: 'identity' }
   | { kind: 'merge'; name: string }

@@ -72,6 +72,8 @@ interface Props {
   onStash: (message: string) => Promise<boolean>
   /** Open the File History overlay for a working-tree file (baseRef = null). */
   onOpenFileHistory: (path: string, mode: FileHistoryMode, baseRef: string | null) => void
+  /** Open Settings → AI (the composer ✨ teaser when no backend is connected). */
+  onSetupAi: () => void
 }
 
 const OP_LABEL: Record<NonNullable<RepoState['op']>, string> = {
@@ -163,7 +165,8 @@ export function ChangesView({
   onError,
   onCommit,
   onStash,
-  onOpenFileHistory
+  onOpenFileHistory,
+  onSetupAi
 }: Props) {
   const gg = window.gitgrove
 
@@ -749,6 +752,24 @@ export function ChangesView({
           if (ok) setMode('commit')
           return ok
         }}
+        buildAiSelection={() => {
+          // Snapshot the checkboxes the same way the commit does (see
+          // lib/commit-selection.ts): fully included files travel as files
+          // (main reads their diffs, size-capped), partially included ones as
+          // their exact hunk patches — the message describes precisely what
+          // will be committed.
+          const aiFiles: ChangedFile[] = []
+          const aiPatches: string[] = []
+          for (const f of changes) {
+            if (f.status === 'conflicted') continue
+            const sel = selections.get(f.path) ?? 'all'
+            if (sel === 'all') aiFiles.push(f)
+            else if (sel !== 'none') for (const block of sel.values()) aiPatches.push(block.patch)
+          }
+          return { files: aiFiles, patches: aiPatches }
+        }}
+        onSetupAi={onSetupAi}
+        onError={onError}
       />
 
       {confirmDiscard && (

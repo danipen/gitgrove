@@ -1348,6 +1348,7 @@ export function App() {
       {modal?.kind === 'settings' && credentialPrompts.length === 0 && (
         <SettingsDialog
           repoPath={repoPath}
+          initialSection={modal.section}
           themePref={themePref}
           onThemePref={setThemePref}
           onClose={() => setModal(null)}
@@ -1524,6 +1525,7 @@ export function App() {
                 onCommit={doCommit}
                 onStash={doStash}
                 onOpenFileHistory={openFileHistory}
+                onSetupAi={() => setModal({ kind: 'settings', section: 'ai' })}
               />
             </div>
             <div className={`sidebar__pane${tab === 'history' ? '' : ' sidebar__pane--hidden'}`}>

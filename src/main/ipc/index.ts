@@ -10,6 +10,7 @@
 import { IPC } from '@shared/ipc'
 import type { OpProgress } from '@shared/types'
 import { registerAccountHandlers } from './accounts'
+import { registerAiHandlers } from './ai'
 import { registerAppHandlers } from './app'
 import { registerBranchHandlers } from './branches'
 import { registerCloneHandlers } from './clone'
@@ -41,6 +42,7 @@ export function registerIpc(ctx: IpcContext): void {
   registerStagingHandlers(deps)
   registerSyncHandlers(deps)
   registerAccountHandlers(deps)
+  registerAiHandlers(deps)
   registerBranchHandlers()
   registerIntegrationHandlers()
   registerStashHandlers()

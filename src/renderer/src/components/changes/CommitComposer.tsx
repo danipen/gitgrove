@@ -13,11 +13,12 @@
 // commit message), the button becomes "Complete merge" and stays disabled,
 // explaining itself, until every conflict is resolved.
 
-import type { RepoOpKind } from '@shared/types'
+import type { ChangedFile, RepoOpKind } from '@shared/types'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { formatBytes, pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { isCmdOrCtrl, modKeyLabel } from '@/lib/platform'
+import { AiComposerControls } from './AiComposerControls'
 
 export type CommitMode = 'commit' | 'amend' | 'stash'
 
@@ -71,6 +72,12 @@ interface Props {
   onCommit: (message: string, amend: boolean) => Promise<boolean>
   /** Stash the checked files with an optional message. */
   onStash: (message: string) => Promise<boolean>
+  /** Snapshot of the checkbox selection, for the AI message generator. */
+  buildAiSelection: () => { files: ChangedFile[]; patches: string[] }
+  /** Open Settings → AI (the ✨ button's teaser when nothing is connected). */
+  onSetupAi: () => void
+  /** Surface a failed generation (toast). */
+  onError: (e: unknown) => void
 }
 
 export function CommitComposer({
@@ -89,7 +96,10 @@ export function CommitComposer({
   modeMenuRef,
   onOpenModeMenu,
   onCommit,
-  onStash
+  onStash,
+  buildAiSelection,
+  onSetupAi,
+  onError
 }: Props) {
   const [summary, setSummary] = useState('')
   const [description, setDescription] = useState('')
@@ -243,6 +253,25 @@ export function CommitComposer({
                 ? 'Write a commit summary to continue'
                 : null
 
+  // Why the ✨ button can't generate right now (its tooltip). Independent of
+  // the commit button's gating: a message-only amend can generate, and an
+  // empty summary is exactly when generating is most useful.
+  const aiDisabledReason =
+    busy || committing
+      ? 'Wait for the current operation to finish'
+      : includedCount === 0 && !amend
+        ? mode === 'stash'
+          ? 'Select some files to name a stash for'
+          : 'Select some changes to describe'
+        : null
+
+  // A generated message lands like typed text: draft bookkeeping untouched, so
+  // mode flips (amend/merge) keep restoring exactly what the fields held.
+  const onAiMessage = useCallback((aiSummary: string, aiDescription: string) => {
+    setSummary(aiSummary.slice(0, 500))
+    setDescription(aiDescription)
+  }, [])
+
   const size = commitSize !== null && commitSize > 0 ? ` · ${formatBytes(commitSize)}` : ''
   const label = merging
     ? `Complete merge${mergeSource ? ` of ${mergeSource}` : ''} into ${branch}`
@@ -258,6 +287,18 @@ export function CommitComposer({
 
   return (
     <div className="composer">
+      {/* Merges keep git's prepared message — no AI second-guessing there. */}
+      {!merging && !blockedByOp && (
+        <AiComposerControls
+          repoPath={repoPath}
+          mode={mode}
+          disabledReason={aiDisabledReason}
+          buildSelection={buildAiSelection}
+          onMessage={onAiMessage}
+          onSetupAi={onSetupAi}
+          onError={onError}
+        />
+      )}
       <input
         className="composer__summary"
         placeholder={
