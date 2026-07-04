@@ -212,9 +212,7 @@ export class WindowManager {
   private sessionSnapshot(): (string | null)[] {
     return [...this.windows]
       .filter((win) => !win.isDestroyed())
-      .map(
-        (win) => this.repoByWindow.get(win.id) ?? this.pendingRepoByWindow.get(win.id) ?? null
-      )
+      .map((win) => this.repoByWindow.get(win.id) ?? this.pendingRepoByWindow.get(win.id) ?? null)
   }
 
   /** The repo the application menu should act on: the focused window's. */

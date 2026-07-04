@@ -1,10 +1,9 @@
 import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, type BrowserWindow, nativeImage } from 'electron'
-
 import { IPC } from '@shared/ipc'
 import type { GitAvailability, RepoOpenResult, UpdateStatus } from '@shared/types'
+import { app, type BrowserWindow, nativeImage } from 'electron'
 import { APP_USER_MODEL_ID, REPO_URL } from './app-info'
 import { refreshAppShortcuts } from './app-shortcuts'
 import { hasNewWindowFlag, resolveStartupRepo } from './cli'

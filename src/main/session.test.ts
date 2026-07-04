@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { parseSession } from './session-store'
+import { parseSession } from './session'
 
 describe('parseSession', () => {
   test('keeps repo paths and welcome-screen markers in window order', () => {

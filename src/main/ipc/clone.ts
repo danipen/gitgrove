@@ -17,8 +17,7 @@ export function registerCloneHandlers(deps: HandlerDeps): void {
     // Progress goes to the window whose clone dialog is running, not to
     // whichever window is focused — the user may be working elsewhere meanwhile.
     const dest = await gitSync.clone(url, target, (phase, percent) => {
-      if (!e.sender.isDestroyed())
-        e.sender.send(IPC.cloneProgress, { phase, percent, done: false })
+      if (!e.sender.isDestroyed()) e.sender.send(IPC.cloneProgress, { phase, percent, done: false })
     })
     // The next clone should land beside this one — remember the parent folder.
     rememberCloneBaseDir(dirname(target))
