@@ -352,25 +352,35 @@ function drawContainers(
     const lastColumn = row.isHead && wip ? wip.column : row.endColumn
     const x1 = nodeX(lastColumn) + NODE_R + CAPSULE_PAD
     if (selected) {
-      // Exactly the commit treatment: soft halo behind, and the accent ring
-      // drawn AROUND the capsule — its own branch-colored border stays as is.
+      // The commit treatment (drawNodes' selection), wrapped around the capsule
+      // and drawn in the SAME world space so halo/ring/stroke all scale with
+      // zoom — one selection grammar at every zoom. It hugs the capsule TIGHTER
+      // than a node's does its node, though: the capsule already pads the
+      // avatars, so an 8px halo (a node's) would land far below the capsule and
+      // force EVERY caption down to clear it. A snug halo (RING_HALO) keeps the
+      // selection close and lets the caption sit near the capsule; the ring is
+      // an even offset on every side (a capsule's equidistant curve is just a
+      // larger stadium). captionCenterOffset keeps the caption a proportional
+      // WORLD gap below, sized to clear this halo at every zoom.
+      const RING = 3
+      const RING_HALO = 6
       ctx.beginPath()
       ctx.roundRect(
-        x0 - 8,
-        y - CAPSULE_HALF_H - 8,
-        x1 - x0 + 16,
-        CAPSULE_HALF_H * 2 + 16,
-        CAPSULE_HALF_H + 8
+        x0 - RING_HALO,
+        y - CAPSULE_HALF_H - RING_HALO,
+        x1 - x0 + RING_HALO * 2,
+        CAPSULE_HALF_H * 2 + RING_HALO * 2,
+        CAPSULE_HALF_H + RING_HALO
       )
       ctx.fillStyle = palette.halo
       ctx.fill()
       ctx.beginPath()
       ctx.roundRect(
-        x0 - 4,
-        y - CAPSULE_HALF_H - 4,
-        x1 - x0 + 8,
-        CAPSULE_HALF_H * 2 + 8,
-        CAPSULE_HALF_H + 4
+        x0 - RING,
+        y - CAPSULE_HALF_H - RING,
+        x1 - x0 + RING * 2,
+        CAPSULE_HALF_H * 2 + RING * 2,
+        CAPSULE_HALF_H + RING
       )
       ctx.strokeStyle = palette.accent
       ctx.lineWidth = 2
@@ -852,9 +862,10 @@ function drawCaption(
   scene: SceneState,
   text: string,
   worldX: number,
-  /** The ROW's center y — the caption anchors a screen-fixed gap below the
-   *  capsule edge (captionCenterOffset), so the margin between capsule and
-   *  text is identical at every zoom instead of scaling with it. */
+  /** The ROW's center y — the caption anchors a proportional WORLD gap below
+   *  the capsule edge (captionCenterOffset), so the margin between capsule and
+   *  text scales with zoom, staying in proportion with the diagram (and the
+   *  world-scaled branch selection). */
   rowCenterY: number,
   maxWorldWidth: number,
   maxScreenCap = CAPTION_MAX_SCREEN_W
