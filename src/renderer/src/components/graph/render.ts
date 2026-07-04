@@ -396,11 +396,23 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
     const cy = nodeY(edge.fromRow)
     ctx.strokeStyle = branchStroke(palette, edge.color)
     ctx.globalAlpha = lit ? 0.8 : 0.12
+    // Merge edges end with an arrowhead: back-direction of the path's final
+    // tangent + the path's end point, set per shape below (merges are the one
+    // edge that flows INTO a commit — the arrow states the direction right
+    // where a merge link could be misread as a fork link).
+    let arrowBackX = 0
+    let arrowBackY = 0
+    let endY = cy
     ctx.beginPath()
     if (py === cy) {
       // Same-row hop (criss-cross merge / packed-row fork): a shallow arc.
+      const controlY = py - CAPSULE_HALF_H - 14
       ctx.moveTo(px, py - NODE_R)
-      ctx.quadraticCurveTo((px + cx) / 2, py - CAPSULE_HALF_H - 14, cx, cy - NODE_R)
+      ctx.quadraticCurveTo((px + cx) / 2, controlY, cx, cy - NODE_R)
+      // End tangent of a quadratic points from control point to end.
+      arrowBackX = (px + cx) / 2 - cx
+      arrowBackY = controlY - (cy - NODE_R)
+      endY = cy - NODE_R
     } else if (edge.kind === 'fork') {
       // Orthogonal, Plastic-style: drop straight down/up the fork column,
       // then run along the child's row into its first commit. Long runs

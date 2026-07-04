@@ -621,7 +621,11 @@ describe('empty branches (zero-commit refs)', () => {
     expect(layout.rows.some((r) => r.name === 'HEAD')).toBe(false)
     // But a HEAD ref that claims commits of its own keeps its row, as before.
     const claimed = layoutGraph(
-      input([commit('h', ['a'], 'origin/HEAD'), commit('b', ['a'], 'HEAD -> main'), commit('a', [])])
+      input([
+        commit('h', ['a'], 'origin/HEAD'),
+        commit('b', ['a'], 'HEAD -> main'),
+        commit('a', [])
+      ])
     )
     const headRow = claimed.rows.find((r) => r.name === 'HEAD')
     expect(headRow?.empty).toBe(false)
