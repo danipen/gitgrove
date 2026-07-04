@@ -1,0 +1,372 @@
+/* ── AI assist (.ai-*) ──────────────────────────────────────────────────────
+   Every AI surface: the composer's ✨ cluster (AiComposerControls.tsx — its
+   position in the composer lives in changes.css), the setup teaser and style
+   popovers, and the Settings → AI pane (AiPane.tsx). One namespace so "where
+   is this styled?" is always answerable: .ai-* → this file. */
+
+/* The ✨ / caret pair: quiet ghost buttons living inside an input field —
+   visible on approach, never shouting over the text they assist. */
+.ai-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.ai-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* The gradient sparkle (Icon.Sparkle — the one colored icon) sits at ease at
+   rest, then earns its "wow" on approach: a soft violet glow keyed to the mark
+   itself + a one-shot twinkle (scale/rotate pop). Motion lives on the glyph,
+   not the button, so the hit target stays calm. */
+.ai-btn svg {
+  transition: filter 0.2s ease;
+}
+.ai-btn:hover svg {
+  filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.55));
+  animation: ai-twinkle 0.55s ease;
+}
+.ai-btn.is-generating {
+  color: var(--accent);
+}
+.ai-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.ai-btn[aria-disabled='true']:hover {
+  background: none;
+  color: var(--fg-muted);
+}
+.ai-btn--caret {
+  width: 16px;
+  margin-left: -2px;
+}
+/* Streaming: the sparkle gives way to a small spinner (shared keyframes). */
+.ai-btn__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Setup teaser: the "how do I enable this?" popover every unconfigured AI
+   button opens. One pitch, one button — never a nag, gone on outside click. */
+.ai-teaser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+}
+.ai-teaser__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ai-teaser__title svg {
+  color: var(--accent);
+}
+.ai-teaser__body {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.ai-teaser__cta {
+  align-self: flex-start;
+}
+
+/* ── Style popover: length / tone / emojis + regenerate. */
+.ai-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 12px;
+}
+.ai-options__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ai-options__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ai-options__label {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.ai-options__segmented button {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+/* A compact select shared by the tone row and the settings model picker. */
+.ai-select {
+  max-width: 100%;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.ai-select:focus {
+  outline: none;
+  border-color: var(--accent-border);
+}
+
+/* The emoji toggle: a plain switch, no library. */
+.ai-switch {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg-hover);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.ai-switch__thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--fg-muted);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.ai-switch.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+.ai-switch.is-on .ai-switch__thumb {
+  transform: translateX(14px);
+  background: var(--accent);
+}
+
+/* ── Settings → AI pane. */
+.ai-provider-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  flex: 0 0 auto;
+}
+.ai-connected-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--fg);
+}
+.ai-connected-hint svg {
+  color: var(--accent);
+}
+
+/* The sparkle's one-shot pop: a quick over-scale + gentle turn that settles,
+   so hovering the AI button feels alive without ever spinning distractingly. */
+@keyframes ai-twinkle {
+  0% {
+    transform: scale(1) rotate(0deg);
+  }
+  45% {
+    transform: scale(1.25) rotate(12deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+/* ── Ghost suggestion field: an input whose empty state carries a streamed AI
+   suggestion (CreateBranchDialog.tsx — branch names). The ghost is a painted
+   overlay, never input value: the field stays honestly empty until the user
+   accepts (Tab / Enter), so nothing AI-written ever submits unseen. */
+.ai-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ai-field input {
+  width: 100%;
+  /* Room for the ✨ button so long names never slide under it. */
+  padding-right: 30px;
+}
+.ai-field__btn {
+  position: absolute;
+  right: 4px;
+}
+/* Mirrors .dlg-field input's box exactly (padding + border) so the ghost sits
+   where the caret will put real text — off by a pixel reads as a glitch. */
+.ai-field__ghost {
+  position: absolute;
+  left: 11px;
+  right: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--fg-faint);
+  pointer-events: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ai-field__ghost-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ai-field__hint {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--fg-muted);
+  background: var(--bg-panel);
+}
+
+/* ── "Explain" chip + explanation note (AiExplainCommit.tsx, ErrorDialog's
+   explainer). The chip is a small pill that lives IN the commit meta row
+   (author · date · sha · ✨ Explain) — a bordered shape among neighbours, never
+   bare text floating in whitespace. The note is the streamed answer: one calm
+   card, real paragraphs, ghost head actions. */
+.ai-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.ai-chip svg {
+  transition: filter 0.2s ease;
+}
+.ai-chip:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+/* Same hover twinkle as .ai-btn — one sparkle personality everywhere. */
+.ai-chip:hover svg {
+  filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.55));
+  animation: ai-twinkle 0.55s ease;
+}
+/* Open note: the chip reads pressed, and clicking it again closes. */
+.ai-chip.is-active {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.ai-note {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 6px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-panel);
+  animation: pop-in 0.16s ease;
+}
+.ai-note__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.ai-note__head > svg {
+  color: var(--accent);
+}
+.ai-note__title {
+  flex: 1;
+}
+/* Head actions (retry, close): ghosts — visible shape only on hover, so the
+   card's chrome never competes with the text it frames. */
+.ai-note__action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin: -2px 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.ai-note__action:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* The answer as paragraphs: models separate thoughts with blank lines; a
+   pre-wrapped blob would render each as a full empty line — too airy. Tight
+   line-height inside a paragraph, a small gap between them (AiNoteBody). */
+.ai-note__body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  user-select: text;
+}
+.ai-note__body p {
+  margin: 0;
+  line-height: 1.45;
+  /* Single newlines ("- " bullets) stay literal inside a paragraph. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.ai-note__body--error {
+  color: var(--danger);
+}
+/* The streaming caret: a soft blinking block at the end of the forming text. */
+.ai-note__caret {
+  display: inline-block;
+  width: 6px;
+  height: 12px;
+  margin-left: 2px;
+  vertical-align: -1px;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: ai-caret-blink 0.9s steps(2, start) infinite;
+}
+@keyframes ai-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}

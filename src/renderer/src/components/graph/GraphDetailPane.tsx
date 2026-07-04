@@ -7,6 +7,7 @@
 
 import type { ChangedFile, Commit } from '@shared/types'
 import { useEffect } from 'react'
+import { useAiExplainCommit } from '@/components/common/AiExplainCommit'
 import { copyPathItems } from '@/components/common/copyPathItems'
 import { useFileFilter } from '@/components/common/FileFilter'
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
@@ -37,11 +38,22 @@ interface Props {
   onSelectFile: (path: string) => void
   onFileSelectionChange?: (count: number) => void
   onOpenFileHistory: (path: string, mode: FileHistoryMode, baseRef: string | null) => void
+  /** Open Settings → AI (the ✨ Explain teaser's one button). */
+  onSetupAi: () => void
 }
 
 // The shared commit grammar (see CommitSummary.tsx): subject → CommitMeta →
 // CommitBody → CommitRefs, arranged for the narrow sidebar.
-function CommitHead({ commit }: { commit: Commit }) {
+function CommitHead({
+  commit,
+  repoPath,
+  onSetupAi
+}: {
+  commit: Commit
+  repoPath: string
+  onSetupAi: () => void
+}) {
+  const explain = useAiExplainCommit({ repoPath, hash: commit.hash, onSetupAi })
   return (
     <div className="graph-detail__head">
       <div className="graph-detail__title">
@@ -54,10 +66,11 @@ function CommitHead({ commit }: { commit: Commit }) {
           {commit.subject}
         </div>
       </div>
-      <CommitMeta commit={commit} />
+      <CommitMeta commit={commit} extra={explain.trigger} />
       {/* Keyed by hash: switching commits remounts the body, resetting its
           collapse state and re-probing overflow (see CommitBody). */}
       <CommitBody key={commit.hash} commit={commit} />
+      {explain.card}
       <CommitRefs key={`refs-${commit.hash}`} commit={commit} />
     </div>
   )
@@ -100,7 +113,8 @@ export function GraphDetailPane({
   selectedFilePath,
   onSelectFile,
   onFileSelectionChange,
-  onOpenFileHistory
+  onOpenFileHistory,
+  onSetupAi
 }: Props) {
   const filesSpin = useSpinDelay(filesLoading)
   const {
@@ -132,7 +146,11 @@ export function GraphDetailPane({
 
   return (
     <div className="graph-detail">
-      {range ? <RangeHead range={range} /> : commit ? <CommitHead commit={commit} /> : null}
+      {range ? (
+        <RangeHead range={range} />
+      ) : commit ? (
+        <CommitHead commit={commit} repoPath={repoPath} onSetupAi={onSetupAi} />
+      ) : null}
 
       <div className="section-head graph-detail__count">
         {filesLoading ? (

@@ -92,6 +92,8 @@
 }
 /* ── Commit composer ─────────────────────────────────────────────────────── */
 .composer {
+  /* Anchors the AI cluster (.composer__ai) inside the summary field. */
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 7px;
@@ -104,6 +106,21 @@
   border-top: none;
   padding-top: 4px;
 }
+/* The AI cluster (AiComposerControls.tsx) floats at the summary field's right
+   edge; the field keeps typed text clear of it via padding-right below. The
+   cluster's own look lives in features/ai.css (.ai-btn). The 14px offsets =
+   the composer's 10px padding + 4px inside the field's border. */
+.composer__ai {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  z-index: 1;
+}
+.composer-head + .composer .composer__ai {
+  top: 8px;
+}
 .composer__summary,
 .composer__description {
   width: 100%;
@@ -115,6 +132,11 @@
   color: var(--fg);
   font-family: var(--font-ui);
   font-size: 12.5px;
+}
+/* After the shared padding shorthand above, so the right inset survives —
+   it keeps typed text clear of the floating AI cluster. */
+.composer__summary {
+  padding-right: 56px;
 }
 .composer__summary:focus,
 .composer__description:focus {

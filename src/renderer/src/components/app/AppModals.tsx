@@ -9,6 +9,7 @@
 import type { BranchChangesAction, BranchInfo, Commit, MergeKind, ResetMode } from '@shared/types'
 import { ConfirmDialog, PromptDialog, validateRefName } from '@/components/common/Dialog'
 import { InteractiveRebaseDialog } from '@/components/history/InteractiveRebaseDialog'
+import type { SettingsSection } from '@/components/settings/SettingsDialog'
 import { CreateBranchDialog, type CreateBranchRequest } from './CreateBranchDialog'
 import { MergeDialog } from './MergeDialog'
 import { SubmodulesDialog } from './SubmodulesDialog'
@@ -17,7 +18,7 @@ import { WorktreesDialog } from './WorktreesDialog'
 
 /** App-level modal dialogs (branch/tag/reset/rebase/clone/worktrees/…). */
 export type Modal =
-  | { kind: 'settings' }
+  | { kind: 'settings'; section?: SettingsSection }
   | { kind: 'clone'; initial?: { url: string; baseDir: string } }
   | { kind: 'identity' }
   | { kind: 'merge'; name: string }
@@ -47,6 +48,8 @@ interface Props {
   /** True while a merge/rebase/… owns the working tree. */
   opInFlight: boolean
   busy: boolean
+  /** Open Settings → AI (the create-branch ✨ teaser's one button). */
+  onSetupAi: () => void
   /** Run a modal-confirmed op: spinner, close, errors → toast. */
   runModalOp: (fn: () => Promise<unknown>) => Promise<void>
   /** Merge/squash/rebase a branch; owns the outcome notice + conflict flow. */
@@ -71,6 +74,7 @@ export function AppModals({
   dirtyCount,
   opInFlight,
   busy,
+  onSetupAi,
   runModalOp,
   onMerge,
   onCreateBranch,
@@ -97,6 +101,8 @@ export function AppModals({
     case 'new-branch':
       return (
         <CreateBranchDialog
+          repoPath={repoPath}
+          onSetupAi={onSetupAi}
           current={branch?.current ?? ''}
           detached={branch?.detached ?? false}
           defaultBranch={branch?.defaultBranch ?? null}

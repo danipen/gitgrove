@@ -809,6 +809,132 @@ export interface AppInfo {
   repoUrl: string
 }
 
+// ── AI assist ────────────────────────────────────────────────────────────────
+
+/**
+ * AI backends GitGrove can talk to. GitGrove ships no AI service of its own —
+ * the user brings their own endpoint and key. `openai`, `litellm`, `ollama`
+ * and `custom` all speak the OpenAI-compatible chat API (they differ only in
+ * default endpoint and whether a key is required); `anthropic` and `gemini`
+ * speak their native dialects.
+ */
+export type AiProvider = 'openai' | 'anthropic' | 'gemini' | 'litellm' | 'ollama' | 'custom'
+
+/**
+ * The connected AI backend as the renderer sees it: metadata only. The API
+ * key stays in the main process (encrypted at rest via safeStorage) and never
+ * crosses the IPC boundary — the same rule as account tokens.
+ */
+export interface AiStatus {
+  provider: AiProvider
+  /** Model used for generations, changeable from the settings pane. */
+  model: string
+  /** Models the endpoint offered at connect time, for the model picker. */
+  models: string[]
+  /** Endpoint base URL when it isn't the provider's default (litellm/ollama/custom). */
+  baseUrl: string | null
+  /**
+   * False when OS-level encryption was unavailable (no Linux keyring): the
+   * key is kept in memory for this session only, never written to disk.
+   */
+  persisted: boolean
+}
+
+/**
+ * What the settings pane submits to connect a backend. The key crosses the
+ * IPC boundary exactly once, here, and is never readable back.
+ */
+export interface AiConnectInput {
+  provider: AiProvider
+  /** Required for litellm/custom, prefilled for ollama; ignored elsewhere. */
+  baseUrl?: string
+  /** Optional for keyless endpoints (ollama, an open proxy). */
+  apiKey?: string
+}
+
+/** Why an AI call failed — stable codes the UI maps to copy. */
+export type AiErrorCode =
+  | 'unauthorized'
+  | 'network'
+  | 'bad-endpoint'
+  | 'provider-error'
+  | 'cancelled'
+
+/**
+ * Outcome of connecting an AI backend. The endpoint is verified live (a real
+ * models call) before anything is saved, so `ok` always means "ready to
+ * generate" — never "saved but untested".
+ */
+export type AiConnectResult =
+  | { ok: true; status: AiStatus }
+  | { ok: false; code: AiErrorCode; detail?: string }
+
+/** The commit-message generator's style options (the ✨ popover). */
+export interface AiCommitOptions {
+  length: 'short' | 'medium' | 'long'
+  tone: 'technical' | 'formal' | 'informal' | 'friendly'
+  emojis: boolean
+}
+
+/**
+ * What the composer sends to generate a commit/stash message: the checkbox
+ * selection as data — fully included files plus the standalone hunk patches of
+ * partially included ones — so the message describes exactly what will be
+ * committed, never the whole working tree.
+ */
+export interface AiCommitRequest {
+  /** Correlates streamed AiChunk pushes and cancellation with this call. */
+  requestId: string
+  /** Fully included files (diffs are read in main, with size caps). */
+  files: ChangedFile[]
+  /** Hunk patches (HEAD → working tree) of partially included files. */
+  patches: string[]
+  /** Amend folds HEAD's message in; stash asks for a short label instead. */
+  mode: 'commit' | 'amend' | 'stash'
+  options: AiCommitOptions
+}
+
+/** One streamed piece of a running generation, pushed while it runs. */
+export interface AiChunk {
+  requestId: string
+  /** Text appended by this chunk. */
+  text: string
+}
+
+/**
+ * Ask AI to name a branch for the pending working-tree changes. The context
+ * (file list, diffs, existing branch names for the naming convention) is
+ * gathered in main from the lock-free read side — the request is just the id.
+ */
+export interface AiBranchNameRequest {
+  requestId: string
+}
+
+/** Ask AI to explain one commit. Commits are immutable, so answers cache per hash. */
+export interface AiExplainCommitRequest {
+  requestId: string
+  hash: string
+}
+
+/**
+ * Ask AI to turn a git failure into plain words plus one next step. The repo
+ * fields come from the renderer's already-loaded state (no extra git calls —
+ * an error explainer must never queue behind the very op that just failed).
+ */
+export interface AiExplainErrorRequest {
+  requestId: string
+  /** The failure text exactly as shown to the user (git stderr, mostly). */
+  error: string
+  /** Current branch name, when a repo is open. */
+  branch?: string
+  /** `origin/main`-style upstream ref, or null when the branch has none. */
+  upstream?: string | null
+  ahead?: number
+  behind?: number
+  /** In-progress operation as a progressive ("merging", "rebasing"), if any. */
+  opState?: string
+}
+
 /** Lifecycle of an auto-update check, pushed from main to the renderer. */
 export type UpdateState =
   | 'checking'

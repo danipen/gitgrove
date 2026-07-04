@@ -1,4 +1,4 @@
-// styles: features/dialogs.css (.errdlg-*)
+// styles: features/dialogs.css (.errdlg-*), features/ai.css (.ai-note)
 // The calm home for failures. Git errors used to flash by as a transient toast
 // — too short to read, too small to hold a multi-line stderr dump, awkward to
 // select. This is a proper modal instead: the full message sits in a
@@ -6,20 +6,50 @@
 // Report-an-Issue button that pre-fills a GitHub issue with the error + the
 // build environment, so reporting a bug is a single click rather than a
 // copy-paste chore.
+//
+// The ✨ Explain button turns git's words ("non-fast-forward", "unrelated
+// histories") into one plain-English sentence plus the next step, streamed
+// into a calm note above the raw error. Unconfigured, it opens the setup
+// teaser — the moment of a cryptic failure is exactly when AI sells itself.
 
 import type { AppInfo } from '@shared/types'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
+import { AiNoteBody } from '@/components/common/AiExplainCommit'
+import { AiTeaserPopover } from '@/components/common/AiTeaserPopover'
 import { DialogShell } from '@/components/common/Dialog'
+import { useAiGeneration, useAiStatus } from '@/lib/ai'
 import { Icon } from '@/lib/icons'
+
+/** The repo situation the explainer sends along — from state the renderer
+ *  already holds, never fresh git calls (see explain-error.ts for why). */
+export interface ErrorAiContext {
+  repoPath: string | null
+  branch?: string
+  upstream?: string | null
+  ahead?: number
+  behind?: number
+  opState?: string
+  /** Open Settings → AI (the teaser's one button). */
+  onSetupAi: () => void
+}
 
 interface Props {
   message: string
   info: AppInfo | null
+  ai: ErrorAiContext
   onClose: () => void
 }
 
-export function ErrorDialog({ message, info, onClose }: Props) {
+export function ErrorDialog({ message, info, ai, onClose }: Props) {
   const [copied, setCopied] = useState(false)
+  const aiStatus = useAiStatus()
+  const [failure, setFailure] = useState<string | null>(null)
+  const [teaserOpen, setTeaserOpen] = useState(false)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const explainRef = useRef<HTMLButtonElement>(null)
+  const explanation = useAiGeneration((e) =>
+    setFailure(e instanceof Error ? e.message : String(e))
+  )
 
   const copy = () => {
     window.gitgrove.clipboardWrite(message)
@@ -29,6 +59,27 @@ export function ErrorDialog({ message, info, onClose }: Props) {
 
   const report = () => {
     window.gitgrove.openExternal(issueUrl(message, info))
+  }
+
+  const explain = () => {
+    if (!aiStatus) {
+      setTeaserOpen(true)
+      return
+    }
+    if (explanation.generating) return
+    setFailure(null)
+    setNoteOpen(true)
+    explanation.run((requestId) =>
+      window.gitgrove.aiExplainError(ai.repoPath, {
+        requestId,
+        error: message,
+        branch: ai.branch,
+        upstream: ai.upstream,
+        ahead: ai.ahead,
+        behind: ai.behind,
+        opState: ai.opState
+      })
+    )
   }
 
   return (
@@ -44,6 +95,21 @@ export function ErrorDialog({ message, info, onClose }: Props) {
         and we’ll take a look.
       </p>
 
+      {noteOpen && (
+        <div className="ai-note errdlg__ai-note">
+          <div className="ai-note__head">
+            <Icon.Sparkle size={13} />
+            <span className="ai-note__title">What this means</span>
+            {explanation.generating && <span className="ai-btn__spinner" aria-hidden />}
+          </div>
+          <AiNoteBody
+            text={explanation.text}
+            failure={failure}
+            streaming={explanation.generating}
+          />
+        </div>
+      )}
+
       {/* Read-only, monospace, scrollable — the whole stderr, however long, stays
           selectable and never gets clipped. */}
       <pre className="errdlg__detail" tabIndex={0}>
@@ -51,9 +117,22 @@ export function ErrorDialog({ message, info, onClose }: Props) {
       </pre>
 
       <div className="errdlg__actions">
-        <button className="btn-ghost btn-ghost--sm" onClick={report}>
-          <Icon.Github size={14} /> Report an Issue
-        </button>
+        <div className="errdlg__actions-left">
+          {/* Hidden once the note streams; back for a retry when it failed. */}
+          {(!noteOpen || (failure && !explanation.generating)) && (
+            <button
+              ref={explainRef}
+              className="btn-ghost btn-ghost--sm"
+              data-tip={aiStatus ? undefined : 'Explain this error with AI — click to set up'}
+              onClick={explain}
+            >
+              <Icon.Sparkle size={14} /> Explain
+            </button>
+          )}
+          <button className="btn-ghost btn-ghost--sm" onClick={report}>
+            <Icon.Github size={14} /> Report an Issue
+          </button>
+        </div>
         <div className="errdlg__actions-right">
           <button className="btn-ghost btn-ghost--sm" onClick={copy}>
             {copied ? <Icon.Check size={14} /> : <Icon.Copy size={14} />}
@@ -64,6 +143,18 @@ export function ErrorDialog({ message, info, onClose }: Props) {
           </button>
         </div>
       </div>
+
+      <AiTeaserPopover
+        anchor={explainRef.current}
+        open={teaserOpen}
+        onClose={() => setTeaserOpen(false)}
+        title="Explain this error with AI"
+        body="Git's message becomes one plain sentence plus the most likely next step."
+        onSetup={() => {
+          onClose()
+          ai.onSetupAi()
+        }}
+      />
     </DialogShell>
   )
 }

@@ -4,6 +4,14 @@
 
 import type {
   AddAccountResult,
+  AiBranchNameRequest,
+  AiChunk,
+  AiCommitRequest,
+  AiConnectInput,
+  AiConnectResult,
+  AiExplainCommitRequest,
+  AiExplainErrorRequest,
+  AiStatus,
   AppInfo,
   AvatarLookupResult,
   BlameLine,
@@ -148,6 +156,16 @@ export const IPC = {
   lfsEnable: 'repo:lfs:enable',
   optimizeRepo: 'repo:optimize',
   selectionSize: 'repo:selection-size',
+  // ai assist (bring-your-own backend)
+  aiStatus: 'ai:status',
+  aiConnect: 'ai:connect',
+  aiSetModel: 'ai:set-model',
+  aiDisconnect: 'ai:disconnect',
+  aiCommitMessage: 'ai:commit-message',
+  aiBranchName: 'ai:branch-name',
+  aiExplainCommit: 'ai:explain-commit',
+  aiExplainError: 'ai:explain-error',
+  aiCancel: 'ai:cancel',
   // clone
   cloneRepo: 'repo:clone',
   defaultCloneDir: 'repo:clone:default-dir',
@@ -189,6 +207,10 @@ export const IPC = {
   accountReposPage: 'accounts:repos-page',
   /** Determinate progress of a running checkout/fetch/pull/push (OpProgress). */
   opProgress: 'repo:op-progress',
+  /** A streamed piece of a running AI generation (AiChunk). */
+  aiChunk: 'ai:chunk',
+  /** The AI backend was connected/changed/disconnected — refetch aiStatus. */
+  aiChanged: 'ai:changed',
   updateStatus: 'update:status',
   windowMaximized: 'window:maximized'
 } as const
@@ -480,6 +502,46 @@ export interface GitGroveApi {
   optimizeRepo(repoPath: string): Promise<void>
   /** Sum of the on-disk sizes (bytes) of the given repo-relative paths. */
   selectionSize(repoPath: string, paths: string[]): Promise<number>
+  // ── AI assist ──
+  /** The connected AI backend (metadata only — the key stays in main), or null. */
+  aiStatus(): Promise<AiStatus | null>
+  /**
+   * Verify an AI backend live (a real models call) and save it on success —
+   * `ok` always means "ready to generate". The key crosses the bridge exactly
+   * once, here, and is stored encrypted (safeStorage), like account tokens.
+   */
+  aiConnect(input: AiConnectInput): Promise<AiConnectResult>
+  /** Switch the model used for generations (one of aiStatus().models). */
+  aiSetModel(model: string): Promise<void>
+  /** Forget the AI backend and its key. */
+  aiDisconnect(): Promise<void>
+  /**
+   * Generate a commit/stash message for the checkbox selection. Tokens stream
+   * in via onAiChunk (matched by `requestId`); resolves with the complete
+   * message. Rejects with a human-readable message on failure — except
+   * cancellation (aiCancel), which resolves with what was generated so far.
+   */
+  aiCommitMessage(repoPath: string, request: AiCommitRequest): Promise<string>
+  /**
+   * Suggest a branch name for the pending working-tree changes. Streams like
+   * aiCommitMessage; resolves with a ready-to-use, ref-valid slug (sanitized
+   * in main), or '' when the changes gave the model nothing to name.
+   */
+  aiBranchName(repoPath: string, request: AiBranchNameRequest): Promise<string>
+  /**
+   * Explain a commit: what changed and why it likely changed. Streams like
+   * aiCommitMessage. Commits are immutable, so main caches answers per
+   * hash+model — a repeat click answers instantly and costs nothing.
+   */
+  aiExplainCommit(repoPath: string, request: AiExplainCommitRequest): Promise<string>
+  /**
+   * Turn a git failure into plain words plus one suggested next step.
+   * `repoPath` is null when no repo is open (clone failures). Streams like
+   * aiCommitMessage.
+   */
+  aiExplainError(repoPath: string | null, request: AiExplainErrorRequest): Promise<string>
+  /** Cancel a running generation by its requestId. */
+  aiCancel(requestId: string): Promise<void>
   // ── Clone ──
   /**
    * Clone `url` into `targetPath` — the exact directory the new repo lands in
@@ -553,6 +615,10 @@ export interface GitGroveApi {
   onAccountReposPage(handler: (page: RemoteRepoPage) => void): () => void
   /** Subscribe to determinate progress of running checkout/fetch/pull/push ops. */
   onOpProgress(handler: (progress: OpProgress) => void): () => void
+  /** Subscribe to streamed pieces of running AI generations. */
+  onAiChunk(handler: (chunk: AiChunk) => void): () => void
+  /** Subscribe to AI backend changes (connected/model switched/disconnected). */
+  onAiChanged(handler: () => void): () => void
   /** Subscribe to auto-update lifecycle pushes. Returns an unsubscribe fn. */
   onUpdateStatus(handler: (status: UpdateStatus) => void): () => void
 }

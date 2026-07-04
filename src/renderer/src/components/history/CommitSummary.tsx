@@ -1,5 +1,6 @@
 import type { ChangedFile, Commit } from '@shared/types'
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useAiExplainCommit } from '@/components/common/AiExplainCommit'
 import { coAuthorsOf, stripCoAuthorTrailers } from '@/lib/coauthors'
 import { type CommitRef, parseRefs, pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
@@ -49,8 +50,10 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
 }
 
 /** The commit's byline — author (and co-authors) · relative date (absolute on
- *  hover) · short sha + copy. One composition for all three commit views. */
-export function CommitMeta({ commit }: { commit: Commit }) {
+ *  hover) · short sha + copy. One composition for all three commit views.
+ *  `extra` appends host-specific affordances (the ✨ Explain chip) to the row —
+ *  anchored among the metadata instead of floating in whitespace. */
+export function CommitMeta({ commit, extra }: { commit: Commit; extra?: ReactNode }) {
   const coAuthors = coAuthorsOf(commit)
   return (
     <div className="commit-meta">
@@ -63,6 +66,7 @@ export function CommitMeta({ commit }: { commit: Commit }) {
         <span className="commit__hash">{commit.shortHash}</span>
         <CopyButton value={commit.hash} label="Copy commit SHA" />
       </span>
+      {extra}
     </div>
   )
 }
@@ -145,13 +149,17 @@ interface Props {
   commit: Commit
   files: ChangedFile[]
   filesLoading: boolean
+  /** Enables the ✨ Explain affordance (AiExplainCommit); absent in hosts
+   *  that can't offer it (no repo path / no settings access). */
+  ai?: { repoPath: string; onSetupAi: () => void }
 }
 
 // Rendered with `key={commit.hash}` so it remounts per commit — that resets the
 // collapse state and lets the body-overflow probe measure a fresh, collapsed
 // layout without effect-ordering races.
-export function CommitSummary({ commit, files, filesLoading }: Props) {
+export function CommitSummary({ commit, files, filesLoading, ai }: Props) {
   const coAuthors = coAuthorsOf(commit)
+  const explain = useAiExplainCommit(ai ? { ...ai, hash: commit.hash } : null)
 
   return (
     <div className="commit-summary">
@@ -165,7 +173,7 @@ export function CommitSummary({ commit, files, filesLoading }: Props) {
           <div className="commit-summary__subject" data-tip={commit.subject} data-tip-overflow="">
             {commit.subject}
           </div>
-          <CommitMeta commit={commit} />
+          <CommitMeta commit={commit} extra={explain.trigger} />
         </div>
         <div className="commit-summary__meta">
           <span className="commit-summary__stats">
@@ -178,6 +186,7 @@ export function CommitSummary({ commit, files, filesLoading }: Props) {
       </div>
 
       <CommitBody commit={commit} />
+      {explain.card}
       <CommitRefs commit={commit} />
     </div>
   )

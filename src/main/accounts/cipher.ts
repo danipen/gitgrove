@@ -6,7 +6,11 @@ import { join } from 'node:path'
 import { app, safeStorage } from 'electron'
 import { type AccountCipher, AccountsStore } from './store'
 
-function systemCipher(): AccountCipher {
+/**
+ * The OS-vault cipher, shared with every store that keeps a secret at rest
+ * (accounts here, the AI backend key in main/ai/store.ts).
+ */
+export function systemCipher(): AccountCipher {
   return {
     available() {
       // safeStorage is only meaningful after app ready; callers run later.

@@ -375,9 +375,17 @@
   gap: 8px;
   margin-top: 18px;
 }
+.errdlg__actions-left,
 .errdlg__actions-right {
   display: flex;
   gap: 8px;
+}
+/* The streamed "what this means" note sits between the intro and the raw
+   error. Base .ai-note look from ai.css, which loads AFTER this file (its
+   .ai-field input override needs that) — hence the double class, so this
+   margin wins on specificity rather than order. */
+.ai-note.errdlg__ai-note {
+  margin: 0 0 10px;
 }
 /* ── Interactive rebase editor ───────────────────────────────────────────── */
 .irebase {

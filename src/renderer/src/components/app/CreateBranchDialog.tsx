@@ -11,11 +11,20 @@
 //    user returns (see StashReminder).
 //
 // The git choreography lives in main/git/write.ts createBranch.
+//
+// The name field carries the AI ghost suggestion: with a backend connected and
+// a dirty working tree, a slug generated from the pending changes streams in
+// as ghost text — Tab accepts it, typing dismisses it, Enter on the empty
+// field accepts and creates in one stroke. Unconfigured, the ✨ opens the
+// setup teaser instead (see AiTeaserPopover). styles: features/ai.css (.ai-field)
 
 import type { BranchChangesAction } from '@shared/types'
-import { type FormEvent, useId, useState } from 'react'
+import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react'
+import { AiTeaserPopover } from '@/components/common/AiTeaserPopover'
 import { DialogShell, validateRefName } from '@/components/common/Dialog'
+import { useAiGeneration, useAiStatus } from '@/lib/ai'
 import { pluralize } from '@/lib/format'
+import { Icon } from '@/lib/icons'
 import { PendingChangesChoice } from './PendingChangesChoice'
 
 /** What the dialog hands back on submit. */
@@ -26,6 +35,9 @@ export interface CreateBranchRequest {
 }
 
 interface Props {
+  repoPath: string
+  /** Open Settings → AI (the ✨ teaser's one button). */
+  onSetupAi: () => void
   /** Branch currently checked out. */
   current: string
   detached: boolean
@@ -47,6 +59,8 @@ interface Props {
 type Base = 'default' | 'current'
 
 export function CreateBranchDialog({
+  repoPath,
+  onSetupAi,
   current,
   detached,
   defaultBranch,
@@ -73,6 +87,60 @@ export function CreateBranchDialog({
   // repo-derived inputs so the layout never shifts under the user.
   const [repo] = useState(() => ({ current, detached, defaultBranch, dirtyCount, opInFlight }))
 
+  // ── AI ghost suggestion ──
+  const aiStatus = useAiStatus()
+  const suggestion = useAiGeneration() // failures degrade silently — a ghost never nags
+  const [teaserOpen, setTeaserOpen] = useState(false)
+  const sparkleRef = useRef<HTMLButtonElement>(null)
+  const canSuggest = repo.dirtyCount > 0
+
+  const suggest = () =>
+    suggestion.run((requestId) => window.gitgrove.aiBranchName(repoPath, { requestId }))
+
+  // Auto-suggest once, as the dialog opens: exactly the roadmap UX — the
+  // field greets the user with a name already forming. Only when a backend is
+  // connected, there are changes to name from, and no caller-provided name.
+  const autoRan = useRef(false)
+  useEffect(() => {
+    if (autoRan.current || !aiStatus || !canSuggest || initialName) return
+    autoRan.current = true
+    suggest()
+    // biome-ignore lint/correctness/useExhaustiveDependencies: fire once when the status resolves
+  }, [aiStatus])
+
+  // The ghost shows while the field is empty: the streaming raw text as it
+  // forms, then the sanitized slug (run() resolves with it). Accepting waits
+  // for the final slug — a half-streamed name is never committed to the field.
+  const ghostReady = !suggestion.generating && suggestion.text.length > 0
+  const ghost = !name && (suggestion.generating || suggestion.text.length > 0)
+
+  const acceptGhost = (): string | null => {
+    if (!ghostReady || name) return null
+    setName(suggestion.text)
+    return suggestion.text
+  }
+
+  const onNameKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Tab' && !e.shiftKey && acceptGhost() !== null) e.preventDefault()
+  }
+
+  const sparkleTip = !aiStatus
+    ? 'Suggest a branch name with AI — click to set up'
+    : suggestion.generating
+      ? 'Stop suggesting'
+      : canSuggest
+        ? 'Suggest a name from your pending changes'
+        : 'Nothing to suggest from — no pending changes'
+
+  const onSparkle = () => {
+    if (!aiStatus) {
+      setTeaserOpen(true)
+      return
+    }
+    if (suggestion.generating) suggestion.stop()
+    else if (canSuggest && !busy) suggest()
+  }
+
   // The base picker only earns its space when there's a real choice: no
   // explicit commit base, a known default branch, and the user isn't on it.
   const showBase =
@@ -83,12 +151,16 @@ export function CreateBranchDialog({
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
-    const err = validateRefName(name)
+    // Enter on the empty field accepts the ready ghost and creates in one
+    // stroke — suggestion straight to branch, the whole point of the ghost.
+    const accepted = !name.trim() ? acceptGhost() : null
+    const finalName = accepted ?? name
+    const err = validateRefName(finalName)
     if (err) {
       setError(err)
       return
     }
-    onSubmit(name.trim(), {
+    onSubmit(finalName.trim(), {
       from:
         from ?? (showBase && base === 'default' ? (repo.defaultBranch ?? undefined) : undefined),
       checkout,
@@ -106,18 +178,54 @@ export function CreateBranchDialog({
       <form onSubmit={submit}>
         <div className="dlg-field">
           <label htmlFor={`${id}-name`}>Branch name</label>
-          <input
-            id={`${id}-name`}
-            autoFocus
-            placeholder="feature/my-change"
-            value={name}
-            disabled={busy}
-            onChange={(e) => {
-              setError(null)
-              setName(e.target.value)
-            }}
-          />
+          <div className="ai-field">
+            <input
+              id={`${id}-name`}
+              autoFocus
+              placeholder={ghost ? '' : 'feature/my-change'}
+              value={name}
+              disabled={busy}
+              aria-description={ghostReady ? `Suggested: ${suggestion.text} — Tab accepts` : ''}
+              onChange={(e) => {
+                setError(null)
+                setName(e.target.value)
+                // Typing means "I have my own name" — stop the stream quietly.
+                if (suggestion.generating) suggestion.stop()
+              }}
+              onKeyDown={onNameKeyDown}
+            />
+            {ghost && (
+              <span className="ai-field__ghost" aria-hidden>
+                <span className="ai-field__ghost-text">{suggestion.text}</span>
+                {ghostReady && <kbd className="ai-field__hint">Tab</kbd>}
+              </span>
+            )}
+            <button
+              ref={sparkleRef}
+              type="button"
+              className={`ai-btn ai-field__btn${suggestion.generating ? ' is-generating' : ''}`}
+              aria-disabled={!!aiStatus && !suggestion.generating && !canSuggest}
+              aria-label={sparkleTip}
+              data-tip={sparkleTip}
+              onClick={onSparkle}
+            >
+              {suggestion.generating ? (
+                <span className="ai-btn__spinner" aria-hidden />
+              ) : (
+                <Icon.Sparkle size={14} />
+              )}
+            </button>
+          </div>
         </div>
+
+        <AiTeaserPopover
+          anchor={sparkleRef.current}
+          open={teaserOpen}
+          onClose={() => setTeaserOpen(false)}
+          title="Name this branch with AI"
+          body="GitGrove suggests a name from your pending changes, in your repo's naming style."
+          onSetup={onSetupAi}
+        />
 
         {showBase && (
           <div className="option-cards" role="radiogroup" aria-label="Start the branch from">
