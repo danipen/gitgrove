@@ -3,38 +3,41 @@
 // Pure — no DOM, no git — and driven entirely by the footprints and connector
 // stubs layout.ts hands it, so it's unit-testable in isolation.
 //
-// Two forces shape every placement, strictly in this order:
+// Two forces shape the arrangement, strictly in this order:
 //
-// - DENSITY. A chain never opens a new row while an existing row can host its
-//   footprint — short-lived branches share rows instead of staircasing down
-//   the canvas, and the diagram stays as compact as plain first-fit.
-// - CLARITY. Among the rows that fit, take the one whose connector lines
-//   cross the least. Every chain hangs off the diagram by a handful of
-//   VERTICAL connectors (the fork drop from its parent, the merge lead-out
-//   into its target, one per merge it received — see render.ts for the
-//   orthogonal routing), and each vertical crosses every row it passes whose
-//   footprint covers its column. Candidate rows are scored on both sides of
-//   that relation: the chain's own verticals against the rows already placed,
-//   and the already-placed verticals against the footprint the chain would
-//   lay down. A lower-scoring row further from the parent wins only when the
-//   saved crossings outweigh the drift (ROW_DRIFT_PENALTY).
+// - DENSITY. Chains pack first-fit in fork order (the left-edge rule — the
+//   row count stays minimal for the footprints given), and a chain never
+//   opens a new row while an existing row can host it: clarity never buys
+//   itself a taller diagram.
+// - CLARITY. Every chain hangs off the diagram by a handful of VERTICAL
+//   connectors (the fork drop from its parent, the merge lead-out into its
+//   target, one per merge it received — see render.ts for the orthogonal
+//   routing), and each vertical crosses every row it passes whose footprint
+//   covers its column. Two mechanisms cut those crossings without touching
+//   the row count:
+//     1. Placement drift — among the rows that FIT, take the one whose
+//        connectors cross the least (the chain's own verticals against the
+//        rows already placed, and the already-placed verticals against the
+//        footprint the chain would lay down). A farther row wins only when
+//        the saved crossings outweigh the drift from the parent
+//        (ROW_DRIFT_PENALTY) — e.g. a backport slides down to hug the
+//        release line it merges into.
+//     2. Nested-pair swaps — fork-order packing puts a long-lived branch
+//        ABOVE the short branches that fork and merge back entirely inside
+//        its lifetime, so every short branch's connectors slice through the
+//        long capsule. A bounded post-pass swaps such pairs (long one sinks,
+//        family rises) whenever that strictly reduces crossings: the long
+//        branch's verticals fall outside the family's spans, and a fully
+//        nested family unwinds to zero crossings. Swaps exchange existing
+//        rows, so density is untouched by construction.
 //
-// Placement order also serves clarity: within a fork depth, chains pack by
-// MERGE column (footprint end), not fork column. A branch that merges back
-// sooner sits closer to its parent, so a family of branches nested inside a
-// long-lived one renders with the long one underneath — its verticals fall
-// outside the short ones' spans and the family crosses nothing, where
-// fork-order packing would slice every short branch's connectors through the
-// long capsule. Nested lifetimes overlap pairwise, so this costs no rows.
-//
-// Hard constraints, never traded away: the mainline owns row 0 alone;
-// release lines stack directly beneath it in version order (pure first-fit,
-// no drift — their rows are a stable spine the eye navigates by); a child
+// Hard constraints, never traded: the mainline owns row 0 alone; release
+// lines stack directly beneath it in version order (pure first-fit, no drift,
+// no swaps — their rows are a stable spine the eye navigates by); a child
 // chain always packs strictly below its fork parent.
 
 /** A vertical connector this chain shares with another chain: the fork drop
- *  from its parent, its merge lead-out, or a merge it received. Becomes a
- *  real segment (and starts costing crossings) once both ends are placed. */
+ *  from its parent, its merge lead-out, or a merge it received. */
 export interface VerticalStub {
   /** Column the connector runs down. */
   column: number
@@ -68,7 +71,28 @@ const ROW_DRIFT_PENALTY = 0.35
  *  never win anyway. */
 const MAX_CANDIDATES = 6
 
+/** Swap sweeps before the improvement pass stops. Each accepted swap
+ *  strictly reduces crossings, so the pass converges — usually in one. */
+const MAX_SWEEPS = 3
+
+/** Swap evaluations before the improvement pass bails, and the total work
+ *  those evaluations may cost (each is an O(chains + verticals) scan). The
+ *  work cap shrinks the budget on pathological windows — thousands of
+ *  overlapping chains — where the pass would burn tens of milliseconds
+ *  polishing a graph that's unreadable at that scale anyway; every
+ *  human-readable graph gets the full budget many times over. */
+const SWAP_BUDGET = 4000
+const SWAP_WORK_CAP = 1_500_000
+
 const NOT_RELEASE = Number.MAX_SAFE_INTEGER
+
+/** A vertical connector with both ends known: `a`/`b` are chain ids (the
+ *  mainline included), deduplicated from the two chains' mirrored stubs. */
+interface Vertical {
+  column: number
+  a: number
+  b: number
+}
 
 /**
  * Pack every chain onto a row. `chains` excludes the mainline; `mainId` (the
@@ -76,6 +100,13 @@ const NOT_RELEASE = Number.MAX_SAFE_INTEGER
  * floors and connector spans can resolve against it. Returns chain id → row.
  */
 export function packRows(chains: readonly PackChain[], mainId: number): Map<number, number> {
+  const rowOf = pack(chains, mainId)
+  swapNestedPairs(chains, mainId, rowOf)
+  return rowOf
+}
+
+/** First-fit packing in fork order, with crossing-aware drift (see header). */
+function pack(chains: readonly PackChain[], mainId: number): Map<number, number> {
   const rowOf = new Map<number, number>()
   if (mainId >= 0) rowOf.set(mainId, 0)
 
@@ -97,15 +128,14 @@ export function packRows(chains: readonly PackChain[], mainId: number): Map<numb
   }
 
   // Release lines first (newest version first — the spine stack), then by
-  // fork depth, HEAD's chain first within its depth, then by merge column so
-  // sooner-merged siblings pack nearer the parent (see the header), ids last
-  // for determinism.
+  // fork depth, HEAD's chain first within its depth, then by start column so
+  // packing stays dense, ids last for determinism.
   const order = [...chains].sort(
     (a, b) =>
       (a.releaseRank ?? NOT_RELEASE) - (b.releaseRank ?? NOT_RELEASE) ||
       depthOf(a.id) - depthOf(b.id) ||
       Number(b.isHead) - Number(a.isHead) ||
-      a.end - b.end ||
+      a.start - b.start ||
       a.id - b.id
   )
 
@@ -120,8 +150,8 @@ export function packRows(chains: readonly PackChain[], mainId: number): Map<numb
   const covered = (row: number, column: number): boolean =>
     taken[row]?.some((t) => t.start <= column && column <= t.end) === true
 
-  /** Crossings placing `c` at `row` would create, both ways: its verticals
-   *  against placed rows, and placed verticals against its footprint. */
+  // Crossings placing `c` at `row` would create, both ways: its verticals
+  // against placed rows, and placed verticals against its footprint.
   const crossings = (c: PackChain, row: number): number => {
     let cost = 0
     for (const column of through[row] ?? []) {
@@ -153,8 +183,7 @@ export function packRows(chains: readonly PackChain[], mainId: number): Map<numb
     } else {
       // Gather the nearest fitting rows, then keep the cheapest; ties go to
       // the row nearest the parent. A NEW row (past the current edge) is a
-      // candidate only when no existing row fits — clarity never buys itself
-      // a taller diagram (density is the promise the packer keeps first).
+      // candidate only when no existing row fits — see DENSITY above.
       const candidates: number[] = []
       for (let r = floor; candidates.length < MAX_CANDIDATES; r++) {
         if (r >= taken.length) {
@@ -193,4 +222,113 @@ export function packRows(chains: readonly PackChain[], mainId: number): Map<numb
     }
   }
   return rowOf
+}
+
+/** The improvement pass: swap strictly-nested, row-inverted chain pairs
+ *  whenever that reduces crossings (see header, CLARITY 2). Mutates rowOf. */
+function swapNestedPairs(
+  chains: readonly PackChain[],
+  mainId: number,
+  rowOf: Map<number, number>
+): void {
+  // Every vertical with both ends in the window, deduplicated: each pair's
+  // stubs mirror each other, so take a vertical from its lower-id end (the
+  // mainline carries no stub list — its verticals come from the other end).
+  const verticals: Vertical[] = []
+  for (const c of chains) {
+    for (const stub of c.stubs) {
+      if ((c.id < stub.other || stub.other === mainId) && rowOf.has(stub.other)) {
+        verticals.push({ column: stub.column, a: c.id, b: stub.other })
+      }
+    }
+  }
+  const children = new Map<number, PackChain[]>()
+  for (const c of chains) {
+    if (c.parent === null) continue
+    let list = children.get(c.parent)
+    if (!list) children.set(c.parent, (list = []))
+    list.push(c)
+  }
+
+  /** Crossings involving `o` or `i` if they sat on (rowO, rowI) — the only
+   *  terms a swap can change, counted from scratch so the pass needs no
+   *  incremental bookkeeping beyond rowOf itself. */
+  const pairCost = (o: PackChain, i: PackChain, rowO: number, rowI: number): number => {
+    const rowAt = (id: number): number =>
+      id === o.id ? rowO : id === i.id ? rowI : (rowOf.get(id) ?? 0)
+    const crossesInterval = (v: Vertical, z: PackChain): boolean => {
+      if (z.id === v.a || z.id === v.b) return false
+      if (v.column < z.start || v.column > z.end) return false
+      const rz = rowAt(z.id)
+      const ra = rowAt(v.a)
+      const rb = rowAt(v.b)
+      return Math.min(ra, rb) < rz && rz < Math.max(ra, rb)
+    }
+    let cost = 0
+    for (const v of verticals) {
+      if (v.a === o.id || v.b === o.id || v.a === i.id || v.b === i.id) {
+        for (const z of chains) if (crossesInterval(v, z)) cost++
+      } else {
+        if (crossesInterval(v, o)) cost++
+        if (crossesInterval(v, i)) cost++
+      }
+    }
+    return cost
+  }
+
+  const fitsAt = (c: PackChain, row: number, ignoring: PackChain): boolean =>
+    !chains.some(
+      (z) =>
+        z.id !== c.id &&
+        z.id !== ignoring.id &&
+        rowOf.get(z.id) === row &&
+        c.start <= z.end &&
+        z.start <= c.end
+    )
+  /** Parent above, every child below — with the pair's swapped rows. */
+  const floorsHold = (c: PackChain, row: number, otherId: number, otherRow: number): boolean => {
+    const rowAt = (id: number): number | undefined =>
+      id === otherId ? otherRow : rowOf.get(id)
+    const parentRow = c.parent === null ? 0 : (rowAt(c.parent) ?? 0)
+    if (row <= parentRow) return false
+    return (children.get(c.id) ?? []).every((child) => {
+      const childRow = rowAt(child.id)
+      return childRow === undefined || childRow > row
+    })
+  }
+
+  // Candidate pairs: `o`'s footprint contains `i`'s, yet `o` sits above it.
+  // Sorted by start so containment scans stay short.
+  const movable = chains
+    .filter((c) => c.releaseRank === null && rowOf.has(c.id))
+    .sort((a, b) => a.start - b.start || a.id - b.id)
+  let budget = Math.min(
+    SWAP_BUDGET,
+    Math.ceil(SWAP_WORK_CAP / (chains.length + verticals.length + 1))
+  )
+  for (let sweep = 0; sweep < MAX_SWEEPS && budget > 0; sweep++) {
+    let improved = false
+    for (let x = 0; x < movable.length && budget > 0; x++) {
+      const o = movable[x]
+      for (let y = x + 1; y < movable.length && budget > 0; y++) {
+        const i = movable[y]
+        if (i.start > o.end) break // sorted: nothing later can nest in o
+        if (i.end > o.end) continue
+        const rowO = rowOf.get(o.id) ?? 0
+        const rowI = rowOf.get(i.id) ?? 0
+        if (rowO >= rowI) continue
+        budget--
+        if (!fitsAt(o, rowI, i) || !fitsAt(i, rowO, o)) continue
+        if (!floorsHold(o, rowI, i.id, rowO) || !floorsHold(i, rowO, o.id, rowI)) continue
+        // Drift penalties cancel exactly (the pair trades distances), so a
+        // swap is judged on crossings alone — and only a STRICT win moves.
+        if (pairCost(o, i, rowI, rowO) < pairCost(o, i, rowO, rowI)) {
+          rowOf.set(o.id, rowI)
+          rowOf.set(i.id, rowO)
+          improved = true
+        }
+      }
+    }
+    if (!improved) break
+  }
 }
