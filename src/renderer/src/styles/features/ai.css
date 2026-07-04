@@ -23,14 +23,15 @@
   background: var(--accent-soft);
   color: var(--accent);
 }
-/* The sparkle earns its "wow" on approach: a soft accent glow + a one-shot
-   twinkle (scale/rotate pop). Motion lives on the glyph, not the button, so
-   the hit target stays calm. */
+/* The gradient sparkle (Icon.Sparkle — the one colored icon) sits at ease at
+   rest, then earns its "wow" on approach: a soft violet glow keyed to the mark
+   itself + a one-shot twinkle (scale/rotate pop). Motion lives on the glyph,
+   not the button, so the hit target stays calm. */
 .ai-btn svg {
   transition: filter 0.2s ease;
 }
 .ai-btn:hover svg {
-  filter: drop-shadow(0 0 5px var(--accent-border));
+  filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.55));
   animation: ai-twinkle 0.55s ease;
 }
 .ai-btn.is-generating {

@@ -1,7 +1,7 @@
 // Minimal inline SVG icon set (stroke-based, 1.6px) so the app ships with no
 // icon-font dependency. Each icon inherits `currentColor`.
 
-import type { SVGProps } from 'react'
+import { type SVGProps, useId } from 'react'
 
 type IconProps = SVGProps<SVGSVGElement> & { size?: number }
 
@@ -249,23 +249,35 @@ export const Icon = {
       <path d="M6.5 8v8.5a1 1 0 0 0 1 1H14M6.5 11.5H14" />
     </Svg>
   ),
-  // The modern AI glyph: a four-point sparkle with concave (pinched) edges —
-  // each side curves toward the center via a control point AT the center, the
-  // trick behind the Gemini/Copilot "shimmer" star — paired with a smaller
-  // companion spark for that premium, twinkly feel. Filled with soft (round)
-  // tips rather than a thin outline so it reads as a jewel, not a doodle.
-  Sparkle: (p: IconProps) => (
-    <Svg {...p} strokeWidth={1}>
-      <path
-        d="M10.5 5 Q10.5 12.5 18 12.5 Q10.5 12.5 10.5 20 Q10.5 12.5 3 12.5 Q10.5 12.5 10.5 5 Z"
-        fill="currentColor"
-      />
-      <path
-        d="M18.5 3 Q18.5 6.5 22 6.5 Q18.5 6.5 18.5 10 Q18.5 6.5 15 6.5 Q18.5 6.5 18.5 3 Z"
-        fill="currentColor"
-      />
-    </Svg>
-  ),
+  // The AI mark — the ONE deliberate colored exception in this currentColor
+  // icon set. AI is the app's signature "wow" feature, so it earns a signature
+  // gradient: one bold four-point sparkle plus a small companion spark. The big
+  // star nearly fills the 24-box (like every other nav icon) so it never reads
+  // as the runt of the row, yet its sides pinch enough (control points at ~⅓ of
+  // the radius on each diagonal) to stay a crisp *sparkle* rather than a fat
+  // diamond. The gradient runs cyan → app-blue → magenta on the TL→BR diagonal:
+  // a WIDE hue spread with high contrast so it reads as an actual gradient even
+  // at 14px (a narrow blue→purple ramp just averages to flat indigo at that
+  // size). The cyan end bridges toward the app-icon palette (green→blue→indigo)
+  // and the blue midpoint echoes the accent, tying the mark to the brand while
+  // the magenta says "AI". Ignores `currentColor` on purpose; a fresh `useId`
+  // per instance keeps the gradient <defs> collision-free wherever it renders.
+  Sparkle: ({ size = 16, ...props }: IconProps) => {
+    const id = `ai-spark-${useId().replace(/:/g, '')}`
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill={`url(#${id})`} {...props}>
+        <defs>
+          <linearGradient id={id} x1="1" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stopColor="#1fd4ec" />
+            <stop offset="0.42" stopColor="#4f7cff" />
+            <stop offset="1" stopColor="#cc33dd" />
+          </linearGradient>
+        </defs>
+        <path d="M10.5 4 Q12.62 10.88 19.5 13 Q12.62 15.12 10.5 22 Q8.38 15.12 1.5 13 Q8.38 10.88 10.5 4 Z" />
+        <path d="M18.8 2.2 Q19.61 4.79 22.2 5.6 Q19.61 6.41 18.8 9 Q17.99 6.41 15.4 5.6 Q17.99 4.79 18.8 2.2 Z" />
+      </svg>
+    )
+  },
   Sun: (p: IconProps) => (
     <Svg {...p}>
       <circle cx="12" cy="12" r="4" />
