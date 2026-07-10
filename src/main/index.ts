@@ -25,6 +25,18 @@ import { WindowManager } from './windows'
 
 const isDev = !app.isPackaged
 
+// A dev run (`bun run dev`) and an installed release share GitGrove's identity,
+// so they'd land on the same userData dir — and thus the same single-instance
+// lock below (Chromium keeps that lock file inside userData). That made the two
+// mutually exclusive: launching dev while the release was open (or vice versa)
+// just routed argv into the running instance and quit silently. Give the dev
+// build its own userData dir so its lock and state stand alone: release + dev
+// now run side by side, and dev never clobbers your real recents/session.
+// Must run before requestSingleInstanceLock and before app 'ready'.
+if (isDev) {
+  app.setPath('userData', `${app.getPath('userData')} (dev)`)
+}
+
 // One process, many windows. A second launch (double-clicking the app again,
 // `gitgrove --repo <path>` from a shell) must join the running instance: two
 // processes would race each other on the recents store, the window-state file
