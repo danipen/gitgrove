@@ -16,9 +16,9 @@
 // Everything here is gated to GitHub hosts by the host info passed in; on any
 // other host the data stays empty and the effects are inert.
 
-import { compareUrl } from '@shared/git-host-urls'
 import type { BranchInfo, RepoHostInfo, RepoSummary, SyncStatus } from '@shared/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPrBannerUrl } from './pr-banner'
 import { type BranchPrs, groupPrsByBranch } from './pr-order'
 
 interface Params {
@@ -132,22 +132,18 @@ export function usePullRequests({ getRepoPath, repo, hostInfo, branch, sync }: P
   }, [prCache])
 
   // The compare URL for the "Create Pull Request" banner, or null when it
-  // shouldn't show: only on a GitHub host, for a published branch (has an
-  // upstream) that isn't the default branch and has no PR at all yet.
-  const createPrUrl = useMemo(() => {
-    // Wait until the current branch's PRs have loaded — otherwise the banner
-    // flashes on every repo open before we know whether it already has a PR.
-    if (!prsLoaded) return null
-    if (hostInfo?.provider !== 'github' || !hostInfo.webUrl) return null
-    if (!branch || branch.detached || !branch.defaultBranch) return null
-    const current = branch.current
-    if (!current || current === branch.defaultBranch) return null
-    // Any PR — open, merged or closed — means the branch's PR story is already
-    // told (the menu's "Open Pull Request #N" reaches it), so don't nag to
-    // create another. In particular, a just-merged branch must not reopen this.
-    if (!sync?.upstream || prByBranch.has(current)) return null
-    return compareUrl(hostInfo.webUrl, branch.defaultBranch, current)
-  }, [hostInfo, branch, sync, prByBranch, prsLoaded])
+  // shouldn't show (see createPrBannerUrl for the exact gate).
+  const createPrUrl = useMemo(
+    () =>
+      createPrBannerUrl({
+        prsLoaded,
+        hostInfo,
+        branch,
+        sync,
+        branchesWithPrs: new Set(prByBranch.keys())
+      }),
+    [hostInfo, branch, sync, prByBranch, prsLoaded]
+  )
 
   // Refresh the current branch's PR + CI when the window regains focus — the
   // cheap way to catch a build that finished while the user was away.
