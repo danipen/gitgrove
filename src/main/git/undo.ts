@@ -102,18 +102,33 @@ async function currentUpstream(repoPath: string): Promise<string | null> {
   }
 }
 
+/** Whether `ref` resolves to a commit that actually exists in this repo. */
+async function refExists(repoPath: string, ref: string): Promise<boolean> {
+  return runRead(repoPath, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).then(
+    (out) => out.trim() !== '',
+    () => false
+  )
+}
+
 /**
  * Whether `sha` is unpublished — not yet on the remote. With an upstream, that's
  * "not an ancestor of the upstream" (ahead of it); without one, "not contained
  * in any remote-tracking branch". Mirrors GitHub Desktop's local-commits set,
  * which is exactly what gates whether an undo is offered.
+ *
+ * A configured upstream can be gone from the remote — e.g. a stale local branch
+ * still tracking a remote branch that was deleted (or renamed, like `master` →
+ * `main`). git keeps reporting that upstream, but its ref no longer resolves, so
+ * the ancestor probe would error and we'd read the failure as "unpushed" and
+ * wrongly offer to undo an already-published commit. When the upstream ref is
+ * missing, fall back to the no-upstream test (contained in *any* remote branch).
  */
 async function isUnpushed(
   repoPath: string,
   sha: string,
   upstream: string | null
 ): Promise<boolean> {
-  if (upstream) {
+  if (upstream && (await refExists(repoPath, upstream))) {
     return runRead(repoPath, ['merge-base', '--is-ancestor', sha, upstream]).then(
       () => false,
       () => true
@@ -266,6 +281,20 @@ export async function undo(repoPath: string): Promise<UndoResult> {
     const record = await readUndoRecord(repoPath)
 
     if (record && record.postSha === head) {
+      // Never rewrite published history. A recorded op is undoable only while its
+      // tip is unpushed — the same gate readUndoSnapshot uses to decide whether
+      // to even offer the affordance. This guards the mutation itself, so a stale
+      // renderer snapshot or the "Undo Last Action" menu command can't slip a
+      // pushed tip past the check. A reset is exempt: undoing it moves HEAD
+      // *forward* to restore commits, so it can never rewrite remote history.
+      if (
+        record.kind !== 'reset' &&
+        !(await isUnpushed(repoPath, head, await currentUpstream(repoPath)))
+      ) {
+        throw new Error(
+          'This commit is already pushed, so undoing it would rewrite published history.'
+        )
+      }
       if (record.kind === 'commit' && record.preSha === null) {
         await undoFirstCommit(repoPath)
       } else if (record.kind === 'commit') {

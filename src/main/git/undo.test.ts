@@ -286,6 +286,40 @@ describe('readUndoSnapshot validity & snapshot integration', () => {
     expect((await readUndoSnapshot(dir, tip, 'origin/main'))?.kind).toBe('commit')
   })
 
+  test('treats a pushed commit as pushed when its configured upstream ref was deleted', async () => {
+    // A stale branch still tracking a remote branch that no longer exists (the
+    // remote deleted it, or renamed its default). git keeps reporting the
+    // upstream (here 'origin/gone'), but the ref doesn't resolve — the tip must
+    // still count as pushed via any *other* remote-tracking branch that has it.
+    const dir = seedRepo()
+    put(dir, 'foo.txt', 'hi')
+    const tip = rawCommit(dir, 'add foo')
+    // The commit lives on a real remote branch, but NOT on the (missing) upstream.
+    git(dir, 'update-ref', 'refs/remotes/origin/main', tip)
+
+    // Configured upstream 'origin/gone' has no ref: don't mistake the ancestor
+    // probe's failure for "unpushed" — fall back to remote-containment.
+    expect(await readUndoSnapshot(dir, tip, 'origin/gone')).toBeNull()
+    // And the mutation refuses too (no record → derived path), rather than
+    // rewriting published history.
+    await expect(undo(dir)).rejects.toThrow(/nothing to undo/i)
+    expect(head(dir)).toBe(tip)
+  })
+
+  test('the mutation refuses to undo a recorded op whose tip is already pushed', async () => {
+    const dir = seedRepo()
+    put(dir, 'foo.txt', 'hi')
+    await commitSelection(dir, 'add foo', COMMIT_ALL) // records this commit
+    const tip = head(dir)
+    // Configure an upstream that already contains the tip → pushed.
+    git(dir, 'update-ref', 'refs/remotes/origin/main', tip)
+    git(dir, 'config', 'branch.main.remote', 'origin')
+    git(dir, 'config', 'branch.main.merge', 'refs/heads/main')
+
+    await expect(undo(dir)).rejects.toThrow(/already pushed/i)
+    expect(head(dir)).toBe(tip) // nothing rewritten
+  })
+
   test('a reset stays undoable even when its new tip is already pushed', async () => {
     const dir = seedRepo()
     put(dir, 'b.txt', 'b')
