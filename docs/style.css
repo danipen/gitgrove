@@ -326,6 +326,29 @@ h1, h2, h3 { line-height: 1.08; letter-spacing: -0.02em; font-weight: 800; }
   background: var(--grad-soft); filter: blur(60px); opacity: 0.55; border-radius: 50%;
 }
 
+/* Flagship variant: intro text on top, full-width media below — for the Graph,
+   whose screenshot is too rich to read at half width. */
+.feature--wide { grid-template-columns: 1fr; gap: 40px; padding-top: 24px; }
+/* single column: the text always leads, whatever the even/odd alternation says */
+.feature.feature--wide .feature-text { order: 0; max-width: 720px; }
+.feature--wide .feature-text h3 { font-size: clamp(30px, 3.6vw, 42px); }
+
+/* ============================================================================
+   EVERYTHING AROUND IT — compact capability grid (no screenshots)
+   ========================================================================== */
+.more { padding: 40px 0 90px; }
+.more-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.more-card {
+  padding: 22px 22px 24px; border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--border);
+  transition: transform 0.22s var(--ease), border-color 0.22s;
+}
+.more-card:hover { transform: translateY(-3px); border-color: var(--border-strong); }
+.more-card h4 { font-size: 16px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.01em; }
+.more-card p { font-size: 14px; color: var(--muted); line-height: 1.55; }
+@media (max-width: 1024px) { .more-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 560px) { .more-grid { grid-template-columns: 1fr; } }
+
 /* ============================================================================
    TWO THEMES — drag-to-compare
    ========================================================================== */

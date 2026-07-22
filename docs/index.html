@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>GitGrove — The full power of git. The simplest UI.</title>
-  <meta name="description" content="GitGrove is a fast, beautiful desktop git client. Hunk-level staging, image diffs, calm conflict resolution and interactive rebase — no terminal, no ceremony. macOS, Windows, Linux. Open source, MIT." />
+  <meta name="description" content="GitGrove is a fast, beautiful desktop git client. A living map of your branches, staging down to the line, AI-written commit messages, image diffs, calm conflicts and interactive rebase — no terminal, no ceremony. macOS, Windows, Linux. Open source, MIT." />
   <meta name="theme-color" content="#0c0d10" />
 
   <!-- Favicons -->
@@ -16,7 +16,7 @@
   <!-- Open Graph / Twitter -->
   <meta property="og:type" content="website" />
   <meta property="og:title" content="GitGrove — The full power of git. The simplest UI." />
-  <meta property="og:description" content="A fast, beautiful desktop git client. Hunk-level staging, image diffs, calm conflict resolution, interactive rebase — no terminal, no ceremony." />
+  <meta property="og:description" content="A fast, beautiful desktop git client. A living map of your branches, staging down to the line, AI commit messages, calm conflicts, interactive rebase — no terminal, no ceremony." />
   <meta property="og:url" content="https://danipen.github.io/gitgrove/" />
   <meta property="og:image" content="assets/og-image.png" />
   <meta property="og:image:width" content="1200" />
@@ -98,7 +98,7 @@
         <span class="hero-badge reveal in"><span class="dot"></span> <b><span id="heroVersion">v1</span> is here</b> · open source &amp; MIT</span>
         <h1 class="reveal in">The full power of git.<br><span class="grad-text">The simplest UI.</span></h1>
         <p class="tagline reveal in d1">Fast · Simple · Beautiful</p>
-        <p class="sub reveal in d1">A desktop git client that hides the ceremony and keeps the power. Hunk-level staging, image diffs, calm conflicts and interactive rebase — without ever dropping you into a terminal.</p>
+        <p class="sub reveal in d1">A desktop git client that hides the ceremony and keeps the power. A living map of every branch, staging down to the line, AI-written commit messages, calm conflicts and interactive rebase — without ever dropping you into a terminal.</p>
         <div class="hero-cta reveal in d2">
           <a class="btn btn-primary" id="heroDownload" href="https://github.com/danipen/gitgrove/releases/latest">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
@@ -114,13 +114,13 @@
         <!-- live, muted hero loop in an app window -->
         <figure class="hero-stage reveal in d2">
           <div class="app-window">
-            <video id="heroVideo" poster="assets/hero-poster.webp" autoplay muted loop playsinline preload="auto" aria-label="GitGrove in use: reviewing a syntax-highlighted diff">
+            <video id="heroVideo" poster="assets/hero-poster.webp" autoplay muted loop playsinline preload="auto" aria-label="GitGrove in use: exploring the branch graph and a selected branch's changes">
               <source src="assets/hero-loop.mp4" type="video/mp4" />
-              <img src="assets/hero-poster.jpg" alt="GitGrove showing a syntax-highlighted diff" />
+              <img src="assets/hero-poster.jpg" alt="GitGrove's Graph tab showing the repository's branch map" />
             </video>
             <button class="watch-demo" id="watchDemo" aria-haspopup="dialog">
               <span class="play"><svg viewBox="0 0 10 12"><path d="M0 0l10 6-10 6z"/></svg></span>
-              Watch the 75s demo
+              Watch the full demo
             </button>
           </div>
         </figure>
@@ -146,36 +146,62 @@
         <div class="section-head reveal">
           <span class="eyebrow">Built for real work</span>
           <h2>Advanced git, without the ceremony.</h2>
-          <p>Every hard thing about git — staging, conflicts, rebase — made effortless. The complexity lives in the engine, never in your face.</p>
+          <p>Every hard thing about git — staging, conflicts, rebase, even understanding the repo itself — made effortless. The complexity lives in the engine, never in your face.</p>
         </div>
 
-        <!-- 1 · No staging area -->
-        <article class="feature">
+        <!-- 1 · The Graph — flagship, full width -->
+        <article class="feature feature--wide" id="graph">
           <div class="feature-text reveal">
-            <span class="eyebrow">Hunk-level staging</span>
-            <h3>No staging area. Commit exactly what you mean.</h3>
-            <p>Tick a checkbox to include a file — or expand it and tick a single <em>hunk</em>. Checkboxes are pure UI; staging happens at commit time, down to the line. Nothing touches git until you commit.</p>
-            <div class="kicker"><span class="chip">file · hunk · line</span><span class="chip">git apply --cached</span></div>
+            <span class="eyebrow">New · The Graph</span>
+            <h3>Your whole repo. One living map.</h3>
+            <p>A pannable, zoomable branch explorer: the mainline on top, release lines pinned beneath it, every branch hanging off its parent. Click a commit for its changes, click a branch for <em>everything it did</em> since it forked — double-click to check it out. Focus a branch and its relatives, spot cherry-picked twins across release lines, and find any commit, branch or tag as you type.</p>
+            <div class="kicker"><span class="chip">focus lens</span><span class="chip">release lines</span><span class="chip">backport twins</span><span class="chip">find commits</span></div>
           </div>
           <figure class="feature-media reveal d1">
-            <div class="app-window"><img src="assets/feat-staging.webp" alt="GitGrove Changes view with file and hunk checkboxes for precise staging" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+            <div class="app-window"><img src="assets/feat-graph.webp" alt="GitGrove's Graph tab: a 2D branch explorer with a selected branch, its files and a split diff" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
           </figure>
         </article>
 
-        <!-- 2 · Composer -->
+        <!-- 2 · No staging area -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">Line-level staging</span>
+            <h3>No staging area. Commit exactly what you mean.</h3>
+            <p>Tick a checkbox to include a file — or a single <em>hunk</em>, or a single <em>line</em>. Checkboxes are pure UI; git isn't touched until the moment you commit. The button always tells you exactly what will happen.</p>
+            <div class="kicker"><span class="chip">file · hunk · line</span><span class="chip">git apply --cached</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-staging.webp" alt="GitGrove Changes view with file, hunk and line checkboxes for precise staging" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 3 · AI -->
+        <article class="feature">
+          <div class="feature-text reveal">
+            <span class="eyebrow">New · AI, your key</span>
+            <h3>AI writes the boring parts.</h3>
+            <p>One click turns your staged diff into a proper commit message — pick the length and tone, regenerate until it reads right. AI also suggests branch names, explains any commit in plain English, and untangles cryptic git errors. Bring your own key: it lives in the OS keychain, and your diffs go only to the provider you chose.</p>
+            <div class="kicker"><span class="chip">commit messages</span><span class="chip">branch names</span><span class="chip">explain anything</span><span class="chip">BYOK</span></div>
+          </div>
+          <figure class="feature-media reveal d1">
+            <div class="app-window"><img src="assets/feat-ai.webp" alt="GitGrove's AI writing a commit message, with length and tone style controls" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
+          </figure>
+        </article>
+
+        <!-- 4 · Composer -->
         <article class="feature">
           <div class="feature-text reveal">
             <span class="eyebrow">One composer</span>
             <h3>Commit, amend &amp; stash — without ceremony.</h3>
-            <p>A single composer with a mode switch. Write a commit, amend the last one, or stash your work — each a single click. Signing is inherited from your git config; no flags to remember.</p>
-            <div class="kicker"><span class="chip">commit</span><span class="chip">amend</span><span class="chip">stash</span></div>
+            <p>A single composer with a mode switch. Write a commit, amend the last one, or stash your work — each a single click. Signing is inherited from your git config, and a quiet Undo reverses the last operation when you change your mind.</p>
+            <div class="kicker"><span class="chip">commit</span><span class="chip">amend</span><span class="chip">stash</span><span class="chip">undo</span></div>
           </div>
           <figure class="feature-media reveal d1">
             <div class="app-window"><img src="assets/feat-composer.webp" alt="GitGrove commit composer with a commit / amend / stash mode switch" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
           </figure>
         </article>
 
-        <!-- 3 · Diffs -->
+        <!-- 5 · Diffs -->
         <article class="feature">
           <div class="feature-text reveal">
             <span class="eyebrow">Diffs by @pierre/diffs</span>
@@ -206,8 +232,8 @@
           <div class="feature-text reveal">
             <span class="eyebrow">History &amp; blame</span>
             <h3>History and blame, actually usable.</h3>
-            <p>A clean commit graph with author avatars, and blame for any file line-by-line — to see who changed what, and when, without leaving the window.</p>
-            <div class="kicker"><span class="chip">commit graph</span><span class="chip">line blame</span></div>
+            <p>A clean commit log with author avatars you can filter as you type, per-file history, and line-by-line blame colored by age — who changed what, and when, without leaving the window.</p>
+            <div class="kicker"><span class="chip">type to filter</span><span class="chip">file history</span><span class="chip">line blame</span></div>
           </div>
           <figure class="feature-media reveal d1">
             <div class="app-window"><img src="assets/feat-blame.webp" alt="GitGrove blame view showing line-by-line authorship" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
@@ -239,6 +265,51 @@
             <div class="app-window"><img src="assets/feat-rebase.webp" alt="GitGrove interactive rebase dialog with squash, fixup, reword and drop" loading="lazy" width="1600" height="900" /><span class="zoom-badge" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3m13-5v3a2 2 0 0 1-2 2h-3"/></svg></span></div>
           </figure>
         </article>
+      </div>
+    </section>
+
+    <!-- ====================== EVERYTHING AROUND IT ====================== -->
+    <section class="more">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <span class="eyebrow">And everything around it</span>
+          <h2>The daily driver details.</h2>
+          <p>The small things that make a git client home — all built in, all silly-simple.</p>
+        </div>
+        <div class="more-grid">
+          <div class="more-card reveal">
+            <h4>GitHub, connected</h4>
+            <p>Branches wear their PR number and live CI status. Publish a branch and GitGrove offers the pull request; sign in once with your browser and credentials are answered silently.</p>
+          </div>
+          <div class="more-card reveal">
+            <h4>Clone from anywhere</h4>
+            <p>Paste a URL, or browse and filter your GitHub repositories — including Enterprise — with live progress.</p>
+          </div>
+          <div class="more-card reveal">
+            <h4>Undo, for git</h4>
+            <p>A quiet Undo reverses the last history-changing operation — and stands down the moment it's pushed, so shared history is never rewritten.</p>
+          </div>
+          <div class="more-card reveal d1">
+            <h4>Merges that warn first</h4>
+            <p>Every merge is dry-run before it happens: GitGrove tells you up front whether it will fly clean or which files will conflict.</p>
+          </div>
+          <div class="more-card reveal d1">
+            <h4>Stash, managed</h4>
+            <p>Review any stash as a full diff, then apply, pop or drop it — with a friendly reminder when you return to a branch that has one waiting.</p>
+          </div>
+          <div class="more-card reveal d1">
+            <h4>Many windows, one flow</h4>
+            <p>Open several repos side by side; GitGrove restores your session on launch and keeps recents in your dock.</p>
+          </div>
+          <div class="more-card reveal d2">
+            <h4>Worktrees &amp; submodules</h4>
+            <p>Spin up a worktree for a parallel branch or update every submodule — one dialog each, no incantations.</p>
+          </div>
+          <div class="more-card reveal d2">
+            <h4>Reads never block</h4>
+            <p>Refreshes never take git's lock and writes are queued per repo — the UI stays instant even mid-fetch on a huge monorepo.</p>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -304,7 +375,7 @@
     <div class="wrap">
       <div class="f-left">
         <a class="brand" href="#top"><img src="assets/logo.svg" alt="" width="30" height="30" /><span>GitGrove</span></a>
-        <p>The full power of git, a silly-simple UI. One window, two tabs, no ceremony.</p>
+        <p>The full power of git, a silly-simple UI. One window, three tabs, no ceremony.</p>
       </div>
       <nav class="f-links" aria-label="Footer">
         <div class="f-col">
