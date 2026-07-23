@@ -273,7 +273,9 @@ export function GraphCanvas({
   const clampView = useCallback(() => {
     const view = viewRef.current
     const { width, height } = sizeRef.current
-    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null)
+    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null, (row) =>
+      labelWidthFor(row.name)
+    )
     const cw = cs.width * view.scale
     const ch = cs.height * view.scale
     const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi)
@@ -358,7 +360,9 @@ export function GraphCanvas({
     zoomAnim.stop()
     panInertia.cancel()
     const { width, height } = sizeRef.current
-    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null)
+    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null, (row) =>
+      labelWidthFor(row.name)
+    )
     const view = viewRef.current
     view.scale = Math.min(
       MAX_SCALE,
