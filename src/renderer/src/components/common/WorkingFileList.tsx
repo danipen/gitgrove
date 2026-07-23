@@ -22,12 +22,12 @@
 import type { ChangedFile } from '@shared/types'
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { FileSelection } from '@/lib/commit-selection'
-import { splitPath, statusLabel, statusLetter } from '@/lib/format'
-import { highlightMatch } from '@/lib/highlight'
+import { statusLabel, statusLetter } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { isCmdOrCtrl } from '@/lib/platform'
 import { useEvent } from '@/lib/useEvent'
 import { ContextMenu, type ContextMenuItem } from './ContextMenu'
+import { TrimmedPath } from './TrimmedPath'
 import { useVirtualScroll, VScrollbar } from './VirtualScroll'
 
 interface Props {
@@ -90,7 +90,6 @@ const Row = memo(function Row({
   onMenu
 }: RowProps) {
   const conflicted = file.status === 'conflicted'
-  const { dir, name } = splitPath(file.path)
   return (
     <div
       role="option"
@@ -127,10 +126,13 @@ const Row = memo(function Row({
       <span className={`wfl__status st-${file.status}`} data-tip={statusLabel(file.status)}>
         {statusLetter(file.status)}
       </span>
-      <span className="wfl__path" data-tip={file.path} data-tip-overflow="">
-        {dir && <span className="wfl__dir">{highlightMatch(dir, highlight)}</span>}
-        <span className="wfl__name">{highlightMatch(name, highlight)}</span>
-      </span>
+      <TrimmedPath
+        className="wfl__path"
+        path={file.path}
+        highlight={highlight}
+        data-tip={file.path}
+        data-tip-overflow=""
+      />
       {file.submodule && (
         <span className="wfl__module" data-tip="Submodule">
           <Icon.Module size={13} />

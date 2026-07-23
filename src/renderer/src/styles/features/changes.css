@@ -275,22 +275,9 @@
   font-size: 12px;
   min-width: 0;
 }
-/* Same trimming as .wfl__path: the directory prefix gives way first (ellipsis)
-   so the file name always stays visible. */
+/* Width for the row's TrimmedPath (see primitives.css → .tpath). */
 .discard-list__path {
-  display: flex;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.discard-list__dir {
-  color: var(--fg-path-dir);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 0 1 auto;
-}
-.discard-list__name {
-  flex: 0 0 auto;
+  flex: 1;
 }
 .discard-list__more {
   padding: 4px 10px 2px;
@@ -409,13 +396,11 @@
 .wfl__status.st-conflicted {
   color: var(--st-conflicted);
 }
+/* Width/typography for the row's TrimmedPath (the dir/name split and the
+   measured middle-trim live in primitives.css → .tpath). */
 .wfl__path {
   flex: 1;
-  min-width: 0;
-  display: flex;
   font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
 }
 /* Trailing submodule marker on a changes-list row. */
 .wfl__module {
@@ -424,16 +409,6 @@
   align-items: center;
   margin-right: 8px;
   color: var(--fg-faint);
-}
-.wfl__dir {
-  color: var(--fg-path-dir);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 0 1 auto;
-}
-.wfl__name {
-  color: var(--fg);
-  flex: 0 0 auto;
 }
 /* ── Hunk staging bar (annotation row inside the working diff) ───────────── */
 .stage-bar {

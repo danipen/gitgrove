@@ -795,6 +795,28 @@
   color: inherit;
   border-radius: 2px;
 }
+/* ── Trimmed path (TrimmedPath.tsx) ───────────────────────────────────────── */
+/* A path as dim directory + strong basename, the directory middle-trimmed by
+   measurement (not text-overflow) so the basename sits flush after the "…" —
+   see TrimmedPath.tsx for why. Sites add their own class for width/typography;
+   the container's width must not depend on its content (e.g. flex: 1). The
+   overflow rules are only a safety net for the frames between a resize and the
+   observer's re-fit. */
+.tpath {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tpath__dir {
+  color: var(--fg-path-dir);
+  flex: 0 1 auto;
+  overflow: hidden;
+}
+.tpath__name {
+  color: var(--fg);
+  flex: 0 0 auto;
+}
 /* ── List filter (plain text bar) ─────────────────────────────────────────── */
 /* The chip-less sibling of the Changes file filter (.wfl-filter): a single text
    input that filters a list. Used by FilterInput.tsx (History + File History
