@@ -14,6 +14,7 @@ import { DEFAULT_FILTER_TYPES, useFileFilter } from '@/components/common/FileFil
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
 import { Popover } from '@/components/common/Popover'
 import { Resizer } from '@/components/common/Resizer'
+import { TrimmedPath } from '@/components/common/TrimmedPath'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
 import type { FileSelection } from '@/lib/commit-selection'
 import { pluralize, statusLetter } from '@/lib/format'
@@ -111,9 +112,9 @@ function DiscardSummary({
         {files.slice(0, DISCARD_LIST_MAX).map((f) => (
           <div key={f.path} className="discard-list__row" role="listitem">
             <span className={`wfl__status st-${f.status}`}>{statusLetter(f.status)}</span>
-            <span className="discard-list__path" title={f.path}>
-              {f.path}
-            </span>
+            {/* Same trimming as the changes list: the directory gives way so the
+                file name — the part that identifies the file — stays readable. */}
+            <TrimmedPath className="discard-list__path" path={f.path} title={f.path} />
           </div>
         ))}
         {overflow > 0 && (
