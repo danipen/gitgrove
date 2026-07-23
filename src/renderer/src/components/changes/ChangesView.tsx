@@ -16,7 +16,7 @@ import { Popover } from '@/components/common/Popover'
 import { Resizer } from '@/components/common/Resizer'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
 import type { FileSelection } from '@/lib/commit-selection'
-import { pluralize, statusLetter } from '@/lib/format'
+import { pluralize, splitPath, statusLetter } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { ignoreOptionsFor, ignoreSelectionOption } from '@/lib/ignore'
 import { conflictActionLabels, mergeSourceFromDetail } from '@/lib/merge'
@@ -108,14 +108,21 @@ function DiscardSummary({
       This will discard the {all ? 'unstaged ' : ''}changes in{' '}
       {files.length === 1 ? <code>{files[0].path}</code> : pluralize(files.length, 'file')}.
       <div className="discard-list" role="list">
-        {files.slice(0, DISCARD_LIST_MAX).map((f) => (
-          <div key={f.path} className="discard-list__row" role="listitem">
-            <span className={`wfl__status st-${f.status}`}>{statusLetter(f.status)}</span>
-            <span className="discard-list__path" title={f.path}>
-              {f.path}
-            </span>
-          </div>
-        ))}
+        {files.slice(0, DISCARD_LIST_MAX).map((f) => {
+          // Same trimming as the changes list: the directory shrinks away
+          // first so the file name — the part that identifies the file —
+          // stays readable.
+          const { dir, name } = splitPath(f.path)
+          return (
+            <div key={f.path} className="discard-list__row" role="listitem">
+              <span className={`wfl__status st-${f.status}`}>{statusLetter(f.status)}</span>
+              <span className="discard-list__path" title={f.path}>
+                {dir && <span className="discard-list__dir">{dir}</span>}
+                <span className="discard-list__name">{name}</span>
+              </span>
+            </div>
+          )
+        })}
         {overflow > 0 && (
           <div className="discard-list__more">…and {pluralize(overflow, 'more file')}</div>
         )}

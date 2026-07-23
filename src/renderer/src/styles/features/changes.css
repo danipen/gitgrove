@@ -275,10 +275,22 @@
   font-size: 12px;
   min-width: 0;
 }
+/* Same trimming as .wfl__path: the directory prefix gives way first (ellipsis)
+   so the file name always stays visible. */
 .discard-list__path {
+  display: flex;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.discard-list__dir {
+  color: var(--fg-path-dir);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  flex: 0 1 auto;
+}
+.discard-list__name {
+  flex: 0 0 auto;
 }
 .discard-list__more {
   padding: 4px 10px 2px;
