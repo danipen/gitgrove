@@ -305,4 +305,20 @@ describe('graph geometry', () => {
         44
     )
   })
+
+  test('contentSize grows to cover a label pill overhanging its last column', () => {
+    const layout = sampleLayout()
+    const feature = layout.rows.find((r) => r.name === 'feature')
+    if (!feature) throw new Error('missing feature row')
+    // A name far wider than the row span: the pill's right edge (rest position
+    // plus the pill's own padding) plus the margin sets the content width.
+    const textWidth = 400
+    const { width } = contentSize(layout, null, () => textWidth)
+    expect(width).toBe(nodeX(feature.startColumn) - NODE_R + textWidth + 16 + 28)
+  })
+
+  test('contentSize ignores labels that fit inside their row span', () => {
+    const layout = sampleLayout()
+    expect(contentSize(layout, null, () => 10)).toEqual(contentSize(layout, null))
+  })
 })

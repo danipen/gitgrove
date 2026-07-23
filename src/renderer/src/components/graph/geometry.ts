@@ -134,16 +134,27 @@ export const toWorldY = (view: View, screenY: number): number => (screenY - view
 /** World-space size of the whole diagram. `wipColumn` is the WIP node's
  *  column when it shows, or null. Both it and an empty branch's reserved slot
  *  can sit past the last commit column, so width follows the rightmost of
- *  commits, row spans and the WIP node. */
+ *  commits, row spans and the WIP node — and, when `labelWidth` is given, of
+ *  label pills too: a long branch name on a short row overhangs its last
+ *  column, and pan/fit clamp to this size, so an uncounted overhang would be
+ *  forever cut at the viewport edge. */
 export function contentSize(
   layout: GraphLayout,
-  wipColumn: number | null
+  wipColumn: number | null,
+  labelWidth?: (row: GraphRow) => number
 ): { width: number; height: number } {
   let last = layout.columnCount - 1
   for (const row of layout.rows) last = Math.max(last, row.endColumn)
   if (wipColumn !== null) last = Math.max(last, wipColumn)
+  let width = MARGIN_X * 2 + Math.max(1, last + 1) * COL_W
+  if (labelWidth) {
+    for (const row of layout.rows) {
+      const rect = labelRect(row, labelWidth(row))
+      width = Math.max(width, rect.x + rect.w + MARGIN_X)
+    }
+  }
   return {
-    width: MARGIN_X * 2 + Math.max(1, last + 1) * COL_W,
+    width,
     height: MARGIN_Y + Math.max(1, layout.rowCount) * ROW_H + ROW_H / 2
   }
 }
