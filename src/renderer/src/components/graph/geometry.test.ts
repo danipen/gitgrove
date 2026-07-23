@@ -9,6 +9,7 @@ import {
   captionAlpha,
   captionCenterOffset,
   contentSize,
+  HEADER_H,
   hitTest,
   LABEL_GAP,
   LABEL_H,
@@ -17,6 +18,7 @@ import {
   nodeX,
   nodeY,
   ROW_H,
+  revealRowDy,
   rowEndpoint
 } from './geometry'
 import { type GraphInput, layoutGraph } from './layout'
@@ -229,6 +231,55 @@ describe('graph geometry', () => {
     expect(f1.row).toBe(g2.row)
     expect(rowEndpoint(layout, g2, 'first').commit.hash).toBe('g1')
     expect(rowEndpoint(layout, f1, 'last').commit.hash).toBe('f2')
+  })
+
+  describe('revealRowDy — keep the clicked row clear of the diff pane', () => {
+    // The band row 4 draws (label pill through caption) in world y.
+    const row = 4
+    const bandTop = nodeY(row) - ROW_H / 2
+    const bandBottom = nodeY(row) + ROW_H / 2
+
+    test('no pan while the row is fully visible', () => {
+      const view = { x: 0, y: 0, scale: 1 }
+      expect(revealRowDy(view, bandBottom + 100, row)).toBe(0)
+    })
+
+    test('the pane shrink pans up exactly until the band clears the bottom edge', () => {
+      // The viewport bottom cuts the row's band 50px above its bottom — the
+      // diff pane just opened over it.
+      const view = { x: 0, y: 0, scale: 1 }
+      const height = bandBottom - 50
+      expect(revealRowDy(view, height, row)).toBe(-50)
+      // Idempotent: after the pan the row fits and asks for nothing more.
+      expect(revealRowDy({ ...view, y: -50 }, height, row)).toBe(0)
+    })
+
+    test('the pan respects the zoom level', () => {
+      const view = { x: 0, y: 0, scale: 2 }
+      const height = bandBottom * 2 - 30
+      expect(revealRowDy(view, height, row)).toBe(-30)
+    })
+
+    test('never drags the label band under the date header', () => {
+      // A viewport shorter than the row's band: bring it up only until its
+      // top reaches the header, accepting a cut bottom over a hidden label.
+      const view = { x: 0, y: -bandTop + HEADER_H + 10, scale: 1 }
+      const height = HEADER_H + ROW_H / 2
+      expect(revealRowDy(view, height, row)).toBe(-10)
+    })
+
+    test('a row hidden under the header pans down symmetrically', () => {
+      // The band starts 30px above the header strip.
+      const view = { x: 0, y: -bandTop + HEADER_H - 30, scale: 1 }
+      expect(revealRowDy(view, 10_000, row)).toBe(30)
+    })
+
+    test('a row spanning the whole strip stays put', () => {
+      // Sticking out both ends: it is as visible as it can get.
+      const view = { x: 0, y: -bandTop + HEADER_H - 10, scale: 1 }
+      const height = HEADER_H + ROW_H - 30
+      expect(revealRowDy(view, height, row)).toBe(0)
+    })
   })
 
   test('contentSize reserves a column for the WIP node', () => {
