@@ -9,6 +9,7 @@ import { stripCoAuthorTrailers } from '@/lib/coauthors'
 import { reflowMessage } from '@/lib/reflow'
 import { subscribeAvatars } from './avatars'
 import {
+  branchEndpoint,
   captionAlpha,
   captionCenterOffset,
   contentSize,
@@ -823,13 +824,24 @@ export function GraphCanvas({
     }
     if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault()
+      const edge = e.key === 'Home' ? 'first' : 'last'
       const current = s.selectedHash ? s.layout.nodeByHash.get(s.selectedHash) : null
+      const branchRow = current
+        ? null
+        : s.layout.rows.find((r) => rowMatchesSelection(r, s.selectedBranch))
       if (current) {
         // Within the selected commit's branch: Home → its oldest commit,
         // End → its newest.
-        const target = rowEndpoint(s.layout, current, e.key === 'Home' ? 'first' : 'last')
+        const target = rowEndpoint(s.layout, current, edge)
         onSelectNode(target)
         reveal(target.commit.hash)
+      } else if (branchRow) {
+        // A branch is selected: same edges, walked from its own chain.
+        const target = branchEndpoint(s.layout, branchRow, edge)
+        if (target) {
+          onSelectNode(target)
+          reveal(target.commit.hash)
+        }
       } else if (e.key === 'Home') {
         // Nothing selected: Home keeps its classic meaning — frame the
         // home changeset.
