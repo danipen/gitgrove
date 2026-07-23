@@ -17,7 +17,7 @@ export {
   runGit
 } from './core'
 export { getCommitDiff, getRangeDiff, getWorkingDiff } from './diff'
-export { getCommitFiles, getRangeFiles, parseRawNumstat } from './files'
+export { getCommitFiles, getMergeBase, getRangeFiles, parseRawNumstat } from './files'
 export { getGraphLog } from './graph'
 export { getCommitIndex, getFileHistory, getLog, getUnpushedCommits } from './log'
 export {

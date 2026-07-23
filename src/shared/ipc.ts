@@ -82,6 +82,7 @@ export const IPC = {
   blame: 'repo:blame',
   commitFiles: 'repo:commit:files',
   rangeFiles: 'repo:range:files',
+  mergeBase: 'repo:merge-base',
   workingDiff: 'repo:diff:working',
   commitDiff: 'repo:diff:commit',
   rangeDiff: 'repo:diff:range',
@@ -319,6 +320,13 @@ export interface GitGroveApi {
    * branch starts at a root commit; the diff runs against the empty tree.
    */
   rangeFiles(repoPath: string, base: string | null, head: string): Promise<ChangedFile[]>
+  /**
+   * The merge base of two commits — the newest commit reachable from both —
+   * or null when they share no history. The branch-changes view diffs from
+   * merge-base(upstream, tip) instead of the fork point, so a branch that
+   * merged its upstream back in doesn't count the upstream's files as its own.
+   */
+  mergeBase(repoPath: string, a: string, b: string): Promise<string | null>
   workingDiff(repoPath: string, file: ChangedFile, area?: DiffArea): Promise<DiffPayload>
   commitDiff(repoPath: string, hash: string, file: ChangedFile): Promise<DiffPayload>
   /** One file's diff across `base..head` — see rangeFiles. */

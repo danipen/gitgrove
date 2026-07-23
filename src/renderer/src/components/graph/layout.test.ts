@@ -275,6 +275,54 @@ describe('layoutGraph', () => {
     expect(rowNamed(layout, 'main').baseHash).toBeNull()
   })
 
+  test('an unmerged branch takes its fork parent tip as upstream', () => {
+    // main: a ── b     feature: f1 ── f2, forked at a, not merged back.
+    const layout = layoutGraph(
+      input([
+        commit('f2', ['f1'], 'feature'),
+        commit('b', ['a'], 'HEAD -> main'),
+        commit('f1', ['a']),
+        commit('a', [])
+      ])
+    )
+    // The branch-changes view will diff from merge-base(b, f2), so an
+    // update-merge from main never counts as the branch's own changes.
+    expect(rowNamed(layout, 'feature').upstreamHash).toBe('b')
+    expect(rowNamed(layout, 'main').upstreamHash).toBeNull()
+  })
+
+  test('a merged branch takes its target just before the landing merge as upstream', () => {
+    // main: a ── b ── m (merges f2)     feature: f1 ── f2
+    const layout = layoutGraph(
+      input([
+        commit('m', ['b', 'f2'], 'HEAD -> main'),
+        commit('f2', ['f1'], 'feature'),
+        commit('f1', ['a']),
+        commit('b', ['a']),
+        commit('a', [])
+      ])
+    )
+    // Pre-merge main ('b'), the way a pull request keeps comparing after it
+    // lands — never 'm', whose diff against the tip would be empty.
+    expect(rowNamed(layout, 'feature').upstreamHash).toBe('b')
+  })
+
+  test('a sync merge pulling main into a child never becomes main upstream', () => {
+    // feature stays current by merging main's tip b (s = merge of b): b is a
+    // merge SOURCE, but main was not merged away — its upstream must not
+    // become the child branch.
+    const layout = layoutGraph(
+      input([
+        commit('s', ['f1', 'b'], 'feature'),
+        commit('b', ['a'], 'HEAD -> main'),
+        commit('f1', ['a']),
+        commit('a', [])
+      ])
+    )
+    expect(rowNamed(layout, 'main').upstreamHash).toBeNull()
+    expect(rowNamed(layout, 'feature').upstreamHash).toBe('b')
+  })
+
   test('mainline keeps color slot 0; other branches get stable non-zero slots', () => {
     const build = () =>
       layoutGraph(

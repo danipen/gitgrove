@@ -15,6 +15,13 @@ export interface BranchRange {
   head: string
 }
 
+/** A branch to open the changes view for. `upstream` (GraphRow.upstreamHash)
+ *  refines `base` to merge-base(upstream, head) before diffing, so work the
+ *  branch merged in FROM its upstream doesn't count as its own changes. */
+export interface BranchRangeRequest extends BranchRange {
+  upstream: string | null
+}
+
 interface Params {
   getRepoPath: () => string | undefined
   fail: (e: unknown) => void
@@ -51,21 +58,33 @@ export function useBranchRange({ getRepoPath, fail, loadRangeDiff, clearDiff }: 
 
   /** Open the branch-changes view for `next` (or close it with null). */
   const openRange = useCallback(
-    async (next: BranchRange | null) => {
+    async (next: BranchRangeRequest | null) => {
       const repoPath = getRepoPath()
       const id = ++req.current
-      setRange(next)
+      setRange(next && { name: next.name, base: next.base, head: next.head })
       setRangeFiles([])
       setRangeSelPath(null)
       if (!next || !repoPath) return
       setRangeFilesLoading(true)
       try {
-        const files = await window.gitgrove.rangeFiles(repoPath, next.base, next.head)
+        // The fork point over-counts once the branch merged its upstream back
+        // in — the merge base is the last commit both sides agreed on, so
+        // base..head is exactly the branch's own work (what its PR shows).
+        let base = next.base
+        if (next.upstream) {
+          const mergeBase = await window.gitgrove.mergeBase(repoPath, next.upstream, next.head)
+          if (id !== req.current) return
+          if (mergeBase && mergeBase !== base) {
+            base = mergeBase
+            setRange({ name: next.name, base, head: next.head })
+          }
+        }
+        const files = await window.gitgrove.rangeFiles(repoPath, base, next.head)
         if (id !== req.current) return
         setRangeFiles(files)
         if (files.length > 0) {
           setRangeSelPath(files[0].path)
-          loadRangeDiff(next.base, next.head, files[0])
+          loadRangeDiff(base, next.head, files[0])
         } else {
           clearDiff()
         }

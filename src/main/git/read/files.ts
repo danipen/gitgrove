@@ -109,6 +109,21 @@ export async function getRangeFiles(
   return parseRawNumstat(out)
 }
 
+/**
+ * The merge base of two commits — the newest commit reachable from both — or
+ * null when they share no history. The branch-changes view diffs a branch
+ * from merge-base(upstream, tip) rather than its fork point: after the branch
+ * merges its upstream back in, the fork-point diff would count everything the
+ * upstream did in between as the branch's own changes, while the merge base
+ * is the last point both sides agreed — so `mergeBase..tip` is exactly the
+ * branch's own work, matching what its pull request shows.
+ */
+export async function getMergeBase(repoPath: string, a: string, b: string): Promise<string | null> {
+  // Exit code 1 = no common ancestor (unrelated histories), not an error.
+  const out = await runGit(repoPath, ['merge-base', a, b], [1])
+  return out.trim() || null
+}
+
 export async function getCommitFiles(repoPath: string, hash: string): Promise<ChangedFile[]> {
   // Diff against the first parent so merge commits report only what the merge
   // introduced on top of the mainline rather than the union of every parent.
