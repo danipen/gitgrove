@@ -750,8 +750,11 @@
 .stash-review {
   display: flex;
   flex-direction: column;
-  width: min(1180px, 94vw);
-  height: min(760px, 86vh);
+  /* Scale with the window — a diff review earns all the room it can get. The
+     caps only kick in on very large displays, where an edge-to-edge dialog
+     reads worse than a generous centered one. */
+  width: min(94vw, 2000px);
+  height: min(90vh, 1300px);
   padding: 0;
   overflow: hidden;
 }
