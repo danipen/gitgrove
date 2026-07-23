@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Commit } from '@shared/types'
 import {
+  branchEndpoint,
   CAPSULE_HALF_H,
   CAPTION_FULL_ZOOM,
   CAPTION_GAP_WORLD,
@@ -231,6 +232,43 @@ describe('graph geometry', () => {
     expect(f1.row).toBe(g2.row)
     expect(rowEndpoint(layout, g2, 'first').commit.hash).toBe('g1')
     expect(rowEndpoint(layout, f1, 'last').commit.hash).toBe('f2')
+
+    // The branch-selected targets walk the same edges from the row itself,
+    // and a lane shared by two chains never leaks into the neighbor.
+    const feat1 = layout.rows.find((r) => r.name === 'feat1')
+    const feat2 = layout.rows.find((r) => r.name === 'feat2')
+    if (!feat1 || !feat2) throw new Error('missing row')
+    expect(branchEndpoint(layout, feat1, 'first')?.commit.hash).toBe('f1')
+    expect(branchEndpoint(layout, feat1, 'last')?.commit.hash).toBe('f2')
+    expect(branchEndpoint(layout, feat2, 'first')?.commit.hash).toBe('g1')
+    expect(branchEndpoint(layout, feat2, 'last')?.commit.hash).toBe('g2')
+  })
+
+  test('Home/End targets when the branch is selected: its oldest and newest commit', () => {
+    const layout = sampleLayout()
+    const main = layout.rows.find((r) => r.name === 'main')
+    const feature = layout.rows.find((r) => r.name === 'feature')
+    if (!main || !feature) throw new Error('missing row')
+    expect(branchEndpoint(layout, main, 'first')?.commit.hash).toBe('a')
+    expect(branchEndpoint(layout, main, 'last')?.commit.hash).toBe('m')
+    // A single-commit branch: both edges are that commit.
+    expect(branchEndpoint(layout, feature, 'first')?.commit.hash).toBe('f')
+    expect(branchEndpoint(layout, feature, 'last')?.commit.hash).toBe('f')
+  })
+
+  test('an empty branch resolves both Home/End edges to its anchor commit', () => {
+    // 'fresh' points at the HEAD tip: zero commits of its own.
+    const layout = layoutGraph({
+      commits: [commit('b', ['a'], 'HEAD -> main, fresh'), commit('a', [])],
+      remotes: [],
+      headBranch: 'main',
+      detached: false,
+      defaultBranch: 'main'
+    })
+    const fresh = layout.rows.find((r) => r.name === 'fresh')
+    if (!fresh) throw new Error('missing empty row')
+    expect(branchEndpoint(layout, fresh, 'first')?.commit.hash).toBe('b')
+    expect(branchEndpoint(layout, fresh, 'last')?.commit.hash).toBe('b')
   })
 
   describe('revealRowDy — keep the clicked row clear of the diff pane', () => {

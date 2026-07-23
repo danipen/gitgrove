@@ -297,6 +297,24 @@ export function rowEndpoint(
   return best
 }
 
+/** The oldest ('first') or newest ('last') commit of a BRANCH row — the
+ *  Home/End keyboard targets when the branch itself is selected. Walks the
+ *  row's own chain, so a lane shared with another chain never leaks in. An
+ *  empty branch owns no commits; both edges resolve to its anchor commit
+ *  (the tip it points at). */
+export function branchEndpoint(
+  layout: GraphLayout,
+  row: GraphRow,
+  edge: 'first' | 'last'
+): GraphNode | null {
+  let best: GraphNode | null = null
+  for (const n of layout.nodes) {
+    if (n.chain !== row.chain) continue
+    if (!best || (edge === 'first' ? n.column < best.column : n.column > best.column)) best = n
+  }
+  return best ?? layout.nodeByHash.get(row.tipHash) ?? null
+}
+
 /**
  * Keyboard navigation target from `node`: left/right walk the same row (older/
  * newer), up/down jump to the column-nearest node one row away.
