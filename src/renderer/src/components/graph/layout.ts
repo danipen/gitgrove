@@ -55,6 +55,14 @@ export interface GraphRow {
    *  or null for a chain that starts at a root commit. Feeds the
    *  branch-changes view: everything in `base..tip` is what the branch did. */
   baseHash: string | null
+  /** Tip of the branch this one grew from — or, when this branch's tip was
+   *  already merged away, that branch as it stood just before the merge (the
+   *  merge commit's first parent), the way a pull request keeps comparing
+   *  after it lands. The branch-changes view diffs from
+   *  merge-base(upstream, tip) instead of baseHash, so upstream work the
+   *  branch merged back in doesn't count as its own changes. Null when the
+   *  window shows no upstream (the mainline, root chains, empty branches). */
+  upstreamHash: string | null
   /** True for a zero-commit branch: a ref pointing at another chain's commit
    *  (freshly created, nothing committed yet). Its lane is one reserved slot
    *  right of that anchor commit; tipHash and baseHash both name the anchor,
@@ -316,13 +324,20 @@ export function layoutGraph(input: GraphInput): GraphLayout {
 
   // Every non-first parent: the commits merges pulled in. Drives hideMerged
   // (a tip that is a merge source has been merged), structureOnly (merge
-  // sources are structure), unnamed-chain naming, and the merge lead-out each
-  // chain's packing interval reserves.
+  // sources are structure), unnamed-chain naming, the merge lead-out each
+  // chain's packing interval reserves, and the upstream a merged branch
+  // compares against. Children are listed newest-first (commits arrive in
+  // date order).
   const mergeSources = collectMergeSourceHashes(commits)
-  const mergeChildOf = new Map<string, Commit>()
+  const mergeChildrenOf = new Map<string, Commit[]>()
   for (const c of commits) {
     for (const parent of c.parents.slice(1)) {
-      if (!mergeChildOf.has(parent)) mergeChildOf.set(parent, c)
+      let children = mergeChildrenOf.get(parent)
+      if (!children) {
+        children = []
+        mergeChildrenOf.set(parent, children)
+      }
+      children.push(c)
     }
   }
 
@@ -397,7 +412,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
   if (!visibleBranches && !input.hideMerged) {
     for (const c of commits) {
       if (chainOf.has(c.hash)) continue
-      const mergeChild = mergeChildOf.get(c.hash)
+      const mergeChild = mergeChildrenOf.get(c.hash)?.[0]
       const name = (mergeChild && branchNameFromMergeSubject(mergeChild.subject)) ?? c.shortHash
       claim(c.hash, { name, kind: 'unnamed', tipHash: c.hash })
     }
@@ -497,6 +512,21 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     const base = baseHashOf(id)
     return base === null ? undefined : chainOf.get(base)
   }
+  // The ref the branch-changes view resolves its diff base against (see
+  // GraphRow.upstreamHash). A tip merged into its fork parent compares to
+  // the parent just before that landing merge; everything else compares to
+  // the fork parent's tip. Only a merge ON the parent chain counts as
+  // landing — a sync merge that pulled this tip into a child branch must
+  // not turn the child into this branch's upstream.
+  const upstreamHashOf = (id: number): string | null => {
+    if (chains[id].empty) return null
+    const parent = parentChainOf(id)
+    if (parent === undefined) return null
+    const landing = mergeChildrenOf
+      .get(chains[id].tipHash)
+      ?.find((child) => chainOf.get(child.hash) === parent)
+    return landing ? (landing.parents[0] ?? null) : chains[parent].tipHash
+  }
   // Release lines stack directly under the mainline, newest version first —
   // maintenance branches always live in the same rows, whatever else is on.
   const releaseRank = new Map<number, number>()
@@ -536,7 +566,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     const forkColumn = columnOf.get(baseHashOf(id) ?? '')
     // An empty chain's tipHash names another chain's commit — a merge of that
     // commit is the OWNER's lead-out to reserve, not the empty lane's.
-    const mergeChild = chains[id].empty ? undefined : mergeChildOf.get(chains[id].tipHash)
+    const mergeChild = chains[id].empty ? undefined : mergeChildrenOf.get(chains[id].tipHash)?.[0]
     const mergeColumn = mergeChild ? columnOf.get(mergeChild.hash) : undefined
     packChains.push({
       id,
@@ -564,6 +594,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     isHead: false,
     tipHash: chain.tipHash,
     baseHash: baseHashOf(id),
+    upstreamHash: upstreamHashOf(id),
     color: id === mainChain ? 0 : colorForName(chain.name),
     startColumn: span[id].start,
     endColumn: span[id].end,
