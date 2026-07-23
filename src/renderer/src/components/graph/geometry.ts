@@ -170,6 +170,30 @@ export function labelRect(
   }
 }
 
+/** Vertical pan (screen px, added to view.y) that brings a row's full band —
+ *  label pill, node spine and caption — inside the strip between the date
+ *  header and the viewport bottom; 0 when it already fits, or when the strip
+ *  is too short to ever fit it. This is the "keep the clicked row visible"
+ *  move for the diff pane that opens under the graph (GraphCanvas.tsx):
+ *  vertical-only and never more than needed, so the view neither recenters
+ *  nor jumps horizontally under the user's pointer. */
+export function revealRowDy(view: View, viewportHeight: number, row: number): number {
+  // The row pitch is sized so everything a row draws — label band above,
+  // nodes, caption below — fits inside it (see ROW_H).
+  const top = (nodeY(row) - ROW_H / 2) * view.scale + view.y
+  const bottom = (nodeY(row) + ROW_H / 2) * view.scale + view.y
+  // Swallowed by the pane below: pan up until the band's bottom clears the
+  // edge — but never so far that its label band slides under the header.
+  if (bottom > viewportHeight && top > HEADER_H) {
+    return Math.max(viewportHeight - bottom, HEADER_H - top)
+  }
+  // Under the header: the symmetric move down.
+  if (top < HEADER_H && bottom < viewportHeight) {
+    return Math.min(HEADER_H - top, viewportHeight - bottom)
+  }
+  return 0
+}
+
 export type GraphHit =
   | { type: 'node'; node: GraphNode }
   | { type: 'label'; row: GraphRow }

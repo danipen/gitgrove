@@ -20,12 +20,19 @@ import {
   neighborNode,
   nodeX,
   nodeY,
+  revealRowDy,
   rowEndpoint,
   toWorldX,
   toWorldY,
   type View
 } from './geometry'
-import type { BranchSelection, GraphLayout, GraphNode, GraphRow } from './layout'
+import {
+  type BranchSelection,
+  type GraphLayout,
+  type GraphNode,
+  type GraphRow,
+  rowMatchesSelection
+} from './layout'
 import { type BackportLink, twinHashes } from './links'
 import {
   captionMetrics,
@@ -397,6 +404,53 @@ export function GraphCanvas({
     [revealAt]
   )
 
+  /** Minimal vertical pan keeping `row`'s band clear of the viewport edges. */
+  const holdRowVisible = useCallback(
+    (row: number) => {
+      if (sizeRef.current.height === 0) return
+      const dy = revealRowDy(viewRef.current, sizeRef.current.height, row)
+      if (dy === 0) return
+      viewRef.current.y += dy
+      clampView()
+      invalidate()
+    },
+    [clampView, invalidate]
+  )
+
+  /** One-shot row reveal armed by a new selection, consumed by the resize the
+   *  opening diff pane triggers — see the selection effect below. */
+  const revealOnResizeRef = useRef<number | null>(null)
+
+  // Selecting a commit or branch opens the diff pane UNDER the stage, which
+  // shrinks this canvas — swallowing the very row that was just clicked when
+  // it sat near the bottom edge. Arm a one-shot reveal: the pane-opening
+  // resize consumes it (the ResizeObserver fires before the shrunk frame
+  // paints), and it expires two frames later so splitter drags and window
+  // resizes never replay a stale reveal. The immediate call covers the other
+  // orderings — the resize already landed, or none is coming because the pane
+  // was already open (the clicked row was visible, so the pan is zero).
+  const selectionKey =
+    selectedHash ?? (selectedBranch ? `${selectedBranch.name}\0${selectedBranch.tipHash}` : null)
+  useEffect(() => {
+    if (selectionKey === null) return
+    const s = sceneRef.current
+    const row = s.selectedHash
+      ? (s.layout.nodeByHash.get(s.selectedHash)?.row ?? null)
+      : (s.layout.rows.find((r) => rowMatchesSelection(r, s.selectedBranch))?.index ?? null)
+    if (row === null) return
+    revealOnResizeRef.current = row
+    holdRowVisible(row)
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
+        revealOnResizeRef.current = null
+      })
+    })
+    return () => {
+      cancelAnimationFrame(raf)
+      revealOnResizeRef.current = null
+    }
+  }, [selectionKey, holdRowVisible])
+
   // Every animated zoom entry point takes over the view — stop a drag fling
   // first so the anchor point doesn't slide while the scale glides.
   const zoomStepAt = useCallback(
@@ -437,6 +491,15 @@ export function GraphCanvas({
         jumpToHead()
       }
       clampView()
+      // A selection just opened the diff pane under the stage — this resize
+      // is the shrink that would swallow the clicked row. Keep it in view
+      // (see the selection effect above).
+      const revealRow = revealOnResizeRef.current
+      if (revealRow !== null && height > 0) {
+        revealOnResizeRef.current = null
+        viewRef.current.y += revealRowDy(viewRef.current, height, revealRow)
+        clampView()
+      }
       // Setting canvas.width/height wipes the backing store to transparent.
       // ResizeObserver fires after layout but *before* paint (and after this
       // frame's rAF callbacks already ran), so a rAF-deferred draw would land
