@@ -42,6 +42,7 @@ const api: GitGroveApi = {
   blame: (repoPath, path, ref) => ipcRenderer.invoke(IPC.blame, repoPath, path, ref),
   commitFiles: (repoPath, hash) => ipcRenderer.invoke(IPC.commitFiles, repoPath, hash),
   rangeFiles: (repoPath, base, head) => ipcRenderer.invoke(IPC.rangeFiles, repoPath, base, head),
+  mergeBase: (repoPath, a, b) => ipcRenderer.invoke(IPC.mergeBase, repoPath, a, b),
   workingDiff: (repoPath, file: ChangedFile, area?: DiffArea) =>
     ipcRenderer.invoke(IPC.workingDiff, repoPath, file, area),
   commitDiff: (repoPath, hash, file: ChangedFile) =>

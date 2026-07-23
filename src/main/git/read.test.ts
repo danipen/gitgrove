@@ -13,8 +13,10 @@ import {
   getConflictSides,
   getFileHistory,
   getLog,
+  getMergeBase,
   getMergePreview,
   getMergeToolName,
+  getRangeFiles,
   getRemoteWebUrl,
   getUnpushedCommits,
   parseBlamePorcelain,
@@ -319,6 +321,62 @@ describe('getCommitFiles', () => {
     const statuses = new Set(files.map((f) => f.status))
     expect(files.map((f) => f.path).sort()).toEqual(['README.md', 'keep.txt'])
     expect([...statuses]).toEqual(['added'])
+  })
+})
+
+describe('getMergeBase', () => {
+  let branchRepo: string
+  let forkPoint: string
+  let mainTip: string
+
+  beforeAll(() => {
+    // A feature branch that merged its upstream back in — the update-merge a
+    // long-lived branch does to stay current. The fork point no longer tells
+    // the truth about "what the branch changed"; the merge base does.
+    branchRepo = mkdtempSync(join(tmpdir(), 'gitgrove-mergebase-'))
+    git(['init', '-q', '-b', 'main'], branchRepo)
+    git(['config', 'commit.gpgsign', 'false'], branchRepo)
+    writeFileSync(join(branchRepo, 'base.txt'), 'base\n')
+    git(['add', '.'], branchRepo)
+    git(['commit', '-q', '-m', 'base'], branchRepo)
+    forkPoint = git(['rev-parse', 'HEAD'], branchRepo)
+    git(['checkout', '-q', '-b', 'feature'], branchRepo)
+    writeFileSync(join(branchRepo, 'feature.txt'), 'feature\n')
+    git(['add', '.'], branchRepo)
+    git(['commit', '-q', '-m', 'feature work'], branchRepo)
+    git(['checkout', '-q', 'main'], branchRepo)
+    writeFileSync(join(branchRepo, 'mainline.txt'), 'mainline\n')
+    git(['add', '.'], branchRepo)
+    git(['commit', '-q', '-m', 'mainline work'], branchRepo)
+    mainTip = git(['rev-parse', 'HEAD'], branchRepo)
+    git(['checkout', '-q', 'feature'], branchRepo)
+    git(['merge', '-q', '--no-edit', 'main'], branchRepo)
+  })
+
+  afterAll(() => {
+    rmSync(branchRepo, { recursive: true, force: true })
+  })
+
+  it('finds the last commit two branches agreed on', async () => {
+    expect(await getMergeBase(branchRepo, 'main', 'feature')).toBe(mainTip)
+  })
+
+  it("diffs only the branch's own work from the merge base", async () => {
+    // From the fork point the range over-counts: it includes the mainline
+    // work the branch merged back in…
+    const fromFork = await getRangeFiles(branchRepo, forkPoint, 'feature')
+    expect(fromFork.map((f) => f.path)).toEqual(['feature.txt', 'mainline.txt'])
+    // …from the merge base it is exactly the branch's own changes — what the
+    // branch's pull request shows.
+    const base = await getMergeBase(branchRepo, 'main', 'feature')
+    const own = await getRangeFiles(branchRepo, base, 'feature')
+    expect(own.map((f) => f.path)).toEqual(['feature.txt'])
+  })
+
+  it('returns null when the commits share no history', async () => {
+    git(['checkout', '-q', '--orphan', 'unrelated'], branchRepo)
+    git(['commit', '-q', '-m', 'unrelated root'], branchRepo)
+    expect(await getMergeBase(branchRepo, 'main', 'unrelated')).toBeNull()
   })
 })
 

@@ -12,6 +12,7 @@ import {
   getFileHistory,
   getGraphLog,
   getLog,
+  getMergeBase,
   getPatchIds,
   getRangeDiff,
   getRangeFiles,
@@ -40,6 +41,9 @@ export function registerHistoryHandlers(): void {
   )
   ipcMain.handle(IPC.rangeFiles, (_e, repoPath: string, base: string | null, head: string) =>
     getRangeFiles(repoPath, base, head)
+  )
+  ipcMain.handle(IPC.mergeBase, (_e, repoPath: string, a: string, b: string) =>
+    getMergeBase(repoPath, a, b)
   )
   ipcMain.handle(
     IPC.rangeDiff,
