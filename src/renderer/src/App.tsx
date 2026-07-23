@@ -1621,7 +1621,12 @@ export function App() {
               onSelectBranch={(row) => {
                 resetDetail()
                 clearDiff()
-                openRange({ name: row.name, base: row.baseHash, head: row.tipHash })
+                openRange({
+                  name: row.name,
+                  base: row.baseHash,
+                  head: row.tipHash,
+                  upstream: row.upstreamHash
+                })
               }}
               commitMenuFor={commitMenuFor}
               onCheckoutBranch={checkout}
