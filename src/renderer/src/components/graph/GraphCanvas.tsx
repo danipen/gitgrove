@@ -48,6 +48,7 @@ import {
   drawScene,
   type GraphPalette,
   labelContentWidthFor,
+  prChipsPulsing,
   prChipWidthFor,
   readPalette,
   SUBJECT_FONT
@@ -110,8 +111,14 @@ interface Props {
   onWipClick: () => void
 }
 
+const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
 /** Extra world pixels the user may pan past the diagram's edge. */
 const OVERSCROLL = 80
+
+/** Frame interval while a running-check dot pulses: its opacity breathes over
+ *  1.3s, so ~20fps is smooth — and it only runs while such a dot is visible. */
+const PULSE_FRAME_MS = 50
 
 /** How long the view must rest before the labels on screen are reported
  *  (onLabelsInView): a pan or zoom sweeping across the diagram asks nothing,
@@ -259,6 +266,9 @@ export function GraphCanvas({
   const onLabelsInViewRef = useRef(onLabelsInView)
   onLabelsInViewRef.current = onLabelsInView
   const labelsSettleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const pulseFrameRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Set once the draw loop exists (below): the pulse timer re-arms through it.
+  const invalidateRef = useRef<() => void>(() => {})
   const prCard = usePrCard()
   const closePrCard = prCard.close
 
@@ -290,8 +300,15 @@ export function GraphCanvas({
       wip: s.wip,
       dayMarks: s.dayMarks,
       links: s.links,
-      rowPrs: s.rowPrs
+      rowPrs: s.rowPrs,
+      time: reducedMotion() ? 0 : performance.now()
     })
+    // A running check's dot is on screen: keep breathing. Finite by design —
+    // the timer re-arms only while the frame it follows drew one.
+    clearTimeout(pulseFrameRef.current)
+    if (prChipsPulsing() && !reducedMotion()) {
+      pulseFrameRef.current = setTimeout(() => invalidateRef.current(), PULSE_FRAME_MS)
+    }
     // Every view change and data landing funnels through here, so this one
     // debounce covers them all: report the on-screen labels once it rests.
     clearTimeout(labelsSettleRef.current)
@@ -316,6 +333,7 @@ export function GraphCanvas({
       draw()
     })
   }, [draw])
+  invalidateRef.current = invalidate
 
   const clampView = useCallback(() => {
     const view = viewRef.current
@@ -621,6 +639,7 @@ export function GraphCanvas({
     () => () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
       clearTimeout(labelsSettleRef.current)
+      clearTimeout(pulseFrameRef.current)
     },
     []
   )

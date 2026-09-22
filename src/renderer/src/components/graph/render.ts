@@ -34,6 +34,7 @@ import {
   nodeY,
   prChipRect,
   toWorldX,
+  toWorldY,
   type View
 } from './geometry'
 import {
@@ -45,7 +46,7 @@ import {
   rowMatchesSelection
 } from './layout'
 import { type BackportLink, linkedHashes } from './links'
-import { drawPrChip, measurePrChip, type PrChipColors } from './prChip'
+import { ciPulseAlpha, drawPrChip, measurePrChip, type PrChipColors, prChipGlyph } from './prChip'
 import {
   ACTIVE_GLOW,
   HIT_GLOW,
@@ -92,6 +93,9 @@ export function readPalette(el: HTMLElement, dark: boolean): GraphPalette {
     tag: token('--pr-merged'),
     prChip: {
       font: css.fontFamily,
+      pill: token('--pr-pill-bg'),
+      ring: token('--pr-pill-ring'),
+      text: token('--fg-muted'),
       success: token('--st-added'),
       failure: token('--st-deleted'),
       pending: token('--st-modified'),
@@ -188,6 +192,9 @@ export interface SceneState {
   /** Chain id → the PRs its label chip shows (rowPrs.ts); the chip draws the
    *  most important one. */
   rowPrs: ReadonlyMap<number, BranchPrs>
+  /** Frame timestamp (ms) — phases the running-check pulse; any fixed value
+   *  (reduced motion) freezes it. */
+  time: number
 }
 
 const LABEL_FONT = 11
@@ -253,6 +260,15 @@ const prChipWidths = new Map<number, number>()
 /** Width of a row's label text as last measured; an estimate before first draw. */
 export function labelWidthFor(name: string): number {
   return labelWidths.get(name) ?? name.length * 6.2
+}
+
+// Whether the last frame drew a running-check dot — the canvas keeps animating
+// only while one is on screen.
+let pulsingChips = false
+
+/** True when the last frame drew a pulsing running-check dot. */
+export function prChipsPulsing(): boolean {
+  return pulsingChips
 }
 
 /** Width of a row's PR chip as last drawn; 0 when it has none. */
@@ -1061,6 +1077,8 @@ function drawLabels(
   const { palette } = scene
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
+  pulsingChips = false
+  const pulse = ciPulseAlpha(scene.time)
   for (const { row, rect, sticky, pr } of labelBoxes) {
     const head = row.isHead
     // While a filter/search dims commits, labels of hitless branches ghost
@@ -1127,17 +1145,30 @@ function drawLabels(
         pr.info,
         palette.prChip,
         head
-          ? { ink: palette.onAccent, divider: withAlpha(palette.onAccent, 0.4), badged: true }
+          ? { kind: 'badge' }
           : {
+              kind: 'inline',
               ink: branchFill(palette, row.color, 0.9),
-              divider: branchFill(palette, row.color, 0.35),
-              badged: false
-            }
+              divider: branchFill(palette, row.color, 0.35)
+            },
+        pulse
       )
+      if (prChipGlyph(pr.info) === 'pending' && onScreen(scene, rect)) pulsingChips = true
     }
     if (isActiveHit) drawRectPing(ctx, scene, rect, 5)
     ctx.globalAlpha = 1
   }
+}
+
+/** True when a world rect intersects the visible stage (below the header). */
+function onScreen(scene: SceneState, r: { x: number; y: number; w: number; h: number }): boolean {
+  const { view } = scene
+  return (
+    r.x < toWorldX(view, scene.width) &&
+    r.x + r.w > toWorldX(view, 0) &&
+    r.y < toWorldY(view, scene.height) &&
+    r.y + r.h > toWorldY(view, HEADER_H)
+  )
 }
 
 /** The soft gold bloom a search hit wears — the find grammar every glyph

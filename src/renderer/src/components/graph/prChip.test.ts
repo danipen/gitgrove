@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { PullRequestInfo } from '@shared/types'
-import { prChipGlyph } from './prChip'
+import { ciPulseAlpha, prChipGlyph } from './prChip'
 
 function pr(overrides: Partial<PullRequestInfo>): PullRequestInfo {
   return {
@@ -28,5 +28,21 @@ describe('prChipGlyph', () => {
   test('a settled PR leads with its state octicon, never stale CI', () => {
     expect(prChipGlyph(pr({ state: 'merged', checks: 'failure' }))).toBe('merged')
     expect(prChipGlyph(pr({ state: 'closed' }))).toBe('closed')
+  })
+})
+
+describe('ciPulseAlpha', () => {
+  test('breathes 1 → 0.35 → 1 over the badge pulse period', () => {
+    expect(ciPulseAlpha(0)).toBeCloseTo(1)
+    expect(ciPulseAlpha(650)).toBeCloseTo(0.35)
+    expect(ciPulseAlpha(1300)).toBeCloseTo(1)
+  })
+
+  test('stays within the keyframe range at every phase', () => {
+    for (let ms = 0; ms < 2600; ms += 37) {
+      const alpha = ciPulseAlpha(ms)
+      expect(alpha).toBeGreaterThanOrEqual(0.35 - 1e-9)
+      expect(alpha).toBeLessThanOrEqual(1)
+    }
   })
 })

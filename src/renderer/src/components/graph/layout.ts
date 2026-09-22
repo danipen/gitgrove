@@ -218,7 +218,7 @@ function labelColumns(name: string, prChip: boolean): number {
 
 /** Room a label reserves for its PR chip: the octicon, its gaps and a
  *  four-digit `#1234` (render.ts measures the real chip). */
-const PR_CHIP_RESERVE = 48
+const PR_CHIP_RESERVE = 52
 
 /** Chain kinds that can carry a PR chip: real branches, and deleted ones
  *  reconstructed from history (their landing commit may record the PR). */
