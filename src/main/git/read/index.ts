@@ -29,3 +29,4 @@ export {
 } from './merge'
 export { getPatchIds } from './patch-ids'
 export { getRemoteCloneUrl, getRemoteWebUrl, toWebUrl } from './remotes'
+export { getSquashLandings } from './squash-landings'

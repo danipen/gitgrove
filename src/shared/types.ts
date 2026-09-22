@@ -465,6 +465,19 @@ export interface GraphLogOptions {
 }
 
 /**
+ * A branch tip that isn't reachable from the default branch, paired with its
+ * merge base there — the question "did this branch land by squash?" (see
+ * main/git/read/squash-landings.ts). `base` is where the branch's own changes
+ * start: its whole `base..tip` diff is what a squash merge would carry.
+ */
+export interface SquashCandidate {
+  /** Full hash of the branch tip. */
+  tip: string
+  /** Full hash of the tip's merge base with the default branch. */
+  base: string
+}
+
+/**
  * One side of an image diff, shipped ready to paint: a `data:` URL the
  * renderer feeds straight to an <img> (no file:// access from the sandboxed
  * renderer, no temp files), plus the encoded size for the info bar.

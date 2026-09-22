@@ -1,6 +1,8 @@
-// Patch-id equivalence for the Graph's backport twins: two commits with the
-// same patch-id carry the same change — a cherry-picked backport. Batch API:
-// the renderer sends the window's commit hashes and gets hash → patch-id back.
+// Patch-id equivalence for the Graph: two commits with the same patch-id carry
+// the same change — a cherry-picked backport (the twins), or a branch that
+// landed as one squash commit (squash-landings.ts, via getRangePatchIds).
+// Batch API: the renderer sends the window's commit hashes and gets
+// hash → patch-id back.
 //
 // Unlike the rest of the read side this can't go through runGit's execFile:
 // the patches themselves can be huge, so `git diff-tree --stdin --root -p` is
@@ -14,11 +16,33 @@
 import { spawn } from 'node:child_process'
 import { locateGit } from '../bin'
 
-export async function getPatchIds(
+export function getPatchIds(repoPath: string, hashes: string[]): Promise<Record<string, string>> {
+  return streamPatchIds(repoPath, hashes)
+}
+
+/**
+ * Patch-id of each branch's WHOLE change, `base..tip` as one diff — what a
+ * squash merge carries — keyed by tip. diff-tree's stdin form reads
+ * "<commit> <parent>…" lines, so naming the base as the tip's only parent
+ * diffs exactly that range, headed by the tip hash patch-id reports. Both
+ * must be full hashes: abbreviated ones on a stdin line are silently skipped.
+ */
+export function getRangePatchIds(
   repoPath: string,
-  hashes: string[]
+  ranges: readonly { tip: string; base: string }[]
 ): Promise<Record<string, string>> {
-  if (hashes.length === 0) return {}
+  return streamPatchIds(
+    repoPath,
+    ranges.map((range) => `${range.tip} ${range.base}`)
+  )
+}
+
+/** Feed diff-tree's stdin lines through `patch-id --stable`: commit → id. */
+async function streamPatchIds(
+  repoPath: string,
+  stdinLines: readonly string[]
+): Promise<Record<string, string>> {
+  if (stdinLines.length === 0) return {}
   const bin = await locateGit()
   return new Promise((resolve, reject) => {
     const options = { cwd: repoPath, windowsHide: true }
@@ -74,7 +98,7 @@ export async function getPatchIds(
       settle()
     })
 
-    diff.stdin.write(`${hashes.join('\n')}\n`)
+    diff.stdin.write(`${stdinLines.join('\n')}\n`)
     diff.stdin.end()
   })
 }
