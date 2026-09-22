@@ -5,12 +5,13 @@
 // files panel, arranged for the graph's sidebar.
 // styles: styles/features/graph.css
 
-import type { ChangedFile, Commit } from '@shared/types'
+import type { ChangedFile, Commit, PullRequestInfo } from '@shared/types'
 import { useEffect } from 'react'
 import { useAiExplainCommit } from '@/components/common/AiExplainCommit'
 import { copyPathItems } from '@/components/common/copyPathItems'
 import { useFileFilter } from '@/components/common/FileFilter'
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
+import { PrRow } from '@/components/common/PrHoverCard'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
 import { AvatarStack } from '@/components/history/AvatarStack'
 import {
@@ -23,8 +24,11 @@ import {
 import { coAuthorsOf } from '@/lib/coauthors'
 import { pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
+import type { BranchPrs } from '@/lib/pr-order'
 import { useSpinDelay } from '@/lib/useSpinDelay'
+import { landedPrOf } from './landedPr'
 import type { GraphRow } from './layout'
+import { landedPrInfo } from './rowPrs'
 import type { BranchRange } from './useBranchRange'
 
 interface Props {
@@ -38,6 +42,10 @@ interface Props {
   squashedBranches: readonly GraphRow[]
   /** Open a branch's whole-branch changes view. */
   onSelectBranch: (row: GraphRow) => void
+  /** The open branch's PRs (its label chip's), when it has any. */
+  branchPrs: BranchPrs | undefined
+  /** The repo's GitHub web base, or null off GitHub (no PR links). */
+  githubWebUrl: string | null
   files: ChangedFile[]
   filesLoading: boolean
   selectedFilePath: string | null
@@ -55,15 +63,20 @@ function CommitHead({
   repoPath,
   squashedBranches,
   onSelectBranch,
+  githubWebUrl,
   onSetupAi
 }: {
   commit: Commit
   repoPath: string
   squashedBranches: readonly GraphRow[]
   onSelectBranch: (row: GraphRow) => void
+  githubWebUrl: string | null
   onSetupAi: () => void
 }) {
   const explain = useAiExplainCommit({ repoPath, hash: commit.hash, onSetupAi })
+  // A commit that landed a PR links to it — one click from the graph to the
+  // review conversation that produced it.
+  const landed = githubWebUrl ? landedPrOf(commit) : null
   return (
     <div className="graph-detail__head">
       <div className="graph-detail__title">
@@ -78,6 +91,8 @@ function CommitHead({
       </div>
       <CommitMeta commit={commit} extra={explain.trigger} />
       <SquashNote branches={squashedBranches} onSelectBranch={onSelectBranch} />
+      {/* Compact: the commit's own subject and body already carry the title. */}
+      {landed && githubWebUrl && <PrList prs={[landedPrInfo(landed, '', githubWebUrl)]} compact />}
       {/* Keyed by hash: switching commits remounts the body, resetting its
           collapse state and re-probing overflow (see CommitBody). */}
       <CommitBody key={commit.hash} commit={commit} />
@@ -117,7 +132,19 @@ function SquashNote({
   )
 }
 
-function RangeHead({ range }: { range: BranchRange }) {
+/** A branch's (or a landing commit's) pull requests as link rows — the PR
+ *  hovercard's rows, laid into the pane. */
+function PrList({ prs, compact }: { prs: readonly PullRequestInfo[]; compact?: boolean }) {
+  return (
+    <div className="graph-detail__prs">
+      {prs.map((pr) => (
+        <PrRow key={pr.number} pr={pr} compact={compact} />
+      ))}
+    </div>
+  )
+}
+
+function RangeHead({ range, prs }: { range: BranchRange; prs: BranchPrs | undefined }) {
   return (
     <div className="graph-detail__head">
       <div className="graph-detail__title">
@@ -141,6 +168,7 @@ function RangeHead({ range }: { range: BranchRange }) {
           </span>
         )}
       </div>
+      {prs && <PrList prs={prs.prs} />}
     </div>
   )
 }
@@ -151,6 +179,8 @@ export function GraphDetailPane({
   range,
   squashedBranches,
   onSelectBranch,
+  branchPrs,
+  githubWebUrl,
   files,
   filesLoading,
   selectedFilePath,
@@ -190,13 +220,14 @@ export function GraphDetailPane({
   return (
     <div className="graph-detail">
       {range ? (
-        <RangeHead range={range} />
+        <RangeHead range={range} prs={branchPrs} />
       ) : commit ? (
         <CommitHead
           commit={commit}
           repoPath={repoPath}
           squashedBranches={squashedBranches}
           onSelectBranch={onSelectBranch}
+          githubWebUrl={githubWebUrl}
           onSetupAi={onSetupAi}
         />
       ) : null}

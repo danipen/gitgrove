@@ -9,7 +9,9 @@
 // SOURCE branch's color (what flowed in), fork edges the NEW branch's color
 // (what split off).
 
+import type { PullRequestInfo } from '@shared/types'
 import { avatarColor, initials } from '@/lib/avatar'
+import type { BranchPrs } from '@/lib/pr-order'
 import { avatarImageFor } from './avatars'
 import {
   CAPSULE_HALF_H,
@@ -22,11 +24,15 @@ import {
   captionCenterOffset,
   columnsToNext,
   HEADER_H,
+  LABEL_MIN_SCALE,
+  LABEL_PAD_X,
+  labelContentWidth,
   labelRect,
   MARGIN_X,
   NODE_R,
   nodeX,
   nodeY,
+  prChipRect,
   toWorldX,
   type View
 } from './geometry'
@@ -39,6 +45,7 @@ import {
   rowMatchesSelection
 } from './layout'
 import { type BackportLink, linkedHashes } from './links'
+import { drawPrChip, measurePrChip, type PrChipColors } from './prChip'
 import {
   ACTIVE_GLOW,
   HIT_GLOW,
@@ -62,6 +69,7 @@ export interface GraphPalette {
   subject: string
   labelBg: string
   tag: string
+  prChip: PrChipColors
 }
 
 /** Resolve the palette from the CSS design tokens on `el`'s computed style. */
@@ -81,7 +89,16 @@ export function readPalette(el: HTMLElement, dark: boolean): GraphPalette {
     match: token('--st-modified'),
     subject: token('--fg-muted'),
     labelBg: token('--bg-elevated'),
-    tag: token('--pr-merged')
+    tag: token('--pr-merged'),
+    prChip: {
+      font: css.fontFamily,
+      surface: token('--bg-elevated'),
+      text: token('--fg-muted'),
+      success: token('--st-added'),
+      failure: token('--st-deleted'),
+      pending: token('--st-modified'),
+      merged: token('--pr-merged')
+    }
   }
 }
 
@@ -170,6 +187,9 @@ export interface SceneState {
   dayMarks: DayMark[]
   /** Dashed "same change" links between backport twins (see links.ts). */
   links: readonly BackportLink[]
+  /** Chain id → the PRs its label chip shows (rowPrs.ts); the chip draws the
+   *  most important one. */
+  rowPrs: ReadonlyMap<number, BranchPrs>
 }
 
 const LABEL_FONT = 11
@@ -229,9 +249,23 @@ export function captionMetrics(fontFamily: string): CaptionMetrics {
 // Measured pill-text widths, shared with hit-testing (see labelWidthFor).
 const labelWidths = new Map<string, number>()
 
+// Measured PR chip widths by chain, as last drawn (absent = no chip).
+const prChipWidths = new Map<number, number>()
+
 /** Width of a row's label text as last measured; an estimate before first draw. */
 export function labelWidthFor(name: string): number {
   return labelWidths.get(name) ?? name.length * 6.2
+}
+
+/** Width of a row's PR chip as last drawn; 0 when it has none. */
+export function prChipWidthFor(row: GraphRow): number {
+  return prChipWidths.get(row.chain) ?? 0
+}
+
+/** A row's full label content — name plus PR chip — as last drawn; what
+ *  hit-testing and pan/fit bounds must agree with. */
+export function labelContentWidthFor(row: GraphRow): number {
+  return labelContentWidth(labelWidthFor(row.name), prChipWidthFor(row))
 }
 
 // Caption widths (SCREEN px) as last drawn, keyed by commit hash; 0 = culled.
@@ -265,20 +299,27 @@ interface LabelBox {
   row: GraphRow
   rect: { x: number; y: number; w: number; h: number }
   sticky: boolean
+  /** The PR its chip shows, with the chip's measured width. */
+  pr: { info: PullRequestInfo; width: number } | null
 }
 
 /** Measure every label and resolve its (possibly sticky) rect for this frame.
  *  Runs before nodes draw, so tag chips can yield to overlapping labels. */
 function computeLabelBoxes(ctx: CanvasRenderingContext2D, scene: SceneState): LabelBox[] {
   const { palette, view } = scene
-  if (view.scale < 0.4) return []
+  if (view.scale < LABEL_MIN_SCALE) return []
   const leftClamp = toWorldX(view, 8)
-  ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
   return scene.layout.rows.map((row) => {
+    // Per row: measuring a PR chip switches to the chip font.
+    ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
     const width = ctx.measureText(row.name).width
     labelWidths.set(row.name, width)
-    const rect = labelRect(row, width, leftClamp)
-    return { row, rect, sticky: rect.x > nodeX(row.startColumn) - NODE_R + 0.5 }
+    const info = scene.rowPrs.get(row.chain)?.prs[0]
+    const pr = info ? { info, width: measurePrChip(ctx, palette.font, info) } : null
+    if (pr) prChipWidths.set(row.chain, pr.width)
+    else prChipWidths.delete(row.chain)
+    const rect = labelRect(row, labelContentWidth(width, pr?.width ?? 0), leftClamp)
+    return { row, rect, sticky: rect.x > nodeX(row.startColumn) - NODE_R + 0.5, pr }
   })
 }
 
@@ -1020,10 +1061,9 @@ function drawLabels(
   lit: ReadonlySet<number> | null
 ): void {
   const { palette } = scene
-  ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
-  for (const { row, rect, sticky } of labelBoxes) {
+  for (const { row, rect, sticky, pr } of labelBoxes) {
     const head = row.isHead
     // While a filter/search dims commits, labels of hitless branches ghost
     // with them — a full-strength label over dimmed commits would claim a
@@ -1078,8 +1118,25 @@ function drawLabels(
       ctx.stroke()
       ctx.setLineDash([])
     }
+    // Per label: the previous label's PR chip left its own font set.
+    ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
     ctx.fillStyle = head ? palette.onAccent : branchText(palette, row.color)
-    ctx.fillText(row.name, rect.x + 8, rect.y + rect.h / 2 + 0.5)
+    ctx.fillText(row.name, rect.x + LABEL_PAD_X, rect.y + rect.h / 2 + 0.5)
+    if (pr) {
+      drawPrChip(
+        ctx,
+        prChipRect(rect, pr.width),
+        pr.info,
+        palette.prChip,
+        head
+          ? { kind: 'inset' }
+          : {
+              kind: 'inline',
+              ink: branchFill(palette, row.color, 0.9),
+              divider: branchFill(palette, row.color, 0.35)
+            }
+      )
+    }
     if (isActiveHit) drawRectPing(ctx, scene, rect, 5)
     ctx.globalAlpha = 1
   }

@@ -4,8 +4,10 @@
 // styles: styles/features/graph.css
 
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { PrHoverCard } from '@/components/common/PrHoverCard'
 import { CommitMeta } from '@/components/history/CommitSummary'
 import { stripCoAuthorTrailers } from '@/lib/coauthors'
+import type { BranchPrs } from '@/lib/pr-order'
 import { reflowMessage } from '@/lib/reflow'
 import { subscribeAvatars } from './avatars'
 import {
@@ -15,20 +17,24 @@ import {
   contentSize,
   HEADER_H,
   hitTest,
+  labelRect,
   MAX_SCALE,
   MIN_SCALE,
   NODE_R,
   neighborNode,
   nodeX,
   nodeY,
+  prChipRect,
   revealRowDy,
   rowEndpoint,
+  rowsWithLabelInView,
   toWorldX,
   toWorldY,
   type View
 } from './geometry'
 import {
   type BranchSelection,
+  branchKey,
   type GraphLayout,
   type GraphNode,
   type GraphRow,
@@ -41,12 +47,14 @@ import {
   computeDayMarks,
   drawScene,
   type GraphPalette,
-  labelWidthFor,
+  labelContentWidthFor,
+  prChipWidthFor,
   readPalette,
   SUBJECT_FONT
 } from './render'
 import { hitKey, PING_MS, type SearchHit } from './searchGlow'
 import { usePanInertia } from './usePanInertia'
+import { usePrCard } from './usePrCard'
 import { useZoomAnimation } from './useZoomAnimation'
 import { isDiscreteWheel, wheelZoomFactor } from './zoom'
 
@@ -82,6 +90,13 @@ interface Props {
   changesCount: number
   /** Dashed "same change" links between backport twins (see links.ts). */
   links: readonly BackportLink[]
+  /** Chain id → the PRs its label chip shows (rowPrs.ts). */
+  rowPrs: ReadonlyMap<number, BranchPrs>
+  /** The repo's GitHub web base — the PR card's "view all" link. */
+  githubWebUrl: string | null
+  /** The rows whose labels are on screen, reported once the view settles —
+   *  so the host is only ever asked about branches the user can see. */
+  onLabelsInView: (rows: GraphRow[]) => void
   /** Receives the imperative handle (zoom/fit/jump), for the toolbar. */
   controls: RefObject<GraphCanvasHandle | null>
   onSelectNode: (node: GraphNode | null) => void
@@ -97,6 +112,11 @@ interface Props {
 
 /** Extra world pixels the user may pan past the diagram's edge. */
 const OVERSCROLL = 80
+
+/** How long the view must rest before the labels on screen are reported
+ *  (onLabelsInView): a pan or zoom sweeping across the diagram asks nothing,
+ *  only where it stops. */
+const LABELS_SETTLE_MS = 250
 
 interface Tooltip {
   /** Screen x of the caption's first glyph (the card's text aligns to it). */
@@ -165,6 +185,9 @@ export function GraphCanvas({
   hitTags,
   changesCount,
   links,
+  rowPrs,
+  githubWebUrl,
+  onLabelsInView,
   controls,
   onSelectNode,
   onNodeMenu,
@@ -217,7 +240,8 @@ export function GraphCanvas({
     hitTags,
     wip,
     dayMarks,
-    links
+    links,
+    rowPrs
   })
   sceneRef.current = {
     layout,
@@ -229,8 +253,14 @@ export function GraphCanvas({
     hitTags,
     wip,
     dayMarks,
-    links
+    links,
+    rowPrs
   }
+  const onLabelsInViewRef = useRef(onLabelsInView)
+  onLabelsInViewRef.current = onLabelsInView
+  const labelsSettleRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const prCard = usePrCard()
+  const closePrCard = prCard.close
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -259,8 +289,24 @@ export function GraphCanvas({
       matchPulse: matchPulseRef.current,
       wip: s.wip,
       dayMarks: s.dayMarks,
-      links: s.links
+      links: s.links,
+      rowPrs: s.rowPrs
     })
+    // Every view change and data landing funnels through here, so this one
+    // debounce covers them all: report the on-screen labels once it rests.
+    clearTimeout(labelsSettleRef.current)
+    labelsSettleRef.current = setTimeout(() => {
+      const size = sizeRef.current
+      onLabelsInViewRef.current(
+        rowsWithLabelInView(
+          sceneRef.current.layout,
+          viewRef.current,
+          size.width,
+          size.height,
+          labelContentWidthFor
+        )
+      )
+    }, LABELS_SETTLE_MS)
   }, [theme])
 
   const invalidate = useCallback(() => {
@@ -274,8 +320,10 @@ export function GraphCanvas({
   const clampView = useCallback(() => {
     const view = viewRef.current
     const { width, height } = sizeRef.current
-    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null, (row) =>
-      labelWidthFor(row.name)
+    const cs = contentSize(
+      sceneRef.current.layout,
+      sceneRef.current.wip?.column ?? null,
+      labelContentWidthFor
     )
     const cw = cs.width * view.scale
     const ch = cs.height * view.scale
@@ -303,9 +351,10 @@ export function GraphCanvas({
       view.scale = next
       clampView()
       setTooltip(null)
+      closePrCard()
       invalidate()
     },
-    [clampView, invalidate]
+    [clampView, invalidate, closePrCard]
   )
 
   // Discrete zoom steps (mouse-wheel notches, toolbar, +/- keys) glide toward
@@ -361,8 +410,10 @@ export function GraphCanvas({
     zoomAnim.stop()
     panInertia.cancel()
     const { width, height } = sizeRef.current
-    const cs = contentSize(sceneRef.current.layout, sceneRef.current.wip?.column ?? null, (row) =>
-      labelWidthFor(row.name)
+    const cs = contentSize(
+      sceneRef.current.layout,
+      sceneRef.current.wip?.column ?? null,
+      labelContentWidthFor
     )
     const view = viewRef.current
     view.scale = Math.min(
@@ -434,8 +485,7 @@ export function GraphCanvas({
   // resizes never replay a stale reveal. The immediate call covers the other
   // orderings — the resize already landed, or none is coming because the pane
   // was already open (the clicked row was visible, so the pan is zero).
-  const selectionKey =
-    selectedHash ?? (selectedBranch ? `${selectedBranch.name}\0${selectedBranch.tipHash}` : null)
+  const selectionKey = selectedHash ?? (selectedBranch ? branchKey(selectedBranch) : null)
   useEffect(() => {
     if (selectionKey === null) return
     const s = sceneRef.current
@@ -538,6 +588,7 @@ export function GraphCanvas({
     hitTags,
     wip,
     links,
+    rowPrs,
     theme,
     invalidate
   ])
@@ -569,6 +620,7 @@ export function GraphCanvas({
   useEffect(
     () => () => {
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current)
+      clearTimeout(labelsSettleRef.current)
     },
     []
   )
@@ -582,7 +634,7 @@ export function GraphCanvas({
       s.layout,
       toWorldX(view, clientX - rect.left),
       toWorldY(view, clientY - rect.top),
-      (row) => labelWidthFor(row.name),
+      labelContentWidthFor,
       s.wip ? s.wip.column : null,
       s.wip ? s.wip.row : -1,
       // Match the renderer's sticky-label clamp so labels hit where they draw.
@@ -595,7 +647,23 @@ export function GraphCanvas({
         return screenWidth === undefined ? undefined : screenWidth / view.scale
       },
       // The caption band rides a screen-fixed gap below the capsule.
-      view.scale
+      view.scale,
+      prChipWidthFor
+    )
+  }, [])
+
+  /** A row's PR chip rect in client (viewport) coordinates — the hovercard's
+   *  anchor. Mirrors the renderer: sticky label clamp, measured widths. */
+  const chipClientRect = useCallback((row: GraphRow): DOMRect => {
+    const view = viewRef.current
+    const wrap = wrapRef.current?.getBoundingClientRect()
+    const label = labelRect(row, labelContentWidthFor(row), toWorldX(view, 8))
+    const chip = prChipRect(label, prChipWidthFor(row))
+    return new DOMRect(
+      (wrap?.left ?? 0) + chip.x * view.scale + view.x,
+      (wrap?.top ?? 0) + chip.y * view.scale + view.y,
+      chip.w * view.scale,
+      chip.h * view.scale
     )
   }, [])
 
@@ -638,10 +706,12 @@ export function GraphCanvas({
     return targets
   }, [tooltip, links, layout])
 
-  /** True when the event happened inside the expanded-message card — it owns
-   *  its own interactions (text selection, body scrolling). */
+  /** True when the event happened inside the expanded-message card or the PR
+   *  hovercard — they own their own interactions (text selection, body
+   *  scrolling, link rows). Both are React children of the canvas wrapper
+   *  (the PR card through a portal), so their events bubble here. */
   const inTip = (e: { target: EventTarget }) =>
-    (e.target as HTMLElement).closest?.('.graph-tip') != null
+    (e.target as HTMLElement).closest?.('.graph-tip, .pr-card') != null
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (inTip(e)) return
@@ -667,6 +737,7 @@ export function GraphCanvas({
         wrapRef.current?.setPointerCapture(e.pointerId)
         setCursor('grabbing')
         setHover(null, null)
+        prCard.close()
       }
       if (pan.panned) {
         panBy(dx, dy)
@@ -683,6 +754,8 @@ export function GraphCanvas({
       return
     }
     const hit = hitAt(e.clientX, e.clientY)
+    if (hit?.type === 'pr') prCard.hoverChip(hit.row, () => chipClientRect(hit.row))
+    else prCard.leaveChip()
     if (hit?.type === 'node') {
       // Anchor the expansion card on the caption's exact glyph position, so
       // the truncated text appears to complete itself in place (captions and
@@ -718,8 +791,17 @@ export function GraphCanvas({
     if (!hit) onSelectNode(null)
     else if (hit.type === 'node') onSelectNode(hit.node)
     else if (hit.type === 'wip') onWipClick()
+    // The PR chip is a link: straight to the PR it shows, on the host.
+    else if (hit.type === 'pr') openRowPr(hit.row)
     // A branch label or its container capsule opens the branch's changes.
     else onRowClick(hit.row)
+  }
+
+  const openRowPr = (row: GraphRow) => {
+    const url = rowPrs.get(row.chain)?.prs[0]?.url
+    if (!url) return
+    prCard.close()
+    window.gitgrove.openExternal(url)
   }
 
   // Touch input ends an aborted gesture with pointercancel, never pointerup
@@ -741,7 +823,7 @@ export function GraphCanvas({
     if (hit?.type === 'node') {
       onSelectNode(hit.node)
       onNodeMenu(hit.node, e.clientX, e.clientY)
-    } else if (hit?.type === 'label' || hit?.type === 'row') {
+    } else if (hit?.type === 'label' || hit?.type === 'row' || hit?.type === 'pr') {
       // Match the node behaviour: right-click selects what it targets (here,
       // opening the branch-changes view), so the menu always acts on the
       // thing the user is looking at.
@@ -753,6 +835,8 @@ export function GraphCanvas({
   const onDoubleClick = (e: React.MouseEvent) => {
     if (inTip(e)) return
     const hit = hitAt(e.clientX, e.clientY)
+    // (A PR chip's double-click already opened the PR on its first click.)
+    if (hit?.type === 'pr') return
     if (hit?.type === 'label') onRowDoubleClick(hit.row)
     else if (!hit) {
       const rect = wrapRef.current?.getBoundingClientRect()
@@ -782,6 +866,7 @@ export function GraphCanvas({
       zoomAnim.stop()
       panBy(-e.deltaX, -e.deltaY)
       setTooltip(null)
+      prCard.close()
     }
   }
 
@@ -878,7 +963,10 @@ export function GraphCanvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
-      onPointerLeave={() => setHover(null, null)}
+      onPointerLeave={() => {
+        setHover(null, null)
+        prCard.leaveChip()
+      }}
       onContextMenu={onContextMenu}
       onDoubleClick={onDoubleClick}
       onWheel={onWheel}
@@ -928,6 +1016,19 @@ export function GraphCanvas({
             </div>
           )}
         </div>
+      )}
+      {prCard.card && (
+        <PrHoverCard
+          anchor={prCard.card.anchor}
+          prs={rowPrs.get(prCard.card.row.chain)?.prs ?? []}
+          total={rowPrs.get(prCard.card.row.chain)?.total ?? 0}
+          githubWebUrl={githubWebUrl}
+          keepOpen={prCard.keepOpen}
+          requestClose={prCard.requestClose}
+          dismiss={prCard.close}
+          onActivate={prCard.close}
+          align="start"
+        />
       )}
     </div>
   )

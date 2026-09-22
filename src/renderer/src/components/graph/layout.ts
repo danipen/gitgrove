@@ -90,6 +90,9 @@ export interface BranchSelection {
   tipHash: string
 }
 
+/** A stable string key for a BranchSelection (maps can't key on the pair). */
+export const branchKey = (sel: BranchSelection): string => `${sel.name}\0${sel.tipHash}`
+
 /** True when `row` is the branch `sel` names — see BranchSelection. */
 export const rowMatchesSelection = (row: GraphRow, sel: BranchSelection | null): boolean =>
   sel !== null && row.tipHash === sel.tipHash && row.name === sel.name

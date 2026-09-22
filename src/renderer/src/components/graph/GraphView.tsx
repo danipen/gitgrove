@@ -6,16 +6,18 @@
 // styles: styles/features/graph.css
 
 import type { BranchInfo, Commit } from '@shared/types'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
 import type { BranchAction } from '@/components/toolbar/BranchSwitcher'
 import { filterTerms } from '@/lib/commitFilter'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'
+import type { BranchPrs } from '@/lib/pr-order'
 import { GraphCanvas, type GraphCanvasHandle } from './GraphCanvas'
 import { type AuthorOption, DATE_PRESETS, type DatePresetId, GraphToolbar } from './GraphToolbar'
 import {
   type BranchSelection,
+  branchKey,
   collectBranchNames,
   type GraphNode,
   type GraphRow,
@@ -24,6 +26,7 @@ import {
 import { linkableChains, twinHashes } from './links'
 import { relatedBranches } from './related'
 import { releaseLineVersion, releaseVersionWithOverride } from './releases'
+import { isPrLookupRow, rowPullRequests } from './rowPrs'
 import { computeSearchHits } from './searchGlow'
 import { squashedBranchesByLanding } from './squash'
 import { useBackportLinks } from './useBackportLinks'
@@ -57,6 +60,16 @@ interface Props {
   /** Landing commit → branches squashed into it, re-reported per layout —
    *  what the detail pane's "Squash of …" names. */
   onSquashedBranchesChange: (byLanding: ReadonlyMap<string, GraphRow[]>) => void
+  /** The repo's GitHub web base, or null off GitHub (no PR chips at all). */
+  githubWebUrl: string | null
+  /** Head branch → its PRs, as fetched so far (usePullRequests). */
+  prByBranch: ReadonlyMap<string, BranchPrs>
+  /** Ask the host for these branches' PRs (cached ones are skipped unless
+   *  `revalidate`). */
+  onNeedPrs: (branches: string[], opts?: { revalidate?: boolean }) => void
+  /** Each row's PRs keyed by branchKey, re-reported per layout — what the
+   *  detail pane lists for the open branch. */
+  onRowPrsChange: (byBranch: ReadonlyMap<string, BranchPrs>) => void
   onError: (e: unknown) => void
 }
 
@@ -77,6 +90,10 @@ export function GraphView({
   onBranchAction,
   onOpenChanges,
   onSquashedBranchesChange,
+  githubWebUrl,
+  prByBranch,
+  onNeedPrs,
+  onRowPrsChange,
   onError
 }: Props) {
   const [branchFilter, setBranchFilter] = useState<Set<string> | null>(null)
@@ -140,9 +157,10 @@ export function GraphView({
       detached: branch?.detached ?? false,
       defaultBranch: branch?.defaultBranch ?? null,
       releaseOverrides,
-      squashLandings
+      squashLandings,
+      reservePrChips: githubWebUrl !== null
     }),
-    [commits, remotes, branch, releaseOverrides, squashLandings]
+    [commits, remotes, branch, releaseOverrides, squashLandings, githubWebUrl]
   )
   const branches = useMemo(() => collectBranchNames(input), [input])
   const layout = useMemo(
@@ -161,6 +179,47 @@ export function GraphView({
   useEffect(
     () => onSquashedBranchesChange(squashedBranchesByLanding(layout)),
     [layout, onSquashedBranchesChange]
+  )
+
+  // PR chips: the host's answer for named branches, history's for landed ones.
+  const rowPrs = useMemo(
+    () => rowPullRequests(layout.rows, prByBranch, githubWebUrl),
+    [layout, prByBranch, githubWebUrl]
+  )
+  useEffect(() => {
+    const byBranch = new Map<string, BranchPrs>()
+    for (const row of layout.rows) {
+      const prs = rowPrs.get(row.chain)
+      if (prs) byBranch.set(branchKey({ name: row.name, tipHash: row.tipHash }), prs)
+    }
+    onRowPrsChange(byBranch)
+  }, [layout, rowPrs, onRowPrsChange])
+
+  // Ask the host about the branches whose labels are on screen — the canvas
+  // reports them once the view settles, so a 25k-branch repo only ever looks
+  // up what the user stops on (and nothing at all zoomed out past the labels).
+  // The first report after the tab opens revalidates: open PRs' state and CI
+  // move on while the user is elsewhere.
+  const revalidateRef = useRef(true)
+  useEffect(() => {
+    if (active) revalidateRef.current = true
+  }, [active])
+  const activeRef = useRef(active)
+  activeRef.current = active
+  // Every redraw re-reports the settled view (a PR landing redraws it too), so
+  // an unchanged set is dropped here rather than re-filtered against the cache.
+  const lastAskedRef = useRef('')
+  const onLabelsInView = useCallback(
+    (rows: GraphRow[]) => {
+      if (!githubWebUrl || !activeRef.current) return
+      const names = [...new Set(rows.filter(isPrLookupRow).map((row) => row.name))]
+      const key = names.join('\0')
+      if (names.length === 0 || (key === lastAskedRef.current && !revalidateRef.current)) return
+      lastAskedRef.current = key
+      onNeedPrs(names, { revalidate: revalidateRef.current })
+      revalidateRef.current = false
+    },
+    [githubWebUrl, onNeedPrs]
   )
 
   const authors = useMemo((): AuthorOption[] => {
@@ -422,6 +481,9 @@ export function GraphView({
             hitTags={hitTags}
             changesCount={changesCount}
             links={links}
+            rowPrs={rowPrs}
+            githubWebUrl={githubWebUrl}
+            onLabelsInView={onLabelsInView}
             controls={controls}
             onSelectNode={(node) => onSelectCommit(node ? node.commit : null)}
             onNodeMenu={openNodeMenu}
