@@ -73,6 +73,11 @@ import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history' | 'graph'
 
+/** Stable stand-in while sync status hasn't loaded: a fresh `[]` per render
+ *  would re-run the Graph layout every render, and the layout's report-up
+ *  effects (squashes, PRs) set App state — an update loop. */
+const NO_REMOTES: string[] = []
+
 export function App() {
   const [repo, setRepo] = useState<RepoSummary | null>(null)
   // The repo's web URL + whether its host is GitHub, for view-on-web / PR links.
@@ -1642,7 +1647,7 @@ export function App() {
               refreshNonce={graphNonce}
               theme={theme}
               branch={branch}
-              remotes={sync?.remotes ?? []}
+              remotes={sync?.remotes ?? NO_REMOTES}
               changesCount={changes.length}
               selectedCommit={selectedCommit}
               onSelectCommit={(commit) => {
