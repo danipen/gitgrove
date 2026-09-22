@@ -24,6 +24,7 @@ import { coAuthorsOf } from '@/lib/coauthors'
 import { pluralize } from '@/lib/format'
 import { Icon } from '@/lib/icons'
 import { useSpinDelay } from '@/lib/useSpinDelay'
+import type { GraphRow } from './layout'
 import type { BranchRange } from './useBranchRange'
 
 interface Props {
@@ -32,6 +33,11 @@ interface Props {
   commit: Commit | null
   /** The open branch-changes selection; wins over `commit` when set. */
   range: BranchRange | null
+  /** Branches squash-merged into the selected commit (the diagram draws them
+   *  as plain merges — this is where the squash gets named). */
+  squashedBranches: readonly GraphRow[]
+  /** Open a branch's whole-branch changes view. */
+  onSelectBranch: (row: GraphRow) => void
   files: ChangedFile[]
   filesLoading: boolean
   selectedFilePath: string | null
@@ -47,10 +53,14 @@ interface Props {
 function CommitHead({
   commit,
   repoPath,
+  squashedBranches,
+  onSelectBranch,
   onSetupAi
 }: {
   commit: Commit
   repoPath: string
+  squashedBranches: readonly GraphRow[]
+  onSelectBranch: (row: GraphRow) => void
   onSetupAi: () => void
 }) {
   const explain = useAiExplainCommit({ repoPath, hash: commit.hash, onSetupAi })
@@ -67,11 +77,42 @@ function CommitHead({
         </div>
       </div>
       <CommitMeta commit={commit} extra={explain.trigger} />
+      <SquashNote branches={squashedBranches} onSelectBranch={onSelectBranch} />
       {/* Keyed by hash: switching commits remounts the body, resetting its
           collapse state and re-probing overflow (see CommitBody). */}
       <CommitBody key={commit.hash} commit={commit} />
       {explain.card}
       <CommitRefs key={`refs-${commit.hash}`} commit={commit} />
+    </div>
+  )
+}
+
+/** "Squash of <branch>": the landing commit carries a whole branch, merged by
+ *  content — no ancestry joins them, so `git log` won't list the branch's
+ *  commits here. Each name opens that branch's changes. */
+function SquashNote({
+  branches,
+  onSelectBranch
+}: {
+  branches: readonly GraphRow[]
+  onSelectBranch: (row: GraphRow) => void
+}) {
+  if (branches.length === 0) return null
+  return (
+    <div className="graph-detail__squash">
+      <Icon.Branch size={12} />
+      <span>Squash of</span>
+      {branches.map((row) => (
+        <button
+          key={`${row.name}:${row.tipHash}`}
+          type="button"
+          className="graph-detail__squash-branch"
+          data-tip="Show everything this branch changed"
+          onClick={() => onSelectBranch(row)}
+        >
+          {row.name}
+        </button>
+      ))}
     </div>
   )
 }
@@ -108,6 +149,8 @@ export function GraphDetailPane({
   repoPath,
   commit,
   range,
+  squashedBranches,
+  onSelectBranch,
   files,
   filesLoading,
   selectedFilePath,
@@ -149,7 +192,13 @@ export function GraphDetailPane({
       {range ? (
         <RangeHead range={range} />
       ) : commit ? (
-        <CommitHead commit={commit} repoPath={repoPath} onSetupAi={onSetupAi} />
+        <CommitHead
+          commit={commit}
+          repoPath={repoPath}
+          squashedBranches={squashedBranches}
+          onSelectBranch={onSelectBranch}
+          onSetupAi={onSetupAi}
+        />
       ) : null}
 
       <div className="section-head graph-detail__count">

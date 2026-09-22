@@ -2,7 +2,13 @@
 // history, blame, a commit's changed files, and the working/commit diffs.
 
 import { IPC } from '@shared/ipc'
-import type { ChangedFile, DiffArea, GraphLogOptions, LogOptions } from '@shared/types'
+import type {
+  ChangedFile,
+  DiffArea,
+  GraphLogOptions,
+  LogOptions,
+  SquashCandidate
+} from '@shared/types'
 import { ipcMain } from 'electron'
 import {
   getBlame,
@@ -16,6 +22,7 @@ import {
   getPatchIds,
   getRangeDiff,
   getRangeFiles,
+  getSquashLandings,
   getWorkingDiff
 } from '../git/read'
 
@@ -26,6 +33,11 @@ export function registerHistoryHandlers(): void {
   )
   ipcMain.handle(IPC.graphPatchIds, (_e, repoPath: string, hashes: string[]) =>
     getPatchIds(repoPath, hashes)
+  )
+  ipcMain.handle(
+    IPC.graphSquashLandings,
+    (_e, repoPath: string, mainline: string[], candidates: SquashCandidate[]) =>
+      getSquashLandings(repoPath, mainline, candidates)
   )
   ipcMain.handle(IPC.commitIndex, (_e, repoPath: string, hash: string) =>
     getCommitIndex(repoPath, hash)

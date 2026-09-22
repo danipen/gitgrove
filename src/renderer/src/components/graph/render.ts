@@ -444,7 +444,8 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
       ctx.quadraticCurveTo(px, cy, px + r, cy)
       ctx.lineTo(cx - NODE_R, cy)
     } else {
-      // Merge: run along the source branch's row (its lead-out — the packing
+      // Merge — or a squash landing, drawn the same: the branch IS merged, and
+      // a dash would read as pending (the detail pane names the squash). Run along the source branch's row (its lead-out — the packing
       // reserved this stretch), then straight into the merge commit's column.
       const dir = Math.sign(cy - py)
       const r = Math.min(120, Math.abs(cx - px) * 0.66, Math.abs(cy - py) * 0.66)

@@ -42,6 +42,7 @@ import { Toast } from './components/common/Toast'
 import { TooltipLayer } from './components/common/TooltipLayer'
 import { GraphDetailPane } from './components/graph/GraphDetailPane'
 import { GraphView } from './components/graph/GraphView'
+import type { GraphRow } from './components/graph/layout'
 import { useBranchRange } from './components/graph/useBranchRange'
 import { CommitSummary } from './components/history/CommitSummary'
 import { commitMenuItems } from './components/history/commitMenuItems'
@@ -398,6 +399,28 @@ export function App() {
   const selectedGraphBranch = useMemo(
     () => (branchRange ? { name: branchRange.name, tipHash: branchRange.head } : null),
     [branchRange]
+  )
+
+  /** Open a Graph branch's whole-branch changes view (label click, or the
+   *  detail pane's "Squash of …" link). */
+  const openGraphBranch = useCallback(
+    (row: GraphRow) => {
+      resetDetail()
+      clearDiff()
+      openRange({
+        name: row.name,
+        base: row.baseHash,
+        head: row.tipHash,
+        upstream: row.upstreamHash
+      })
+    },
+    [resetDetail, clearDiff, openRange]
+  )
+
+  // Landing commit → the branches squashed into it (reported by GraphView):
+  // the Graph draws a squash like a merge, the detail pane names it.
+  const [squashedBranches, setSquashedBranches] = useState<ReadonlyMap<string, GraphRow[]>>(
+    () => new Map()
   )
 
   /** Select a commit, dismissing any open branch-changes view. */
@@ -1565,6 +1588,10 @@ export function App() {
                 repoPath={repo.path}
                 commit={selectedCommit}
                 range={branchRange}
+                squashedBranches={
+                  selectedCommit ? (squashedBranches.get(selectedCommit.hash) ?? []) : []
+                }
+                onSelectBranch={openGraphBranch}
                 files={branchRange ? rangeFiles : commitFiles}
                 filesLoading={branchRange ? rangeFilesLoading : commitFilesLoading}
                 selectedFilePath={branchRange ? rangeSelPath : commitSelPath}
@@ -1618,16 +1645,8 @@ export function App() {
                 }
               }}
               selectedBranch={selectedGraphBranch}
-              onSelectBranch={(row) => {
-                resetDetail()
-                clearDiff()
-                openRange({
-                  name: row.name,
-                  base: row.baseHash,
-                  head: row.tipHash,
-                  upstream: row.upstreamHash
-                })
-              }}
+              onSelectBranch={openGraphBranch}
+              onSquashedBranchesChange={setSquashedBranches}
               commitMenuFor={commitMenuFor}
               onCheckoutBranch={checkout}
               onBranchAction={onBranchAction}

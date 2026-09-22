@@ -50,6 +50,7 @@ import type {
   RepoOpenResult,
   RepoOpKind,
   ResetMode,
+  SquashCandidate,
   StashEntry,
   SubmoduleInfo,
   UndoResult,
@@ -77,6 +78,7 @@ export const IPC = {
   log: 'repo:log',
   graphLog: 'repo:graph:log',
   graphPatchIds: 'repo:graph:patch-ids',
+  graphSquashLandings: 'repo:graph:squash-landings',
   commitIndex: 'repo:commit:index',
   fileHistory: 'repo:file-history',
   blame: 'repo:blame',
@@ -305,6 +307,17 @@ export interface GitGroveApi {
    * the result.
    */
   graphPatchIds(repoPath: string, hashes: string[]): Promise<Record<string, string>>
+  /**
+   * Where each candidate branch landed on the default branch by content
+   * rather than ancestry — a squash or rebase merge: tip → the mainline
+   * commit carrying the branch's changes. `mainline` is the default branch's
+   * first-parent chain, newest first. Candidates that never landed drop out.
+   */
+  graphSquashLandings(
+    repoPath: string,
+    mainline: string[],
+    candidates: SquashCandidate[]
+  ): Promise<Record<string, string>>
   /** How many commits sit between HEAD and `hash` (i.e. `hash`'s 0-based index
    *  in `git log HEAD`), so the History list can page far enough to reveal it.
    *  `-1` when `hash` isn't an ancestor of HEAD. */
