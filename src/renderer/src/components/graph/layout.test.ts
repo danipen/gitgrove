@@ -148,6 +148,35 @@ describe('layoutGraph', () => {
     expect(layout.nodeByHash.get('x2')?.row).toBe(unnamed.index)
   })
 
+  test('a deleted PR branch is named from its GitHub merge and keeps the PR', () => {
+    const merge = commit(
+      'm',
+      ['b', 'x2'],
+      'HEAD -> main',
+      'Merge pull request #42 from ada/fix/crash'
+    )
+    merge.body = 'Fix the crash on open'
+    const layout = layoutGraph(
+      input([merge, commit('x2', ['x1']), commit('x1', ['a']), commit('b', ['a']), commit('a', [])])
+    )
+    const unnamed = rowNamed(layout, 'fix/crash')
+    expect(unnamed.kind).toBe('unnamed')
+    expect(unnamed.landedPr).toEqual({ number: 42, title: 'Fix the crash on open' })
+    expect(rowNamed(layout, 'main').landedPr).toBeNull()
+  })
+
+  test('a branch merged without a PR trace has no landed PR', () => {
+    const layout = layoutGraph(
+      input([
+        commit('m', ['b', 'f1'], 'HEAD -> main', "Merge branch 'feature'"),
+        commit('f1', ['a'], 'feature'),
+        commit('b', ['a']),
+        commit('a', [])
+      ])
+    )
+    expect(rowNamed(layout, 'feature').landedPr).toBeNull()
+  })
+
   test('tags never create rows', () => {
     const layout = layoutGraph(
       input([commit('b', ['a'], 'HEAD -> main, tag: v1.0'), commit('a', [], 'tag: v0.9')])
@@ -758,8 +787,33 @@ describe('squash-merged branches', () => {
     expect(layout.nodeByHash.has('b')).toBe(false)
   })
 
+  test('the squash landing records the branch PR', () => {
+    const layout = layoutGraph(input(commits(), { squashLandings }))
+    expect(rowNamed(layout, 'feature').landedPr).toEqual({ number: 1, title: 'Feature' })
+  })
+
   test('landings outside the window are ignored', () => {
     const layout = layoutGraph(input(commits(), { squashLandings: new Map([['f2', 'gone']]) }))
     expect(layout.edges.some((e) => e.kind === 'squash')).toBe(false)
+  })
+})
+
+describe('PR chip room', () => {
+  // Two short-lived branches, one after the other: with room to spare they
+  // share a row; the chip's reserved width pushes their labels into each other.
+  const commits = () => [
+    commit('m2', ['c', 'g1'], 'HEAD -> main'),
+    commit('g1', ['c'], 'second'),
+    commit('c', ['m1']),
+    commit('m1', ['a', 'f1']),
+    commit('f1', ['a'], 'first-branch'),
+    commit('a', [])
+  ]
+
+  test('labels reserve room for a PR chip only on pull-request hosts', () => {
+    const plain = layoutGraph(input(commits()))
+    expect(rowNamed(plain, 'first-branch').index).toBe(rowNamed(plain, 'second').index)
+    const reserved = layoutGraph(input(commits(), { reservePrChips: true }))
+    expect(rowNamed(reserved, 'first-branch').index).not.toBe(rowNamed(reserved, 'second').index)
   })
 })
