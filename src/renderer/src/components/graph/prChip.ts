@@ -5,29 +5,35 @@
 // ran), GitHub's merged / closed octicon otherwise. Drawn in WORLD space inside
 // the label pill, so it zooms with it.
 //
-// Unlike the badge it wears no gray pill of its own: on a tinted branch label a
-// neutral patch reads as a foreign sticker, worst at small zoom where it blurs
-// into a gray smudge. The label already sits on an opaque, near-background base
-// (a 15% hue tint), so the mid-luminance state glyphs contrast on it for every
-// branch hue — the chip is just a hairline divider plus the glyph and a number
-// in the branch's own ink. The one exception is the HEAD label: a solid accent
-// fill that would swallow a green ✓, so there the chip insets a small
-// label-surface pill to give the glyphs their ground back.
+// Unlike the badge it wears no pill of its own: a neutral patch on a tinted
+// branch label reads as a foreign sticker, worst at small zoom where it blurs
+// into a smudge. The chip is a hairline divider, the glyph and the number, all
+// in the label's own ink. On a tinted label the label sits on an opaque,
+// near-background base, so the mid-luminance state colors contrast as bare
+// marks for every branch hue. The HEAD label is a solid accent fill that would
+// swallow a green ✓, so there each glyph becomes a BADGE — a disc in the state
+// color with the mark knocked out in the label's ink (GitHub's check-circle-fill
+// idiom): the state color survives, and the chip stays as inline as the rest.
 
 import type { PullRequestInfo } from '@shared/types'
 import { PR_CHIP_GAP, PR_CHIP_H } from './geometry'
 
-/** The chip's slice of the graph palette (render.ts readPalette). */
+/** The state colors (render.ts readPalette), plus the font family. */
 export interface PrChipColors {
   font: string
-  /** The label surface (--bg-elevated): the HEAD chip's inset pill. */
-  surface: string
-  /** The inset chip's number ink. */
-  text: string
   success: string
   failure: string
   pending: string
   merged: string
+}
+
+/** How the chip sits in its label: its ink (number, and a badge's knocked-out
+ *  mark), the divider's color, and whether glyphs are badged (HEAD's solid
+ *  accent pill) or bare marks (tinted branch pills). */
+export interface PrChipStyle {
+  ink: string
+  divider: string
+  badged: boolean
 }
 
 const CHIP_FONT = 10
@@ -54,10 +60,6 @@ export function prChipGlyph(pr: PullRequestInfo): Glyph {
 
 const chipFont = (family: string) => `500 ${CHIP_FONT}px ${family}`
 
-/** How the chip sits in its label: `inline` on a tinted branch pill (divider,
- *  branch-ink number), `inset` on the solid HEAD pill (its own surface pill). */
-export type PrChipStyle = { kind: 'inline'; ink: string; divider: string } | { kind: 'inset' }
-
 /** The chip's width for `pr`, text measured in the chip font. */
 export function measurePrChip(ctx: CanvasRenderingContext2D, family: string, pr: PullRequestInfo) {
   ctx.font = chipFont(family)
@@ -73,75 +75,99 @@ export function drawPrChip(
   colors: PrChipColors,
   style: PrChipStyle
 ): void {
-  if (style.kind === 'inset') {
-    ctx.beginPath()
-    ctx.roundRect(rect.x, rect.y, rect.w, PR_CHIP_H, PR_CHIP_H / 2 - 1)
-    ctx.fillStyle = colors.surface
-    ctx.fill()
-  } else {
-    // The hairline sits in the gap before the chip, a touch shorter than it.
-    const x = Math.round(rect.x - PR_CHIP_GAP / 2) + 0.5
-    ctx.beginPath()
-    ctx.moveTo(x, rect.y + 2)
-    ctx.lineTo(x, rect.y + PR_CHIP_H - 2)
-    ctx.strokeStyle = style.divider
-    ctx.lineWidth = 1
-    ctx.stroke()
-  }
+  // The hairline sits in the gap before the chip, a touch shorter than it.
+  const divX = Math.round(rect.x - PR_CHIP_GAP / 2) + 0.5
+  ctx.beginPath()
+  ctx.moveTo(divX, rect.y + 2)
+  ctx.lineTo(divX, rect.y + PR_CHIP_H - 2)
+  ctx.strokeStyle = style.divider
+  ctx.lineWidth = 1
+  ctx.stroke()
 
   const midY = rect.y + PR_CHIP_H / 2
   let x = rect.x + PAD_X
   const glyph = prChipGlyph(pr)
   if (glyph) {
-    drawGlyph(ctx, glyph, x, midY - GLYPH / 2, colors)
+    drawGlyph(ctx, glyph, x + GLYPH / 2, midY, stateColor(glyph, colors), style)
     x += GLYPH + GLYPH_GAP
   }
   ctx.font = chipFont(colors.font)
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
-  ctx.fillStyle = style.kind === 'inset' ? colors.text : style.ink
+  ctx.fillStyle = style.ink
   ctx.fillText(`#${pr.number}`, x, midY + 0.5)
 }
 
-/** A GLYPH-sized state mark with its top-left at (x, y). */
+function stateColor(glyph: Exclude<Glyph, null>, colors: PrChipColors): string {
+  if (glyph === 'success') return colors.success
+  if (glyph === 'pending') return colors.pending
+  if (glyph === 'merged') return colors.merged
+  return colors.failure
+}
+
+/** How far a badge's knocked-out mark shrinks inside its disc. */
+const BADGE_MARK_SCALE = 0.6
+
+/** A GLYPH-sized state mark centered on (cx, cy): the bare mark in its state
+ *  color, or — badged — a state-color disc with the mark in the label's ink. */
 function drawGlyph(
   ctx: CanvasRenderingContext2D,
   glyph: Exclude<Glyph, null>,
-  x: number,
-  y: number,
-  colors: PrChipColors
+  cx: number,
+  cy: number,
+  color: string,
+  style: PrChipStyle
 ): void {
   ctx.save()
+  ctx.translate(cx, cy)
+  if (style.badged) {
+    ctx.beginPath()
+    ctx.arc(0, 0, GLYPH / 2 + 0.5, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.fill()
+    // A running check is the disc alone — the amber IS the mark.
+    if (glyph !== 'pending') {
+      ctx.scale(BADGE_MARK_SCALE, BADGE_MARK_SCALE)
+      drawMark(ctx, glyph, style.ink, 1.5 / BADGE_MARK_SCALE)
+    }
+  } else {
+    drawMark(ctx, glyph, color, 1.5)
+  }
+  ctx.restore()
+}
+
+/** The state mark on a GLYPH box centered on the origin. */
+function drawMark(
+  ctx: CanvasRenderingContext2D,
+  glyph: Exclude<Glyph, null>,
+  color: string,
+  lineWidth: number
+): void {
+  const h = GLYPH / 2
   ctx.lineCap = 'round'
   ctx.lineJoin = 'round'
-  ctx.lineWidth = 1.5
-  const s = GLYPH
+  ctx.lineWidth = lineWidth
+  ctx.strokeStyle = color
+  ctx.fillStyle = color
+  ctx.beginPath()
   if (glyph === 'success') {
-    ctx.strokeStyle = colors.success
-    ctx.beginPath()
-    ctx.moveTo(x + s * 0.12, y + s * 0.55)
-    ctx.lineTo(x + s * 0.4, y + s * 0.82)
-    ctx.lineTo(x + s * 0.9, y + s * 0.22)
+    ctx.moveTo(-h * 0.76, h * 0.1)
+    ctx.lineTo(-h * 0.2, h * 0.64)
+    ctx.lineTo(h * 0.8, -h * 0.56)
     ctx.stroke()
   } else if (glyph === 'failure') {
-    ctx.strokeStyle = colors.failure
-    ctx.beginPath()
-    ctx.moveTo(x + s * 0.2, y + s * 0.2)
-    ctx.lineTo(x + s * 0.8, y + s * 0.8)
-    ctx.moveTo(x + s * 0.8, y + s * 0.2)
-    ctx.lineTo(x + s * 0.2, y + s * 0.8)
+    ctx.moveTo(-h * 0.6, -h * 0.6)
+    ctx.lineTo(h * 0.6, h * 0.6)
+    ctx.moveTo(h * 0.6, -h * 0.6)
+    ctx.lineTo(-h * 0.6, h * 0.6)
     ctx.stroke()
   } else if (glyph === 'pending') {
-    ctx.fillStyle = colors.pending
-    ctx.beginPath()
-    ctx.arc(x + s / 2, y + s / 2, s * 0.33, 0, Math.PI * 2)
+    ctx.arc(0, 0, GLYPH * 0.33, 0, Math.PI * 2)
     ctx.fill()
   } else {
     octicons ??= { merged: new Path2D(MERGED_D), closed: new Path2D(CLOSED_D) }
-    ctx.fillStyle = glyph === 'merged' ? colors.merged : colors.failure
-    ctx.translate(x, y)
-    ctx.scale(s / 16, s / 16)
+    ctx.translate(-h, -h)
+    ctx.scale(GLYPH / 16, GLYPH / 16)
     ctx.fill(glyph === 'merged' ? octicons.merged : octicons.closed)
   }
-  ctx.restore()
 }
