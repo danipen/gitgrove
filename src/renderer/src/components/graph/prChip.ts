@@ -10,9 +10,12 @@
 // label reads as a foreign sticker, worst at small zoom — just a hairline
 // divider and the glyph + number in the label's ink. On a tinted branch pill
 // the glyph keeps its state color: the label's opaque near-background base
-// lets it contrast for any hue. On the solid accent HEAD pill the state colors
-// would sink into the fill, so there the glyph takes the pill's ink too — the
-// same thin mark, its shape (✓ / ✗ / pulsing dot / octicon) carrying the state.
+// lets it contrast for any hue. On the solid accent HEAD pill the plain state
+// colors sink: they're mid-luminance, like the fill. What's missing there is
+// lightness contrast, not hue — so the HEAD glyph keeps its hue but is mixed
+// toward the pill's ink (mixHex): a pale mint ✓ / coral ✗ on the light theme's
+// blue, deeper ones on the dark theme's lighter blue. Red still means stop, and
+// the mark contrasts like the pill's own text does.
 //
 // The running dot breathes like the badge's (ci-pulse, primitives.css):
 // ciPulseAlpha mirrors the keyframes, and the canvas only animates while such
@@ -21,23 +24,65 @@
 import type { PullRequestInfo } from '@shared/types'
 import { PR_CHIP_GAP, PR_CHIP_H } from './geometry'
 
-/** The chip's slice of the graph palette (render.ts readPalette): the font
- *  family and the state colors. */
-export interface PrChipColors {
-  font: string
+/** One set of glyph state colors. */
+export interface PrStateColors {
   success: string
   failure: string
   pending: string
   merged: string
 }
 
+/** The chip's slice of the graph palette (render.ts readPalette): the font
+ *  family, the state colors, and their accent-pill variants (onAccentStates). */
+export interface PrChipColors extends PrStateColors {
+  font: string
+  onAccent: PrStateColors
+}
+
+/** How much of the state hue an accent-pill glyph keeps; the rest is the
+ *  pill's ink. Enough hue that green/red stay unmistakable, enough ink that
+ *  the mark clears the fill like the label text does. */
+const ON_ACCENT_HUE = 0.45
+
+/** `a` mixed with `b` in sRGB: 1 = all `a`, 0 = all `b`. Hex in (#rgb or
+ *  #rrggbb), hex out; an unparseable input falls back to `b`. */
+export function mixHex(a: string, b: string, amount: number): string {
+  const ca = parseHex(a)
+  const cb = parseHex(b)
+  if (!ca || !cb) return b
+  const channel = (i: number) =>
+    Math.round(ca[i] * amount + cb[i] * (1 - amount))
+      .toString(16)
+      .padStart(2, '0')
+  return `#${channel(0)}${channel(1)}${channel(2)}`
+}
+
+function parseHex(color: string): [number, number, number] | null {
+  const m = color.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+  if (!m) return null
+  const hex = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1]
+  const n = Number.parseInt(hex, 16)
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+}
+
+/** The state colors tuned for the accent HEAD pill: each hue pulled toward
+ *  the pill's ink (see the file header). */
+export function onAccentStates(states: PrStateColors, ink: string): PrStateColors {
+  return {
+    success: mixHex(states.success, ink, ON_ACCENT_HUE),
+    failure: mixHex(states.failure, ink, ON_ACCENT_HUE),
+    pending: mixHex(states.pending, ink, ON_ACCENT_HUE),
+    merged: mixHex(states.merged, ink, ON_ACCENT_HUE)
+  }
+}
+
 /** How the chip sits in its label: its ink (the number), the divider's color,
- *  and whether the glyph wears that ink instead of its state color (the solid
- *  accent HEAD pill — see the file header). */
+ *  and whether it sits on the solid accent HEAD pill (glyph colors from
+ *  PrChipColors.onAccent — see the file header). */
 export interface PrChipStyle {
   ink: string
   divider: string
-  inkGlyph: boolean
+  onAccent: boolean
 }
 
 // .branch-pr metrics (toolbar.css): 10.5px/500 text, 4px side padding, 2px gap
@@ -122,7 +167,7 @@ export function drawPrChip(
   const glyph = prChipGlyph(pr)
   if (glyph) {
     const size = glyphWidth(glyph)
-    const color = style.inkGlyph ? style.ink : stateColor(glyph, colors)
+    const color = stateColor(glyph, style.onAccent ? colors.onAccent : colors)
     drawGlyph(ctx, glyph, x, midY - size / 2, size, color, pulse)
     x += size + GLYPH_GAP
   }
@@ -133,7 +178,7 @@ export function drawPrChip(
   ctx.fillText(`#${pr.number}`, x, midY + 0.5)
 }
 
-function stateColor(glyph: Exclude<Glyph, null>, colors: PrChipColors): string {
+function stateColor(glyph: Exclude<Glyph, null>, colors: PrStateColors): string {
   if (glyph === 'success') return colors.success
   if (glyph === 'pending') return colors.pending
   if (glyph === 'merged') return colors.merged

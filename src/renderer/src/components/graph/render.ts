@@ -46,7 +46,14 @@ import {
   rowMatchesSelection
 } from './layout'
 import { type BackportLink, linkedHashes } from './links'
-import { ciPulseAlpha, drawPrChip, measurePrChip, type PrChipColors, prChipGlyph } from './prChip'
+import {
+  ciPulseAlpha,
+  drawPrChip,
+  measurePrChip,
+  onAccentStates,
+  type PrChipColors,
+  prChipGlyph
+} from './prChip'
 import {
   ACTIVE_GLOW,
   HIT_GLOW,
@@ -91,14 +98,19 @@ export function readPalette(el: HTMLElement, dark: boolean): GraphPalette {
     subject: token('--fg-muted'),
     labelBg: token('--bg-elevated'),
     tag: token('--pr-merged'),
-    prChip: {
-      font: css.fontFamily,
-      success: token('--st-added'),
-      failure: token('--st-deleted'),
-      pending: token('--st-modified'),
-      merged: token('--pr-merged')
-    }
+    prChip: prChipColors(css.fontFamily, token)
   }
+}
+
+/** The PR chip's colors: the state tokens, plus their accent-pill variants. */
+function prChipColors(font: string, token: (name: string) => string): PrChipColors {
+  const states = {
+    success: token('--st-added'),
+    failure: token('--st-deleted'),
+    pending: token('--st-modified'),
+    merged: token('--pr-merged')
+  }
+  return { font, ...states, onAccent: onAccentStates(states, token('--on-accent')) }
 }
 
 // One hue per palette slot; slot 0 (the mainline) is the app's blue family.
@@ -1142,11 +1154,11 @@ function drawLabels(
         pr.info,
         palette.prChip,
         head
-          ? { ink: palette.onAccent, divider: withAlpha(palette.onAccent, 0.4), inkGlyph: true }
+          ? { ink: palette.onAccent, divider: withAlpha(palette.onAccent, 0.4), onAccent: true }
           : {
               ink: branchFill(palette, row.color, 0.9),
               divider: branchFill(palette, row.color, 0.35),
-              inkGlyph: false
+              onAccent: false
             },
         pulse
       )

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test'
 import type { PullRequestInfo } from '@shared/types'
-import { ciPulseAlpha, prChipGlyph } from './prChip'
+import { ciPulseAlpha, mixHex, onAccentStates, prChipGlyph } from './prChip'
 
 function pr(overrides: Partial<PullRequestInfo>): PullRequestInfo {
   return {
@@ -43,6 +43,30 @@ describe('ciPulseAlpha', () => {
       const alpha = ciPulseAlpha(ms)
       expect(alpha).toBeGreaterThanOrEqual(0.35 - 1e-9)
       expect(alpha).toBeLessThanOrEqual(1)
+    }
+  })
+})
+
+describe('mixHex', () => {
+  test('blends two colors channel by channel', () => {
+    expect(mixHex('#ff0000', '#0000ff', 1)).toBe('#ff0000')
+    expect(mixHex('#ff0000', '#0000ff', 0)).toBe('#0000ff')
+    expect(mixHex('#ff0000', '#ffffff', 0.5)).toBe('#ff8080')
+  })
+
+  test('reads the short form and falls back to the second color', () => {
+    expect(mixHex('#f00', '#fff', 0.5)).toBe('#ff8080')
+    expect(mixHex('red', '#ffffff', 0.5)).toBe('#ffffff')
+  })
+})
+
+describe('onAccentStates', () => {
+  test('pulls every state hue toward the accent pill ink', () => {
+    const states = { success: '#1a7f37', failure: '#cf222e', pending: '#9a6700', merged: '#8250df' }
+    const tuned = onAccentStates(states, '#ffffff')
+    for (const key of ['success', 'failure', 'pending', 'merged'] as const) {
+      expect(tuned[key]).toBe(mixHex(states[key], '#ffffff', 0.45))
+      expect(tuned[key]).not.toBe(states[key])
     }
   })
 })
