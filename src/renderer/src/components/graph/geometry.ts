@@ -25,6 +25,10 @@ export const LABEL_H = 18
 export const LABEL_GAP = 4
 /** Label pill: horizontal padding either side of its content. */
 export const LABEL_PAD_X = 8
+/** The current branch's label leads with a square solid CAP carrying the home
+ *  glyph (render.ts drawLabels) — "you are here", the same house the HEAD
+ *  commit wears. */
+export const LABEL_CAP_W = LABEL_H
 /** Below this zoom branch labels aren't drawn (an overview reads by shape,
  *  not by name) — and so they neither hit-test nor ask the host for PRs. */
 export const LABEL_MIN_SCALE = 0.4
@@ -37,11 +41,13 @@ export const PR_CHIP_H = 14
 const PR_CHIP_INSET = (LABEL_H - PR_CHIP_H) / 2
 
 /** A label's content width: the branch name, plus its PR chip when it has
- *  one (0 = none). The chip replaces the pill's right padding with its inset,
- *  so labelRect's symmetric padding still frames it exactly. */
-export function labelContentWidth(nameWidth: number, chipWidth: number): number {
-  if (chipWidth <= 0) return nameWidth
-  return nameWidth + PR_CHIP_GAP + chipWidth - (LABEL_PAD_X - PR_CHIP_INSET)
+ *  one (0 = none), plus the current branch's leading cap. The chip replaces
+ *  the pill's right padding with its inset, so labelRect's symmetric padding
+ *  still frames it exactly. */
+export function labelContentWidth(nameWidth: number, chipWidth: number, capped: boolean): number {
+  const cap = capped ? LABEL_CAP_W : 0
+  if (chipWidth <= 0) return cap + nameWidth
+  return cap + nameWidth + PR_CHIP_GAP + chipWidth - (LABEL_PAD_X - PR_CHIP_INSET)
 }
 /** Branch container capsule: horizontal padding past the outer nodes, and
  *  half its height. Shared by the renderer and hit-testing — the capsule is

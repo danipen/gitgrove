@@ -12,6 +12,7 @@ import {
   contentSize,
   HEADER_H,
   hitTest,
+  LABEL_CAP_W,
   LABEL_GAP,
   LABEL_H,
   LABEL_MIN_SCALE,
@@ -377,7 +378,7 @@ describe('PR chips', () => {
 
   test('the chip nests in the pill right end with an even inset', () => {
     const { row } = feature()
-    const label = labelRect(row, labelContentWidth(40, 30))
+    const label = labelRect(row, labelContentWidth(40, 30, false))
     const chip = prChipRect(label, 30)
     const inset = (LABEL_H - PR_CHIP_H) / 2
     expect(chip.y - label.y).toBe(inset)
@@ -387,12 +388,17 @@ describe('PR chips', () => {
   })
 
   test('a label without a chip is just its name', () => {
-    expect(labelContentWidth(40, 0)).toBe(40)
+    expect(labelContentWidth(40, 0, false)).toBe(40)
+  })
+
+  test('the current branch label makes room for its home cap', () => {
+    expect(labelContentWidth(40, 0, true)).toBe(40 + LABEL_CAP_W)
+    expect(labelContentWidth(40, 30, true) - labelContentWidth(40, 30, false)).toBe(LABEL_CAP_W)
   })
 
   test('the chip is its own hit target, the name stays the label', () => {
     const { layout, row } = feature()
-    const width = labelContentWidth(40, 30)
+    const width = labelContentWidth(40, 30, false)
     const label = labelRect(row, width)
     const chip = prChipRect(label, 30)
     const at = (x: number) =>

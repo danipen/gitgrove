@@ -30,7 +30,7 @@
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
 // Value import from geometry is safe: geometry's layout imports are type-only.
-import { COL_W } from './geometry'
+import { COL_W, LABEL_CAP_W } from './geometry'
 import { branchFromPrMergeSubject, type LandedPr, landedPrOf } from './landedPr'
 import { type PackChain, packRows, type VerticalStub } from './packing'
 import { compareReleaseVersions, releaseVersionWithOverride } from './releases'
@@ -212,8 +212,9 @@ export interface GraphInput {
  *  by platform font and only exist after first paint). Mirrors render.ts
  *  labelWidthFor's 6.2 px/char fallback plus the pill's 16px padding and a
  *  little air before the next pill. */
-function labelColumns(name: string, prChip: boolean): number {
-  return Math.ceil((name.length * 6.2 + 16 + 8 + (prChip ? PR_CHIP_RESERVE : 0)) / COL_W)
+function labelColumns(name: string, prChip: boolean, capped: boolean): number {
+  const extras = (prChip ? PR_CHIP_RESERVE : 0) + (capped ? LABEL_CAP_W : 0)
+  return Math.ceil((name.length * 6.2 + 16 + 8 + extras) / COL_W)
 }
 
 /** Room a label reserves for its PR chip: the octicon, its gaps and a
@@ -658,7 +659,11 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       capEnd: span[id].end,
       labelEnd:
         span[id].start +
-        labelColumns(chain.name, input.reservePrChips === true && canCarryPr(chain.kind)) -
+        labelColumns(
+          chain.name,
+          input.reservePrChips === true && canCarryPr(chain.kind),
+          id === headChain
+        ) -
         1,
       parent: parentChainOf(id) ?? null,
       releaseRank: releaseRank.get(id) ?? null,
