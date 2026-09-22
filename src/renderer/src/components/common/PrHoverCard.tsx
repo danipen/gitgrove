@@ -27,11 +27,16 @@ function CiStatus({ state }: { state: PullRequestChecks }) {
   )
 }
 
-/** The leading state glyph for a PR, shared by the badge and the hovercard: the
- *  green/red/amber CI rollup for open PRs (nothing when no checks ran), or
- *  GitHub's merged/closed octicon (no CI dot — that CI is long settled). */
+/** The leading state glyph for a PR's badge: the green/red/amber CI rollup
+ *  for an open PR; with no checks yet, GitHub's draft octicon for a draft (a
+ *  ready PR shows nothing); or the merged/closed octicon once it settles (no
+ *  CI — that is long settled). The Graph's label chips follow the same rule
+ *  (graph/prChip.ts prChipGlyph). */
 export function PrGlyph({ pr }: { pr: PullRequestInfo }) {
-  if (pr.state === 'open') return pr.checks ? <CiStatus state={pr.checks} /> : null
+  if (pr.state === 'open') {
+    if (pr.checks) return <CiStatus state={pr.checks} />
+    return pr.draft ? <PrStateIcon pr={pr} size={11} /> : null
+  }
   return (
     <span className={`ci-status ci-status--${pr.state}`} aria-hidden>
       {pr.state === 'merged' ? <Icon.PrMerged size={11} /> : <Icon.PrClosed size={11} />}
@@ -39,17 +44,23 @@ export function PrGlyph({ pr }: { pr: PullRequestInfo }) {
   )
 }
 
-/** The hovercard's leading state glyph: GitHub's open / merged / closed pull-
- *  request octicon, tinted by state (green / muted draft / purple / red). Unlike
- *  the badge's CI-rollup glyph, this always shows — it's the row's only state cue
- *  now that the text label is gone. */
-function PrStateIcon({ pr }: { pr: PullRequestInfo }) {
+const STATE_OCTICON = {
+  open: Icon.PrOpen,
+  draft: Icon.PrDraft,
+  merged: Icon.PrMerged,
+  closed: Icon.PrClosed
+}
+
+/** A PR's state octicon — open / draft / merged / closed, tinted by state
+ *  (green / muted / purple / red), exactly as github.com draws them. The
+ *  hovercard rows lead with it (always: it's the row's only state cue); the
+ *  badge borrows the draft one. */
+function PrStateIcon({ pr, size = 13 }: { pr: PullRequestInfo; size?: number }) {
   const state = pr.state === 'open' && pr.draft ? 'draft' : pr.state
-  const Glyph =
-    pr.state === 'merged' ? Icon.PrMerged : pr.state === 'closed' ? Icon.PrClosed : Icon.PrOpen
+  const Glyph = STATE_OCTICON[state]
   return (
     <span className={`ci-status ci-status--${state}`} aria-hidden>
-      <Glyph size={13} />
+      <Glyph size={size} />
     </span>
   )
 }
