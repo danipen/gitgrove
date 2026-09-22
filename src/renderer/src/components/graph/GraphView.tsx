@@ -27,6 +27,7 @@ import { releaseLineVersion, releaseVersionWithOverride } from './releases'
 import { computeSearchHits } from './searchGlow'
 import { useBackportLinks } from './useBackportLinks'
 import { useGraphLog } from './useGraphLog'
+import { useSquashLandings } from './useSquashLandings'
 
 interface Props {
   repoPath: string
@@ -118,6 +119,14 @@ export function GraphView({
     return pins && Object.keys(pins).length > 0 ? new Map(Object.entries(pins)) : null
   }, [releasePins, repoPath])
 
+  // Branches landed by squash / rebase merge: merged, though ancestry says not.
+  const squashLandings = useSquashLandings(
+    repoPath,
+    commits,
+    remotes,
+    branch?.defaultBranch ?? null
+  )
+
   const input = useMemo(
     () => ({
       commits,
@@ -125,9 +134,10 @@ export function GraphView({
       headBranch: branch && !branch.detached ? branch.current : '',
       detached: branch?.detached ?? false,
       defaultBranch: branch?.defaultBranch ?? null,
-      releaseOverrides
+      releaseOverrides,
+      squashLandings
     }),
-    [commits, remotes, branch, releaseOverrides]
+    [commits, remotes, branch, releaseOverrides, squashLandings]
   )
   const branches = useMemo(() => collectBranchNames(input), [input])
   const layout = useMemo(

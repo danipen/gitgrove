@@ -425,6 +425,9 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
     const cy = nodeY(edge.fromRow)
     ctx.strokeStyle = branchStroke(palette, edge.color)
     ctx.globalAlpha = lit ? 0.8 : 0.12
+    // A squash landing is routed exactly like a merge but dashed: the branch
+    // IS merged, by content — no ancestry line actually joins the two.
+    ctx.setLineDash(edge.kind === 'squash' ? [4, 3] : [])
     ctx.beginPath()
     if (py === cy) {
       // Same-row hop (criss-cross merge / packed-row fork): a shallow arc.
@@ -444,7 +447,7 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
       ctx.quadraticCurveTo(px, cy, px + r, cy)
       ctx.lineTo(cx - NODE_R, cy)
     } else {
-      // Merge: run along the source branch's row (its lead-out — the packing
+      // Merge (or squash landing): run along the source branch's row (its lead-out — the packing
       // reserved this stretch), then straight into the merge commit's column.
       const dir = Math.sign(cy - py)
       const r = Math.min(120, Math.abs(cx - px) * 0.66, Math.abs(cy - py) * 0.66)
@@ -455,6 +458,7 @@ function drawEdges(ctx: CanvasRenderingContext2D, scene: SceneState, c0: number,
     }
     ctx.stroke()
   }
+  ctx.setLineDash([])
   ctx.globalAlpha = 1
 }
 

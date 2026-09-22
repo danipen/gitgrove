@@ -712,3 +712,54 @@ describe('empty branches (zero-commit refs)', () => {
     expect(rows[0].empty).toBe(true)
   })
 })
+
+describe('squash-merged branches', () => {
+  // main: a ── b ── s (squash of feature) ── c      feature: f1 ── f2 (from a)
+  const commits = () => [
+    commit('c', ['s'], 'HEAD -> main'),
+    commit('s', ['b'], '', 'Feature (#1)'),
+    commit('f2', ['f1'], 'feature'),
+    commit('f1', ['a']),
+    commit('b', ['a']),
+    commit('a', [])
+  ]
+  const squashLandings = new Map([['f2', 's']])
+
+  test('the tip gets a dashed squash edge into its landing commit', () => {
+    const layout = layoutGraph(input(commits(), { squashLandings }))
+    const squash = layout.edges.filter((e) => e.kind === 'squash')
+    expect(squash).toHaveLength(1)
+    expect(squash[0]).toMatchObject({ fromHash: 's', toHash: 'f2' })
+    expect(squash[0].color).toBe(rowNamed(layout, 'feature').color)
+    // The landing wears the branch's merge ring, like a real merge commit.
+    expect(layout.nodeByHash.get('s')?.mergeColor).toBe(rowNamed(layout, 'feature').color)
+  })
+
+  test('without landings the branch reads as unmerged', () => {
+    const layout = layoutGraph(input(commits()))
+    expect(layout.edges.some((e) => e.kind === 'squash')).toBe(false)
+    expect(layout.nodeByHash.get('s')?.mergeColor).toBeNull()
+  })
+
+  test('hideMerged hides a squash-merged branch', () => {
+    const layout = layoutGraph(input(commits(), { squashLandings, hideMerged: true }))
+    expect(layout.rows.map((r) => r.name)).toEqual(['main'])
+    expect(layout.edges.some((e) => e.kind === 'squash')).toBe(false)
+  })
+
+  test('the branch compares against the mainline just before it landed', () => {
+    const layout = layoutGraph(input(commits(), { squashLandings }))
+    expect(rowNamed(layout, 'feature').upstreamHash).toBe('b')
+  })
+
+  test('structure-only keeps the landing commit', () => {
+    const layout = layoutGraph(input(commits(), { squashLandings, structureOnly: true }))
+    expect(layout.nodeByHash.has('s')).toBe(true)
+    expect(layout.nodeByHash.has('b')).toBe(false)
+  })
+
+  test('landings outside the window are ignored', () => {
+    const layout = layoutGraph(input(commits(), { squashLandings: new Map([['f2', 'gone']]) }))
+    expect(layout.edges.some((e) => e.kind === 'squash')).toBe(false)
+  })
+})

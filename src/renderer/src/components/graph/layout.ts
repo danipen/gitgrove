@@ -109,7 +109,10 @@ export interface GraphNode {
   truncated: boolean
 }
 
-export type GraphEdgeKind = 'line' | 'merge' | 'fork'
+/** `squash`: a branch that landed on the mainline as a new commit (squash or
+ *  rebase merge — see GraphInput.squashLandings). Routed like a merge, drawn
+ *  dashed: merged by content, not by ancestry. */
+export type GraphEdgeKind = 'line' | 'merge' | 'fork' | 'squash'
 
 /** An edge from a child commit to one of its parents (newer → older). */
 export interface GraphEdge {
@@ -175,6 +178,13 @@ export interface GraphInput {
    * what makes a 100k-commit repo readable.
    */
   structureOnly?: boolean
+  /**
+   * Branch tip → the mainline commit it landed as, for branches merged by
+   * squash or rebase (no merge commit, so ancestry alone reads them as never
+   * merged — see squash.ts). Such a tip counts as merged everywhere a merge
+   * source does, and gets a dashed `squash` edge into its landing commit.
+   */
+  squashLandings?: ReadonlyMap<string, string> | null
 }
 
 /** Estimated width of a row's label pill, in columns. The pill anchors at
@@ -225,11 +235,35 @@ function branchNameFromMergeSubject(subject: string): string | null {
   return m ? m[1] : null
 }
 
-/** Every non-first parent in the window: the tips merges pulled in. */
-function collectMergeSourceHashes(commits: readonly Commit[]): Set<string> {
+/** Landing commit → the branch tips squash-merged into it, keeping only
+ *  pairs whose both ends are in the window. */
+function squashedTipsByLanding(input: GraphInput): Map<string, string[]> {
+  const inWindow = new Set(input.commits.map((c) => c.hash))
+  const byLanding = new Map<string, string[]>()
+  for (const [tip, landing] of input.squashLandings ?? []) {
+    if (!inWindow.has(tip) || !inWindow.has(landing)) continue
+    const tips = byLanding.get(landing) ?? []
+    tips.push(tip)
+    byLanding.set(landing, tips)
+  }
+  return byLanding
+}
+
+/** What a commit merged in: its non-first parents, plus the tips squashed
+ *  into it — a squash commit lands a branch as surely as a merge commit, it
+ *  just doesn't record it. */
+function mergedIn(commit: Commit, squashedAt: ReadonlyMap<string, readonly string[]>): string[] {
+  return [...commit.parents.slice(1), ...(squashedAt.get(commit.hash) ?? [])]
+}
+
+/** Every tip merged in within the window — by merge commit or by squash. */
+function collectMergeSourceHashes(
+  commits: readonly Commit[],
+  squashedAt: ReadonlyMap<string, readonly string[]>
+): Set<string> {
   const sources = new Set<string>()
   for (const c of commits) {
-    for (const parent of c.parents.slice(1)) sources.add(parent)
+    for (const parent of mergedIn(c, squashedAt)) sources.add(parent)
   }
   return sources
 }
@@ -290,7 +324,7 @@ function groupTips(input: GraphInput): { base: string; tips: Tip[] }[] {
   // merge: it claims before the checked-out branch and other unmerged tips,
   // or a branch forked from its middle would walk down the first parents and
   // steal its spine — leaving the merged branch a single orphaned commit.
-  const mergeSources = collectMergeSourceHashes(input.commits)
+  const mergeSources = collectMergeSourceHashes(input.commits, squashedTipsByLanding(input))
   for (const { base } of named.filter((g) => mergeSources.has(g.tips[0].hash)).reverse()) {
     pin(base)
   }
@@ -322,16 +356,17 @@ export function layoutGraph(input: GraphInput): GraphLayout {
 
   const headHash = commits.find((c) => isHeadDecoration(c.refs))?.hash ?? null
 
-  // Every non-first parent: the commits merges pulled in. Drives hideMerged
+  // Every merged-in tip (non-first parents, plus squash landings): drives hideMerged
   // (a tip that is a merge source has been merged), structureOnly (merge
   // sources are structure), unnamed-chain naming, the merge lead-out each
   // chain's packing interval reserves, and the upstream a merged branch
   // compares against. Children are listed newest-first (commits arrive in
   // date order).
-  const mergeSources = collectMergeSourceHashes(commits)
+  const squashedAt = squashedTipsByLanding(input)
+  const mergeSources = collectMergeSourceHashes(commits, squashedAt)
   const mergeChildrenOf = new Map<string, Commit[]>()
   for (const c of commits) {
-    for (const parent of c.parents.slice(1)) {
+    for (const parent of mergedIn(c, squashedAt)) {
       let children = mergeChildrenOf.get(parent)
       if (!children) {
         children = []
@@ -445,7 +480,12 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       if (forkPoint) structuralHashes.add(forkPoint)
     }
     for (const c of commits) {
-      if (c.parents.length > 1 || c.refs !== '' || mergeSources.has(c.hash)) {
+      if (
+        c.parents.length > 1 ||
+        squashedAt.has(c.hash) ||
+        c.refs !== '' ||
+        mergeSources.has(c.hash)
+      ) {
         structuralHashes.add(c.hash)
       }
     }
@@ -552,7 +592,7 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     addStubPair(id, parentChainOf(id), columnOf.get(baseHashOf(id) ?? ''))
   })
   for (const c of kept) {
-    for (const parent of c.parents.slice(1)) {
+    for (const parent of mergedIn(c, squashedAt)) {
       addStubPair(chainOf.get(parent), chainOf.get(c.hash), columnOf.get(c.hash))
     }
   }
@@ -669,6 +709,23 @@ export function layoutGraph(input: GraphInput): GraphLayout {
         toRow: target.row
       })
     })
+    // Squash landings: the tip → landing connector a merge commit would have
+    // recorded. A tip dropped from view (hideMerged, a filter) just has none.
+    for (const tip of squashedAt.get(node.commit.hash) ?? []) {
+      const target = nodeByHash.get(tip)
+      if (!target) continue
+      if (node.mergeColor === null) node.mergeColor = target.color
+      edges.push({
+        kind: 'squash',
+        color: target.color,
+        fromHash: node.commit.hash,
+        toHash: tip,
+        fromColumn: node.column,
+        fromRow: node.row,
+        toColumn: target.column,
+        toRow: target.row
+      })
+    }
   }
 
   // Empty lanes still show WHERE the branch will grow from: a fork connector
