@@ -93,9 +93,6 @@ export function readPalette(el: HTMLElement, dark: boolean): GraphPalette {
     tag: token('--pr-merged'),
     prChip: {
       font: css.fontFamily,
-      pill: token('--pr-pill-bg'),
-      ring: token('--pr-pill-ring'),
-      text: token('--fg-muted'),
       success: token('--st-added'),
       failure: token('--st-deleted'),
       pending: token('--st-modified'),
@@ -1145,11 +1142,11 @@ function drawLabels(
         pr.info,
         palette.prChip,
         head
-          ? { kind: 'badge' }
+          ? { ink: palette.onAccent, divider: withAlpha(palette.onAccent, 0.4), inkGlyph: true }
           : {
-              kind: 'inline',
               ink: branchFill(palette, row.color, 0.9),
-              divider: branchFill(palette, row.color, 0.35)
+              divider: branchFill(palette, row.color, 0.35),
+              inkGlyph: false
             },
         pulse
       )

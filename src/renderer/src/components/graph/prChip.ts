@@ -6,13 +6,13 @@
 // merged / closed octicon otherwise. Drawn in WORLD space inside the label
 // pill, so it zooms with it.
 //
-// Two ways to sit in a label:
-//   • inline, on a tinted branch pill: no pill of its own (a neutral patch on a
-//     tinted label reads as a foreign sticker, worst at small zoom), just a
-//     hairline divider and the glyph + number in the branch's ink. The label's
-//     opaque near-background base lets the state colors contrast for any hue;
-//   • badge, on the solid accent HEAD pill, where the state colors would sink:
-//     the switcher badge itself — its neutral pill, 1px ring and muted number.
+// Unlike the badge it wears no pill of its own — a neutral patch on a tinted
+// label reads as a foreign sticker, worst at small zoom — just a hairline
+// divider and the glyph + number in the label's ink. On a tinted branch pill
+// the glyph keeps its state color: the label's opaque near-background base
+// lets it contrast for any hue. On the solid accent HEAD pill the state colors
+// would sink into the fill, so there the glyph takes the pill's ink too — the
+// same thin mark, its shape (✓ / ✗ / pulsing dot / octicon) carrying the state.
 //
 // The running dot breathes like the badge's (ci-pulse, primitives.css):
 // ciPulseAlpha mirrors the keyframes, and the canvas only animates while such
@@ -21,29 +21,31 @@
 import type { PullRequestInfo } from '@shared/types'
 import { PR_CHIP_GAP, PR_CHIP_H } from './geometry'
 
-/** The chip's slice of the graph palette (render.ts readPalette): the badge
- *  tokens (--pr-pill-bg / --pr-pill-ring / --fg-muted) and the state colors. */
+/** The chip's slice of the graph palette (render.ts readPalette): the font
+ *  family and the state colors. */
 export interface PrChipColors {
   font: string
-  pill: string
-  ring: string
-  text: string
   success: string
   failure: string
   pending: string
   merged: string
 }
 
-/** How the chip sits in its label — see the file header. */
-export type PrChipStyle = { kind: 'inline'; ink: string; divider: string } | { kind: 'badge' }
+/** How the chip sits in its label: its ink (the number), the divider's color,
+ *  and whether the glyph wears that ink instead of its state color (the solid
+ *  accent HEAD pill — see the file header). */
+export interface PrChipStyle {
+  ink: string
+  divider: string
+  inkGlyph: boolean
+}
 
 // .branch-pr metrics (toolbar.css): 10.5px/500 text, 4px side padding, 2px gap
-// after the glyph, 6px corner radius; CiStatus draws its check/cross at 10px,
+// after the glyph; CiStatus draws its check/cross at 10px,
 // the octicons at 11px, the running dot at 6px.
 const CHIP_FONT = 10.5
 const PAD_X = 4
 const GLYPH_GAP = 2
-const RADIUS = 6
 const CI_ICON = 10
 const OCTICON = 11
 const DOT = 6
@@ -106,37 +108,28 @@ export function drawPrChip(
   /** The running dot's current opacity (ciPulseAlpha). */
   pulse: number
 ): void {
-  if (style.kind === 'badge') {
-    ctx.beginPath()
-    ctx.roundRect(rect.x, rect.y, rect.w, PR_CHIP_H, RADIUS)
-    ctx.fillStyle = colors.pill
-    ctx.fill()
-    ctx.strokeStyle = colors.ring
-    ctx.lineWidth = 1
-    ctx.stroke()
-  } else {
-    // The hairline sits in the gap before the chip, a touch shorter than it.
-    const x = Math.round(rect.x - PR_CHIP_GAP / 2) + 0.5
-    ctx.beginPath()
-    ctx.moveTo(x, rect.y + 2)
-    ctx.lineTo(x, rect.y + PR_CHIP_H - 2)
-    ctx.strokeStyle = style.divider
-    ctx.lineWidth = 1
-    ctx.stroke()
-  }
+  // The hairline sits in the gap before the chip, a touch shorter than it.
+  const divX = Math.round(rect.x - PR_CHIP_GAP / 2) + 0.5
+  ctx.beginPath()
+  ctx.moveTo(divX, rect.y + 2)
+  ctx.lineTo(divX, rect.y + PR_CHIP_H - 2)
+  ctx.strokeStyle = style.divider
+  ctx.lineWidth = 1
+  ctx.stroke()
 
   const midY = rect.y + PR_CHIP_H / 2
   let x = rect.x + PAD_X
   const glyph = prChipGlyph(pr)
   if (glyph) {
     const size = glyphWidth(glyph)
-    drawGlyph(ctx, glyph, x, midY - size / 2, size, colors, pulse)
+    const color = style.inkGlyph ? style.ink : stateColor(glyph, colors)
+    drawGlyph(ctx, glyph, x, midY - size / 2, size, color, pulse)
     x += size + GLYPH_GAP
   }
   ctx.font = chipFont(colors.font)
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
-  ctx.fillStyle = style.kind === 'badge' ? colors.text : style.ink
+  ctx.fillStyle = style.ink
   ctx.fillText(`#${pr.number}`, x, midY + 0.5)
 }
 
@@ -147,18 +140,17 @@ function stateColor(glyph: Exclude<Glyph, null>, colors: PrChipColors): string {
   return colors.failure
 }
 
-/** A `size`-square glyph with its top-left at (x, y), in its state color. */
+/** A `size`-square glyph with its top-left at (x, y), in `color`. */
 function drawGlyph(
   ctx: CanvasRenderingContext2D,
   glyph: Exclude<Glyph, null>,
   x: number,
   y: number,
   size: number,
-  colors: PrChipColors,
+  color: string,
   pulse: number
 ): void {
   ctx.save()
-  const color = stateColor(glyph, colors)
   if (glyph === 'pending') {
     ctx.globalAlpha *= pulse
     ctx.beginPath()
