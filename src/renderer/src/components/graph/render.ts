@@ -9,7 +9,9 @@
 // SOURCE branch's color (what flowed in), fork edges the NEW branch's color
 // (what split off).
 
+import type { PullRequestInfo } from '@shared/types'
 import { avatarColor, initials } from '@/lib/avatar'
+import type { BranchPrs } from '@/lib/pr-order'
 import { avatarImageFor } from './avatars'
 import {
   CAPSULE_HALF_H,
@@ -22,12 +24,18 @@ import {
   captionCenterOffset,
   columnsToNext,
   HEADER_H,
+  LABEL_CAP_W,
+  LABEL_MIN_SCALE,
+  LABEL_PAD_X,
+  labelContentWidth,
   labelRect,
   MARGIN_X,
   NODE_R,
   nodeX,
   nodeY,
+  prChipRect,
   toWorldX,
+  toWorldY,
   type View
 } from './geometry'
 import {
@@ -39,6 +47,7 @@ import {
   rowMatchesSelection
 } from './layout'
 import { type BackportLink, linkedHashes } from './links'
+import { ciPulseAlpha, drawPrChip, measurePrChip, type PrChipColors, prChipGlyph } from './prChip'
 import {
   ACTIVE_GLOW,
   HIT_GLOW,
@@ -62,6 +71,7 @@ export interface GraphPalette {
   subject: string
   labelBg: string
   tag: string
+  prChip: PrChipColors
 }
 
 /** Resolve the palette from the CSS design tokens on `el`'s computed style. */
@@ -81,7 +91,21 @@ export function readPalette(el: HTMLElement, dark: boolean): GraphPalette {
     match: token('--st-modified'),
     subject: token('--fg-muted'),
     labelBg: token('--bg-elevated'),
-    tag: token('--pr-merged')
+    tag: token('--pr-merged'),
+    prChip: prChipColors(css.fontFamily, token)
+  }
+}
+
+/** The PR chip's colors: the badge's state tokens (primitives.css
+ *  .ci-status--*), and the label surface its HEAD well is cut from. */
+function prChipColors(font: string, token: (name: string) => string): PrChipColors {
+  return {
+    font,
+    success: token('--st-added'),
+    failure: token('--st-deleted'),
+    pending: token('--st-modified'),
+    merged: token('--pr-merged'),
+    draft: token('--fg-muted')
   }
 }
 
@@ -170,6 +194,12 @@ export interface SceneState {
   dayMarks: DayMark[]
   /** Dashed "same change" links between backport twins (see links.ts). */
   links: readonly BackportLink[]
+  /** Chain id → the PRs its label chip shows (rowPrs.ts); the chip draws the
+   *  most important one. */
+  rowPrs: ReadonlyMap<number, BranchPrs>
+  /** Frame timestamp (ms) — phases the running-check pulse; any fixed value
+   *  (reduced motion) freezes it. */
+  time: number
 }
 
 const LABEL_FONT = 11
@@ -229,9 +259,32 @@ export function captionMetrics(fontFamily: string): CaptionMetrics {
 // Measured pill-text widths, shared with hit-testing (see labelWidthFor).
 const labelWidths = new Map<string, number>()
 
+// Measured PR chip widths by chain, as last drawn (absent = no chip).
+const prChipWidths = new Map<number, number>()
+
 /** Width of a row's label text as last measured; an estimate before first draw. */
 export function labelWidthFor(name: string): number {
   return labelWidths.get(name) ?? name.length * 6.2
+}
+
+// Whether the last frame drew a running-check dot — the canvas keeps animating
+// only while one is on screen.
+let pulsingChips = false
+
+/** True when the last frame drew a pulsing running-check dot. */
+export function prChipsPulsing(): boolean {
+  return pulsingChips
+}
+
+/** Width of a row's PR chip as last drawn; 0 when it has none. */
+export function prChipWidthFor(row: GraphRow): number {
+  return prChipWidths.get(row.chain) ?? 0
+}
+
+/** A row's full label content — name plus PR chip — as last drawn; what
+ *  hit-testing and pan/fit bounds must agree with. */
+export function labelContentWidthFor(row: GraphRow): number {
+  return labelContentWidth(labelWidthFor(row.name), prChipWidthFor(row), row.isHead)
 }
 
 // Caption widths (SCREEN px) as last drawn, keyed by commit hash; 0 = culled.
@@ -265,20 +318,27 @@ interface LabelBox {
   row: GraphRow
   rect: { x: number; y: number; w: number; h: number }
   sticky: boolean
+  /** The PR its chip shows, with the chip's measured width. */
+  pr: { info: PullRequestInfo; width: number } | null
 }
 
 /** Measure every label and resolve its (possibly sticky) rect for this frame.
  *  Runs before nodes draw, so tag chips can yield to overlapping labels. */
 function computeLabelBoxes(ctx: CanvasRenderingContext2D, scene: SceneState): LabelBox[] {
   const { palette, view } = scene
-  if (view.scale < 0.4) return []
+  if (view.scale < LABEL_MIN_SCALE) return []
   const leftClamp = toWorldX(view, 8)
-  ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
   return scene.layout.rows.map((row) => {
+    // Per row: measuring a PR chip switches to the chip font.
+    ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
     const width = ctx.measureText(row.name).width
     labelWidths.set(row.name, width)
-    const rect = labelRect(row, width, leftClamp)
-    return { row, rect, sticky: rect.x > nodeX(row.startColumn) - NODE_R + 0.5 }
+    const info = scene.rowPrs.get(row.chain)?.prs[0]
+    const pr = info ? { info, width: measurePrChip(ctx, palette.font, info) } : null
+    if (pr) prChipWidths.set(row.chain, pr.width)
+    else prChipWidths.delete(row.chain)
+    const rect = labelRect(row, labelContentWidth(width, pr?.width ?? 0, row.isHead), leftClamp)
+    return { row, rect, sticky: rect.x > nodeX(row.startColumn) - NODE_R + 0.5, pr }
   })
 }
 
@@ -826,23 +886,38 @@ function drawHomeBadge(
   // badge glyphs need more surrounding air than a bare toolbar icon.
   // Keep the two in sync: one symbol, two sizes.
   const s = r / 13
-  ctx.strokeStyle = palette.accent
-  ctx.lineWidth = Math.max(1.1, 1.7 * s)
+  strokeHouse(ctx, sx, sy, s, palette.accent, Math.max(1.1, 1.7 * s))
+  ctx.restore()
+}
+
+/** The home glyph — Icon.Home's single-outline house (walls, roof, door
+ *  notched into the bottom edge) on a 13-unit box centered on (cx, cy), scaled
+ *  by `s`. Shared by the HEAD commit's badge and the current branch's label
+ *  cap: one symbol for "you are here", wherever it shows. */
+function strokeHouse(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  s: number,
+  color: string,
+  lineWidth: number
+): void {
+  ctx.strokeStyle = color
+  ctx.lineWidth = lineWidth
   ctx.lineJoin = 'round'
   ctx.lineCap = 'round'
   ctx.beginPath()
-  ctx.moveTo(sx - 6.5 * s, sy + 6.5 * s)
-  ctx.lineTo(sx - 6.5 * s, sy - 2 * s)
-  ctx.lineTo(sx, sy - 6.5 * s)
-  ctx.lineTo(sx + 6.5 * s, sy - 2 * s)
-  ctx.lineTo(sx + 6.5 * s, sy + 6.5 * s)
-  ctx.lineTo(sx + 1.7 * s, sy + 6.5 * s)
-  ctx.lineTo(sx + 1.7 * s, sy + 2.8 * s)
-  ctx.lineTo(sx - 1.7 * s, sy + 2.8 * s)
-  ctx.lineTo(sx - 1.7 * s, sy + 6.5 * s)
+  ctx.moveTo(cx - 6.5 * s, cy + 6.5 * s)
+  ctx.lineTo(cx - 6.5 * s, cy - 2 * s)
+  ctx.lineTo(cx, cy - 6.5 * s)
+  ctx.lineTo(cx + 6.5 * s, cy - 2 * s)
+  ctx.lineTo(cx + 6.5 * s, cy + 6.5 * s)
+  ctx.lineTo(cx + 1.7 * s, cy + 6.5 * s)
+  ctx.lineTo(cx + 1.7 * s, cy + 2.8 * s)
+  ctx.lineTo(cx - 1.7 * s, cy + 2.8 * s)
+  ctx.lineTo(cx - 1.7 * s, cy + 6.5 * s)
   ctx.closePath()
   ctx.stroke()
-  ctx.restore()
 }
 
 /** Caption text (commit subjects, the WIP "uncommitted") drawn in SCREEN space
@@ -1020,10 +1095,11 @@ function drawLabels(
   lit: ReadonlySet<number> | null
 ): void {
   const { palette } = scene
-  ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
   ctx.textBaseline = 'middle'
   ctx.textAlign = 'left'
-  for (const { row, rect, sticky } of labelBoxes) {
+  pulsingChips = false
+  const pulse = ciPulseAlpha(scene.time)
+  for (const { row, rect, sticky, pr } of labelBoxes) {
     const head = row.isHead
     // While a filter/search dims commits, labels of hitless branches ghost
     // with them — a full-strength label over dimmed commits would claim a
@@ -1069,20 +1145,76 @@ function drawLabels(
       ctx.fill()
     }
     ctx.globalAlpha = inkAlpha
-    ctx.fillStyle = head ? palette.accent : branchFill(palette, row.color, 0.15)
+    // Every label is tinted — the current branch too, in the accent, so the
+    // PR glyphs read the same on all of them; the current one leads with a
+    // solid home cap instead of going solid (drawHomeCap).
+    ctx.fillStyle = head ? withAlpha(palette.accent, 0.15) : branchFill(palette, row.color, 0.15)
     ctx.fill()
-    if (!head) {
-      ctx.strokeStyle = branchFill(palette, row.color, 0.55)
-      ctx.lineWidth = 1
-      if (row.kind === 'unnamed') ctx.setLineDash([3, 2])
-      ctx.stroke()
-      ctx.setLineDash([])
+    ctx.strokeStyle = head ? palette.accent : branchFill(palette, row.color, 0.55)
+    ctx.lineWidth = 1
+    if (row.kind === 'unnamed') ctx.setLineDash([3, 2])
+    ctx.stroke()
+    ctx.setLineDash([])
+    if (head) drawHomeCap(ctx, palette, rect)
+    // Per label: the previous label's PR chip left its own font set.
+    ctx.font = `600 ${LABEL_FONT}px ${palette.font}`
+    ctx.fillStyle = head ? palette.accent : branchText(palette, row.color)
+    ctx.fillText(
+      row.name,
+      rect.x + (head ? LABEL_CAP_W : 0) + LABEL_PAD_X,
+      rect.y + rect.h / 2 + 0.5
+    )
+    if (pr) {
+      drawPrChip(
+        ctx,
+        prChipRect(rect, pr.width),
+        pr.info,
+        palette.prChip,
+        head
+          ? { ink: withAlpha(palette.accent, 0.9), divider: withAlpha(palette.accent, 0.35) }
+          : {
+              ink: branchFill(palette, row.color, 0.9),
+              divider: branchFill(palette, row.color, 0.35)
+            },
+        pulse
+      )
+      if (prChipGlyph(pr.info) === 'pending' && onScreen(scene, rect)) pulsingChips = true
     }
-    ctx.fillStyle = head ? palette.onAccent : branchText(palette, row.color)
-    ctx.fillText(row.name, rect.x + 8, rect.y + rect.h / 2 + 0.5)
     if (isActiveHit) drawRectPing(ctx, scene, rect, 5)
     ctx.globalAlpha = 1
   }
+}
+
+/** The current branch's leading cap: the label's first LABEL_CAP_W in the
+ *  solid accent, the home glyph knocked out of it in the pill's on-accent ink —
+ *  "you are here", the same house the HEAD commit wears. */
+function drawHomeCap(
+  ctx: CanvasRenderingContext2D,
+  palette: GraphPalette,
+  rect: { x: number; y: number; w: number; h: number }
+): void {
+  ctx.save()
+  ctx.beginPath()
+  ctx.rect(rect.x - 1, rect.y - 1, LABEL_CAP_W + 1, rect.h + 2)
+  ctx.clip()
+  ctx.beginPath()
+  ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 5)
+  ctx.fillStyle = palette.accent
+  ctx.fill()
+  ctx.restore()
+  // A house ~9px across: the 13-unit glyph at s = 0.7, a hair past optical center.
+  strokeHouse(ctx, rect.x + LABEL_CAP_W / 2, rect.y + rect.h / 2, 0.7, palette.onAccent, 1.3)
+}
+
+/** True when a world rect intersects the visible stage (below the header). */
+function onScreen(scene: SceneState, r: { x: number; y: number; w: number; h: number }): boolean {
+  const { view } = scene
+  return (
+    r.x < toWorldX(view, scene.width) &&
+    r.x + r.w > toWorldX(view, 0) &&
+    r.y < toWorldY(view, scene.height) &&
+    r.y + r.h > toWorldY(view, HEADER_H)
+  )
 }
 
 /** The soft gold bloom a search hit wears — the find grammar every glyph

@@ -4,7 +4,8 @@ import {
   commitUrl,
   compareUrl,
   headPullRequestsUrl,
-  parseOwnerRepo
+  parseOwnerRepo,
+  pullRequestUrl
 } from './git-host-urls'
 
 const BASE = 'https://github.com/octocat/hello'
@@ -56,6 +57,12 @@ describe('headPullRequestsUrl', () => {
     expect(headPullRequestsUrl(BASE, 'performance/uum-137749')).toBe(
       'https://github.com/octocat/hello/pulls?q=is%3Apr%20head%3Aperformance%2Fuum-137749'
     )
+  })
+})
+
+describe('pullRequestUrl', () => {
+  test('builds the pull request page url', () => {
+    expect(pullRequestUrl(`${BASE}/`, 89)).toBe('https://github.com/octocat/hello/pull/89')
   })
 })
 

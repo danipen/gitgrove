@@ -42,6 +42,11 @@ export function compareUrl(webBase: string, baseBranch: string, headBranch: stri
   return `${trimTrailingSlash(webBase)}/compare/${encodeRef(baseBranch)}...${encodeRef(headBranch)}?expand=1`
 }
 
+/** `…/pull/<n>` — a single pull request's page. */
+export function pullRequestUrl(webBase: string, number: number): string {
+  return `${trimTrailingSlash(webBase)}/pull/${number}`
+}
+
 /**
  * The repo's pull-request list filtered to a head branch — the "see all PRs for
  * this branch" escape hatch when a branch has more PRs than the badge hovercard

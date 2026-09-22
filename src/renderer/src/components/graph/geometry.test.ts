@@ -12,15 +12,22 @@ import {
   contentSize,
   HEADER_H,
   hitTest,
+  LABEL_CAP_W,
   LABEL_GAP,
   LABEL_H,
+  LABEL_MIN_SCALE,
+  labelContentWidth,
+  labelRect,
   NODE_R,
   neighborNode,
   nodeX,
   nodeY,
+  PR_CHIP_H,
+  prChipRect,
   ROW_H,
   revealRowDy,
-  rowEndpoint
+  rowEndpoint,
+  rowsWithLabelInView
 } from './geometry'
 import { type GraphInput, layoutGraph } from './layout'
 
@@ -358,5 +365,85 @@ describe('graph geometry', () => {
   test('contentSize ignores labels that fit inside their row span', () => {
     const layout = sampleLayout()
     expect(contentSize(layout, null, () => 10)).toEqual(contentSize(layout, null))
+  })
+})
+
+describe('PR chips', () => {
+  const feature = () => {
+    const layout = sampleLayout()
+    const row = layout.rows.find((r) => r.name === 'feature')
+    if (!row) throw new Error('missing row')
+    return { layout, row }
+  }
+
+  test('the chip nests in the pill right end with an even inset', () => {
+    const { row } = feature()
+    const label = labelRect(row, labelContentWidth(40, 30, false))
+    const chip = prChipRect(label, 30)
+    const inset = (LABEL_H - PR_CHIP_H) / 2
+    expect(chip.y - label.y).toBe(inset)
+    expect(label.x + label.w - (chip.x + chip.w)).toBe(inset)
+    // The name keeps the pill's left padding and ends before the chip.
+    expect(chip.x).toBeGreaterThan(label.x + 8 + 40)
+  })
+
+  test('a label without a chip is just its name', () => {
+    expect(labelContentWidth(40, 0, false)).toBe(40)
+  })
+
+  test('the current branch label makes room for its home cap', () => {
+    expect(labelContentWidth(40, 0, true)).toBe(40 + LABEL_CAP_W)
+    expect(labelContentWidth(40, 30, true) - labelContentWidth(40, 30, false)).toBe(LABEL_CAP_W)
+  })
+
+  test('the chip is its own hit target, the name stays the label', () => {
+    const { layout, row } = feature()
+    const width = labelContentWidth(40, 30, false)
+    const label = labelRect(row, width)
+    const chip = prChipRect(label, 30)
+    const at = (x: number) =>
+      hitTest(
+        layout,
+        x,
+        label.y + label.h / 2,
+        (r) => (r === row ? width : 40),
+        null,
+        -1,
+        Number.NEGATIVE_INFINITY,
+        false,
+        undefined,
+        1,
+        (r) => (r === row ? 30 : 0)
+      )
+    expect(at(chip.x + 4)).toMatchObject({ type: 'pr', row })
+    expect(at(label.x + 12)).toMatchObject({ type: 'label', row })
+  })
+})
+
+describe('rowsWithLabelInView', () => {
+  const view = { x: 0, y: 0, scale: 1 }
+
+  test('finds the labels inside the viewport', () => {
+    const layout = sampleLayout()
+    const names = rowsWithLabelInView(layout, view, 800, 600, () => 40).map((r) => r.name)
+    expect(names.sort()).toEqual(['feature', 'main'])
+  })
+
+  test('skips labels scrolled out of view', () => {
+    const layout = sampleLayout()
+    // Panned far right: every label sits left of the viewport — but a sticky
+    // label rides the edge while its row is still on screen, so pan past the
+    // rows' ends too.
+    const panned = { x: -5000, y: 0, scale: 1 }
+    expect(rowsWithLabelInView(layout, panned, 800, 600, () => 40)).toEqual([])
+    // Scrolled below every row.
+    const below = { x: 0, y: -5000, scale: 1 }
+    expect(rowsWithLabelInView(layout, below, 800, 600, () => 40)).toEqual([])
+  })
+
+  test('asks about nothing while zoomed out past the label layer', () => {
+    const layout = sampleLayout()
+    const far = { x: 0, y: 0, scale: LABEL_MIN_SCALE - 0.01 }
+    expect(rowsWithLabelInView(layout, far, 8000, 6000, () => 40)).toEqual([])
   })
 })

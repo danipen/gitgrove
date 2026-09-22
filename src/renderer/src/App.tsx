@@ -42,7 +42,7 @@ import { Toast } from './components/common/Toast'
 import { TooltipLayer } from './components/common/TooltipLayer'
 import { GraphDetailPane } from './components/graph/GraphDetailPane'
 import { GraphView } from './components/graph/GraphView'
-import type { GraphRow } from './components/graph/layout'
+import { branchKey, type GraphRow } from './components/graph/layout'
 import { useBranchRange } from './components/graph/useBranchRange'
 import { CommitSummary } from './components/history/CommitSummary'
 import { commitMenuItems } from './components/history/commitMenuItems'
@@ -58,6 +58,7 @@ import { buildCommitSelection, buildStashSelection } from './lib/commit-selectio
 import { Icon } from './lib/icons'
 import { mergeSourceFromDetail } from './lib/merge'
 import { usePersistentState } from './lib/persist'
+import type { BranchPrs } from './lib/pr-order'
 import { createRepoGeneration } from './lib/repoGeneration'
 import { useTheme } from './lib/theme'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
@@ -71,6 +72,11 @@ import { type MissingRepoInfo, useRepoRecovery } from './lib/useRepoRecovery'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
 type Tab = 'changes' | 'history' | 'graph'
+
+/** Stable stand-in while sync status hasn't loaded: a fresh `[]` per render
+ *  would re-run the Graph layout every render, and the layout's report-up
+ *  effects (squashes, PRs) set App state — an update loop. */
+const NO_REMOTES: string[] = []
 
 export function App() {
   const [repo, setRepo] = useState<RepoSummary | null>(null)
@@ -422,6 +428,11 @@ export function App() {
   const [squashedBranches, setSquashedBranches] = useState<ReadonlyMap<string, GraphRow[]>>(
     () => new Map()
   )
+
+  // Each Graph row's PRs keyed by branchKey (reported by GraphView): the
+  // detail pane lists the open branch's.
+  const [graphRowPrs, setGraphRowPrs] = useState<ReadonlyMap<string, BranchPrs>>(() => new Map())
+  const githubWebUrl = hostInfo?.provider === 'github' ? hostInfo.webUrl : null
 
   /** Select a commit, dismissing any open branch-changes view. */
   const selectCommitOnly = useCallback(
@@ -1473,7 +1484,7 @@ export function App() {
         repo={repo}
         branch={branch}
         branchesLoading={branchesLoading}
-        githubWebUrl={hostInfo?.provider === 'github' ? hostInfo.webUrl : null}
+        githubWebUrl={githubWebUrl}
         prByBranch={prByBranch}
         onNeedPrs={(branches, opts) => fetchBranchPrs(repo.path, branches, opts)}
         busy={busy}
@@ -1592,6 +1603,10 @@ export function App() {
                   selectedCommit ? (squashedBranches.get(selectedCommit.hash) ?? []) : []
                 }
                 onSelectBranch={openGraphBranch}
+                branchPrs={
+                  selectedGraphBranch ? graphRowPrs.get(branchKey(selectedGraphBranch)) : undefined
+                }
+                githubWebUrl={githubWebUrl}
                 files={branchRange ? rangeFiles : commitFiles}
                 filesLoading={branchRange ? rangeFilesLoading : commitFilesLoading}
                 selectedFilePath={branchRange ? rangeSelPath : commitSelPath}
@@ -1632,7 +1647,7 @@ export function App() {
               refreshNonce={graphNonce}
               theme={theme}
               branch={branch}
-              remotes={sync?.remotes ?? []}
+              remotes={sync?.remotes ?? NO_REMOTES}
               changesCount={changes.length}
               selectedCommit={selectedCommit}
               onSelectCommit={(commit) => {
@@ -1647,6 +1662,10 @@ export function App() {
               selectedBranch={selectedGraphBranch}
               onSelectBranch={openGraphBranch}
               onSquashedBranchesChange={setSquashedBranches}
+              githubWebUrl={githubWebUrl}
+              prByBranch={prByBranch}
+              onNeedPrs={(branches, opts) => fetchBranchPrs(repo.path, branches, opts)}
+              onRowPrsChange={setGraphRowPrs}
               commitMenuFor={commitMenuFor}
               onCheckoutBranch={checkout}
               onBranchAction={onBranchAction}

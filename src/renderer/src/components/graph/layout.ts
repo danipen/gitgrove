@@ -13,7 +13,8 @@
 // ("main" / "origin/main") share one chain — the walk starts at the newer tip
 // and passes through the older one. Commits left unclaimed (their branch was
 // deleted after merging) become "unnamed" chains, labelled from the merge
-// commit's subject when it records the branch name.
+// commit's subject when it records the branch name (git's stock merge
+// message, or GitHub's "Merge pull request #N from owner/branch").
 //
 // Rows are then PACKED (see packing.ts): the mainline keeps row 0 to itself,
 // release lines stack directly beneath it (newest version first — a stable
@@ -29,7 +30,8 @@
 import type { Commit } from '@shared/types'
 import { type CommitRef, parseRefs } from '@/lib/format'
 // Value import from geometry is safe: geometry's layout imports are type-only.
-import { COL_W } from './geometry'
+import { COL_W, LABEL_CAP_W } from './geometry'
+import { branchFromPrMergeSubject, type LandedPr, landedPrOf } from './landedPr'
 import { type PackChain, packRows, type VerticalStub } from './packing'
 import { compareReleaseVersions, releaseVersionWithOverride } from './releases'
 
@@ -73,6 +75,10 @@ export interface GraphRow {
   /** Inclusive column span of the row's nodes. */
   startColumn: number
   endColumn: number
+  /** The pull request that landed this branch, as recorded by the commit
+   *  that merged (or squashed) its tip — see landedPr.ts. Null when the tip
+   *  isn't landed in the window, or landed without a PR trace. */
+  landedPr: LandedPr | null
 }
 
 /** Identifies the row whose branch-changes view is open. A tip hash alone is
@@ -83,6 +89,9 @@ export interface BranchSelection {
   name: string
   tipHash: string
 }
+
+/** A stable string key for a BranchSelection (maps can't key on the pair). */
+export const branchKey = (sel: BranchSelection): string => `${sel.name}\0${sel.tipHash}`
 
 /** True when `row` is the branch `sel` names — see BranchSelection. */
 export const rowMatchesSelection = (row: GraphRow, sel: BranchSelection | null): boolean =>
@@ -186,6 +195,13 @@ export interface GraphInput {
    * source does, and gets a `squash` edge into its landing commit.
    */
   squashLandings?: ReadonlyMap<string, string> | null
+  /**
+   * The repo lives on a pull-request host: every branch label reserves room
+   * for a PR chip (render.ts) whether or not its PR is known yet. The chips
+   * arrive asynchronously as labels scroll into view, and a layout that only
+   * made room once they landed would reshuffle rows under the user's eyes.
+   */
+  reservePrChips?: boolean
 }
 
 /** Estimated width of a row's label pill, in columns. The pill anchors at
@@ -196,9 +212,19 @@ export interface GraphInput {
  *  by platform font and only exist after first paint). Mirrors render.ts
  *  labelWidthFor's 6.2 px/char fallback plus the pill's 16px padding and a
  *  little air before the next pill. */
-function labelColumns(name: string): number {
-  return Math.ceil((name.length * 6.2 + 16 + 8) / COL_W)
+function labelColumns(name: string, prChip: boolean, capped: boolean): number {
+  const extras = (prChip ? PR_CHIP_RESERVE : 0) + (capped ? LABEL_CAP_W : 0)
+  return Math.ceil((name.length * 6.2 + 16 + 8 + extras) / COL_W)
 }
+
+/** Room a label reserves for its PR chip: the octicon, its gaps and a
+ *  four-digit `#1234` (render.ts measures the real chip). */
+const PR_CHIP_RESERVE = 52
+
+/** Chain kinds that can carry a PR chip: real branches, and deleted ones
+ *  reconstructed from history (their landing commit may record the PR). */
+const canCarryPr = (kind: GraphRowKind): boolean =>
+  kind === 'branch' || kind === 'remote' || kind === 'unnamed'
 
 /** A branch tip: one exact ref name resolved to the commit it points at. */
 interface Tip {
@@ -230,10 +256,26 @@ function isHeadDecoration(refs: string): boolean {
   return refs.split(',').some((r) => r.trim() === 'HEAD' || r.trim().startsWith('HEAD ->'))
 }
 
-/** Branch name recorded in a merge commit's subject, if git's stock message. */
+/** Branch name recorded in a merge commit's subject: git's stock message or
+ *  GitHub's pull-request merge. */
 function branchNameFromMergeSubject(subject: string): string | null {
   const m = subject.match(/^Merge (?:remote-tracking )?branch '([^']+)'/)
-  return m ? m[1] : null
+  return m ? m[1] : branchFromPrMergeSubject(subject)
+}
+
+/** The PR recorded by whichever commit landed the chain's tip (a merge or a
+ *  squash landing), if any. An empty chain's tip is another chain's commit,
+ *  so its landing belongs to that owner, never to the empty lane. */
+function landedPrOfChain(
+  chain: Chain,
+  mergeChildrenOf: ReadonlyMap<string, readonly Commit[]>
+): LandedPr | null {
+  if (chain.empty) return null
+  for (const child of mergeChildrenOf.get(chain.tipHash) ?? []) {
+    const pr = landedPrOf(child)
+    if (pr) return pr
+  }
+  return null
 }
 
 /** Landing commit → the branch tips squash-merged into it, keeping only
@@ -615,7 +657,14 @@ export function layoutGraph(input: GraphInput): GraphLayout {
       end: Math.max(span[id].end + 1, mergeColumn ?? -1),
       capStart: span[id].start,
       capEnd: span[id].end,
-      labelEnd: span[id].start + labelColumns(chain.name) - 1,
+      labelEnd:
+        span[id].start +
+        labelColumns(
+          chain.name,
+          input.reservePrChips === true && canCarryPr(chain.kind),
+          id === headChain
+        ) -
+        1,
       parent: parentChainOf(id) ?? null,
       releaseRank: releaseRank.get(id) ?? null,
       isHead: id === headChain,
@@ -639,7 +688,8 @@ export function layoutGraph(input: GraphInput): GraphLayout {
     color: id === mainChain ? 0 : colorForName(chain.name),
     startColumn: span[id].start,
     endColumn: span[id].end,
-    empty: chain.empty === true
+    empty: chain.empty === true,
+    landedPr: landedPrOfChain(chain, mergeChildrenOf)
   }))
   if (headEmptyChain !== -1) rows[headEmptyChain].isHead = true
 

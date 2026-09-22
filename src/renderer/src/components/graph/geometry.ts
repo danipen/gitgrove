@@ -23,6 +23,32 @@ export const HEADER_H = 26
 /** Branch label pill: height and its gap above the row spine. */
 export const LABEL_H = 18
 export const LABEL_GAP = 4
+/** Label pill: horizontal padding either side of its content. */
+export const LABEL_PAD_X = 8
+/** The current branch's label leads with a square solid CAP carrying the home
+ *  glyph (render.ts drawLabels) — "you are here", the same house the HEAD
+ *  commit wears. */
+export const LABEL_CAP_W = LABEL_H
+/** Below this zoom branch labels aren't drawn (an overview reads by shape,
+ *  not by name) — and so they neither hit-test nor ask the host for PRs. */
+export const LABEL_MIN_SCALE = 0.4
+/** PR chip inside a label pill (render.ts drawPrChip): the air between the
+ *  branch name and the chip, and the chip's own height. The chip nests in the
+ *  pill's right end with the same inset on every side it touches — a pill in
+ *  a pill, not a chip floating in padding. */
+export const PR_CHIP_GAP = 5
+export const PR_CHIP_H = 14
+const PR_CHIP_INSET = (LABEL_H - PR_CHIP_H) / 2
+
+/** A label's content width: the branch name, plus its PR chip when it has
+ *  one (0 = none), plus the current branch's leading cap. The chip replaces
+ *  the pill's right padding with its inset, so labelRect's symmetric padding
+ *  still frames it exactly. */
+export function labelContentWidth(nameWidth: number, chipWidth: number, capped: boolean): number {
+  const cap = capped ? LABEL_CAP_W : 0
+  if (chipWidth <= 0) return cap + nameWidth
+  return cap + nameWidth + PR_CHIP_GAP + chipWidth - (LABEL_PAD_X - PR_CHIP_INSET)
+}
 /** Branch container capsule: horizontal padding past the outer nodes, and
  *  half its height. Shared by the renderer and hit-testing — the capsule is
  *  itself a click target (it IS the branch). */
@@ -170,7 +196,7 @@ export function labelRect(
   textWidth: number,
   leftClampX = Number.NEGATIVE_INFINITY
 ): { x: number; y: number; w: number; h: number } {
-  const w = textWidth + 16
+  const w = textWidth + 2 * LABEL_PAD_X
   const restX = nodeX(row.startColumn) - NODE_R
   const maxX = Math.max(restX, nodeX(row.endColumn) + NODE_R - w)
   return {
@@ -205,9 +231,50 @@ export function revealRowDy(view: View, viewportHeight: number, row: number): nu
   return 0
 }
 
+/** The PR chip's rect inside its label pill: flush with the pill's right
+ *  padding, vertically centered. `chipWidth` is the chip's own width (the
+ *  label's content width already counts it plus PR_CHIP_GAP). */
+export function prChipRect(
+  label: { x: number; y: number; w: number; h: number },
+  chipWidth: number
+): { x: number; y: number; w: number; h: number } {
+  return {
+    x: label.x + label.w - PR_CHIP_INSET - chipWidth,
+    y: label.y + PR_CHIP_INSET,
+    w: chipWidth,
+    h: PR_CHIP_H
+  }
+}
+
+/**
+ * Rows whose label pill is on screen at this view — the branches worth asking
+ * the host about. Mirrors what the renderer draws: nothing below
+ * LABEL_MIN_SCALE, and sticky pills where they ride the left edge.
+ */
+export function rowsWithLabelInView(
+  layout: GraphLayout,
+  view: View,
+  viewportWidth: number,
+  viewportHeight: number,
+  labelWidth: (row: GraphRow) => number
+): GraphRow[] {
+  if (view.scale < LABEL_MIN_SCALE) return []
+  const x0 = toWorldX(view, 0)
+  const x1 = toWorldX(view, viewportWidth)
+  const y0 = toWorldY(view, HEADER_H)
+  const y1 = toWorldY(view, viewportHeight)
+  const leftClamp = toWorldX(view, 8)
+  return layout.rows.filter((row) => {
+    const rect = labelRect(row, labelWidth(row), leftClamp)
+    return rect.x < x1 && rect.x + rect.w > x0 && rect.y < y1 && rect.y + rect.h > y0
+  })
+}
+
 export type GraphHit =
   | { type: 'node'; node: GraphNode }
   | { type: 'label'; row: GraphRow }
+  /** The PR chip inside a branch label — opens the row's pull request. */
+  | { type: 'pr'; row: GraphRow }
   /** The branch container capsule — selects the branch, like its label. */
   | { type: 'row'; row: GraphRow }
   | { type: 'wip' }
@@ -235,7 +302,9 @@ export function hitTest(
   drawnCaptionWidth?: (node: GraphNode) => number | undefined,
   /** The view's zoom — captions anchor a screen-fixed gap below the capsule,
    *  so their world-space hit band depends on it (captionCenterOffset). */
-  scale = 1
+  scale = 1,
+  /** A label's PR chip width (0 = no chip) — the chip is its own target. */
+  prChipWidth: (row: GraphRow) => number = () => 0
 ): GraphHit | null {
   const slop = 4
   const row = Math.floor((wy - MARGIN_Y) / ROW_H)
@@ -255,7 +324,11 @@ export function hitTest(
   for (const r of layout.rows) {
     const rect = labelRect(r, labelWidth(r), labelLeftClampX)
     if (wx >= rect.x && wx <= rect.x + rect.w && wy >= rect.y && wy <= rect.y + rect.h) {
-      return { type: 'label', row: r }
+      // The chip claims its half of the gap to the name, so no dead strip
+      // between the two targets.
+      const chipWidth = prChipWidth(r)
+      const onChip = chipWidth > 0 && wx >= prChipRect(rect, chipWidth).x - PR_CHIP_GAP / 2
+      return { type: onChip ? 'pr' : 'label', row: r }
     }
   }
   // A node's caption acts as the node: hovering it expands the message,

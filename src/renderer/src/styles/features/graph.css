@@ -510,6 +510,14 @@
 .graph-detail__squash-branch:hover {
   text-decoration: underline;
 }
+/* The selection's pull requests (GraphDetailPane PrList): the PR hovercard's
+   link rows (.pr-card__row, primitives.css), pulled flush with the pane's text
+   column — the row's own padding is its hover chip, not an indent. */
+.graph-detail__prs {
+  display: flex;
+  flex-direction: column;
+  margin: 6px -6px 0;
+}
 /* Shared commit widgets (history/CommitSummary.tsx): History indents body
    and refs under its 34px avatar column; the sidebar head has no such column,
    so they span the pane's full width. graph.css loads after history.css, so
