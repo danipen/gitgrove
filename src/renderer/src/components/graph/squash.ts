@@ -3,11 +3,12 @@
 // question main/git/read/squash-landings.ts answers with patch-ids. Pure and
 // window-scoped: everything is derived from the loaded commits, so the main
 // process never spawns git per branch. useSquashLandings feeds the answer to
-// the layout, which then draws those branches as merged (a dashed merge
-// connector into the landing commit — see layout.ts).
+// the layout, which then draws those branches as merged (a merge connector
+// into the landing commit — see layout.ts).
 
 import type { Commit, SquashCandidate } from '@shared/types'
 import { parseRefs } from '@/lib/format'
+import type { GraphLayout, GraphRow } from './layout'
 
 export interface SquashQuery {
   /** The default branch's first-parent chain in the window, newest first. */
@@ -106,4 +107,24 @@ export function squashQuery(
     if (base) candidates.push({ tip: commit.hash, base })
   }
   return candidates.length > 0 ? { mainline, candidates } : null
+}
+
+/**
+ * Landing commit → the branches squashed into it, as laid out. The diagram
+ * draws a squash exactly like a merge, so this is where the missing ancestry
+ * gets named: the landing commit's detail pane says "Squash of …".
+ */
+export function squashedBranchesByLanding(layout: GraphLayout): Map<string, GraphRow[]> {
+  const rowOfChain = new Map(layout.rows.map((row) => [row.chain, row]))
+  const byLanding = new Map<string, GraphRow[]>()
+  for (const edge of layout.edges) {
+    if (edge.kind !== 'squash') continue
+    const chain = layout.nodeByHash.get(edge.toHash)?.chain
+    const row = chain === undefined ? undefined : rowOfChain.get(chain)
+    if (!row) continue
+    const rows = byLanding.get(edge.fromHash) ?? []
+    rows.push(row)
+    byLanding.set(edge.fromHash, rows)
+  }
+  return byLanding
 }

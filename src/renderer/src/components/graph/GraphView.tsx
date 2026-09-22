@@ -25,6 +25,7 @@ import { linkableChains, twinHashes } from './links'
 import { relatedBranches } from './related'
 import { releaseLineVersion, releaseVersionWithOverride } from './releases'
 import { computeSearchHits } from './searchGlow'
+import { squashedBranchesByLanding } from './squash'
 import { useBackportLinks } from './useBackportLinks'
 import { useGraphLog } from './useGraphLog'
 import { useSquashLandings } from './useSquashLandings'
@@ -53,6 +54,9 @@ interface Props {
   onBranchAction: (action: BranchAction, name: string) => void
   /** WIP node clicked — take the user to their uncommitted changes. */
   onOpenChanges: () => void
+  /** Landing commit → branches squashed into it, re-reported per layout —
+   *  what the detail pane's "Squash of …" names. */
+  onSquashedBranchesChange: (byLanding: ReadonlyMap<string, GraphRow[]>) => void
   onError: (e: unknown) => void
 }
 
@@ -72,6 +76,7 @@ export function GraphView({
   onCheckoutBranch,
   onBranchAction,
   onOpenChanges,
+  onSquashedBranchesChange,
   onError
 }: Props) {
   const [branchFilter, setBranchFilter] = useState<Set<string> | null>(null)
@@ -153,6 +158,10 @@ export function GraphView({
     return linkableChains(layout.rows, input.defaultBranch, releaseOverrides)
   }, [hideTwins, layout, input, releaseOverrides])
   const links = useBackportLinks(repoPath, layout, linkable)
+  useEffect(
+    () => onSquashedBranchesChange(squashedBranchesByLanding(layout)),
+    [layout, onSquashedBranchesChange]
+  )
 
   const authors = useMemo((): AuthorOption[] => {
     const byEmail = new Map<string, AuthorOption>()

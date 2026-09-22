@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Commit } from '@shared/types'
-import { squashQuery } from './squash'
+import { layoutGraph } from './layout'
+import { squashedBranchesByLanding, squashQuery } from './squash'
 
 /** Minimal commit; only hash/parents/refs matter here. */
 function commit(hash: string, parents: string[], refs = ''): Commit {
@@ -100,5 +101,34 @@ describe('squashQuery', () => {
     const commits = [commit('f1', ['a'], 'feature'), commit('a', [])]
     expect(squashQuery(commits, ['origin'], null)).toBeNull()
     expect(squashQuery(commits, ['origin'], 'main')).toBeNull()
+  })
+})
+
+describe('squashedBranchesByLanding', () => {
+  const commits = [
+    commit('s', ['b'], 'HEAD -> main'),
+    commit('f2', ['f1'], 'feature'),
+    commit('f1', ['a']),
+    commit('b', ['a']),
+    commit('a', [])
+  ]
+  const layout = (squashLandings: Map<string, string>) =>
+    layoutGraph({
+      commits,
+      remotes: ['origin'],
+      headBranch: 'main',
+      detached: false,
+      defaultBranch: 'main',
+      squashLandings
+    })
+
+  test('names the branch squashed into each landing commit', () => {
+    const byLanding = squashedBranchesByLanding(layout(new Map([['f2', 's']])))
+    expect([...byLanding.keys()]).toEqual(['s'])
+    expect(byLanding.get('s')?.map((row) => row.name)).toEqual(['feature'])
+  })
+
+  test('is empty when nothing landed by squash', () => {
+    expect(squashedBranchesByLanding(layout(new Map())).size).toBe(0)
   })
 })

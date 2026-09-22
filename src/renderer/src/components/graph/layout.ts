@@ -110,8 +110,9 @@ export interface GraphNode {
 }
 
 /** `squash`: a branch that landed on the mainline as a new commit (squash or
- *  rebase merge — see GraphInput.squashLandings). Routed like a merge, drawn
- *  dashed: merged by content, not by ancestry. */
+ *  rebase merge — see GraphInput.squashLandings). Drawn exactly like a merge
+ *  (the branch IS merged); kept distinct so the detail pane can say "Squash
+ *  of …" — the one place the missing ancestry is worth naming. */
 export type GraphEdgeKind = 'line' | 'merge' | 'fork' | 'squash'
 
 /** An edge from a child commit to one of its parents (newer → older). */
@@ -182,7 +183,7 @@ export interface GraphInput {
    * Branch tip → the mainline commit it landed as, for branches merged by
    * squash or rebase (no merge commit, so ancestry alone reads them as never
    * merged — see squash.ts). Such a tip counts as merged everywhere a merge
-   * source does, and gets a dashed `squash` edge into its landing commit.
+   * source does, and gets a `squash` edge into its landing commit.
    */
   squashLandings?: ReadonlyMap<string, string> | null
 }
