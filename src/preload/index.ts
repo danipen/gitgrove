@@ -108,6 +108,7 @@ const api: GitGroveApi = {
   openMergeTool: (repoPath, path) => ipcRenderer.invoke(IPC.openMergeTool, repoPath, path),
   mergeToolName: (repoPath) => ipcRenderer.invoke(IPC.mergeToolName, repoPath),
   openFileInEditor: (repoPath, path) => ipcRenderer.invoke(IPC.openFileInEditor, repoPath, path),
+  revealFile: (repoPath, path) => ipcRenderer.invoke(IPC.revealFile, repoPath, path),
   stashList: (repoPath) => ipcRenderer.invoke(IPC.stashList, repoPath),
   stashFiles: (repoPath, sha) => ipcRenderer.invoke(IPC.stashFiles, repoPath, sha),
   stashSave: (repoPath, opts) => ipcRenderer.invoke(IPC.stashSave, repoPath, opts),

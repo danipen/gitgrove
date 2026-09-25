@@ -67,4 +67,9 @@ export function registerIntegrationHandlers(): void {
   ipcMain.handle(IPC.openFileInEditor, (_e, repoPath: string, path: string) =>
     shell.openPath(join(repoPath, path)).then(() => undefined)
   )
+  // `join` also turns git's POSIX-relative path into native separators, which
+  // Explorer needs to select the item on Windows.
+  ipcMain.handle(IPC.revealFile, (_e, repoPath: string, path: string) =>
+    shell.showItemInFolder(join(repoPath, path))
+  )
 }
