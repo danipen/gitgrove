@@ -123,7 +123,11 @@ function scoreWindow(
 }
 
 /** Fuzzy-match free text (commands, branch names, …). */
-export function fuzzyMatch(query: string, text: string, folded = foldCase(text)): FuzzyMatch | null {
+export function fuzzyMatch(
+  query: string,
+  text: string,
+  folded = foldCase(text)
+): FuzzyMatch | null {
   const positions: number[] = []
   const score = scoreWindow(query, text, folded, positions)
   return score === null ? null : { score, positions }
@@ -157,7 +161,11 @@ export function fuzzyMatchPath(
 }
 
 /** Score-only {@link fuzzyMatchPath}. */
-export function fuzzyScorePath(query: string, path: string, folded = foldCase(path)): number | null {
+export function fuzzyScorePath(
+  query: string,
+  path: string,
+  folded = foldCase(path)
+): number | null {
   const base = path.lastIndexOf('/') + 1
   if (base > 0) {
     const score = scoreWindow(query, path.slice(base), folded.slice(base), null)

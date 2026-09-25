@@ -1,4 +1,5 @@
-import { type GitGroveApi, IPC, type MenuCommand } from '@shared/ipc'
+import type { AppCommandId } from '@shared/commands'
+import { type GitGroveApi, IPC } from '@shared/ipc'
 import type {
   AiChunk,
   ChangedFile,
@@ -40,6 +41,9 @@ const api: GitGroveApi = {
   graphSquashLandings: (repoPath, mainline, candidates) =>
     ipcRenderer.invoke(IPC.graphSquashLandings, repoPath, mainline, candidates),
   commitIndex: (repoPath, hash) => ipcRenderer.invoke(IPC.commitIndex, repoPath, hash),
+  refs: (repoPath) => ipcRenderer.invoke(IPC.refs, repoPath),
+  searchFiles: (repoPath, query, limit) =>
+    ipcRenderer.invoke(IPC.searchFiles, repoPath, query, limit),
   fileHistory: (repoPath, path, ref) => ipcRenderer.invoke(IPC.fileHistory, repoPath, path, ref),
   blame: (repoPath, path, ref) => ipcRenderer.invoke(IPC.blame, repoPath, path, ref),
   commitFiles: (repoPath, hash) => ipcRenderer.invoke(IPC.commitFiles, repoPath, hash),
@@ -163,18 +167,8 @@ const api: GitGroveApi = {
     ipcRenderer.on(IPC.openRepoRequest, listener)
     return () => ipcRenderer.removeListener(IPC.openRepoRequest, listener)
   },
-  onMenuOpenRepo: (handler) => {
-    const listener = () => handler()
-    ipcRenderer.on(IPC.menuOpenRepo, listener)
-    return () => ipcRenderer.removeListener(IPC.menuOpenRepo, listener)
-  },
-  onShowAbout: (handler) => {
-    const listener = () => handler()
-    ipcRenderer.on(IPC.menuShowAbout, listener)
-    return () => ipcRenderer.removeListener(IPC.menuShowAbout, listener)
-  },
   onMenuCommand: (handler) => {
-    const listener = (_e: unknown, command: MenuCommand) => handler(command)
+    const listener = (_e: unknown, command: AppCommandId) => handler(command)
     ipcRenderer.on(IPC.menuCommand, listener)
     return () => ipcRenderer.removeListener(IPC.menuCommand, listener)
   },

@@ -61,6 +61,7 @@ import { usePersistentState } from './lib/persist'
 import type { BranchPrs } from './lib/pr-order'
 import { createRepoGeneration } from './lib/repoGeneration'
 import { useTheme } from './lib/theme'
+import { type AppTab, useAppCommands } from './lib/useAppCommands'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
@@ -71,7 +72,7 @@ import { usePullRequests } from './lib/usePullRequests'
 import { type MissingRepoInfo, useRepoRecovery } from './lib/useRepoRecovery'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
-type Tab = 'changes' | 'history' | 'graph'
+type Tab = AppTab
 
 /** Stable stand-in while sync status hasn't loaded: a fresh `[]` per render
  *  would re-run the Graph layout every render, and the layout's report-up
@@ -1227,22 +1228,31 @@ export function App() {
     [loadLog, fail, markLogStale]
   )
 
-  // ── OS integration: menu commands + filesystem change notifications ────────
-  // Native menu commands, the watcher refresh, the focus refresh and the quiet
-  // background fetch — see useOsIntegration.
-  useOsIntegration({
+  // ── Named commands + OS integration ───────────────────────────────────────
+  // The one dispatcher behind the native menu and the command palette — see
+  // useAppCommands.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const { runCommand, availableCommands } = useAppCommands({
     repo,
-    repoRef,
-    busyRef,
-    syncRef,
-    refreshRef,
-    doUndoRef,
-    runOpRef,
+    sync,
+    undo,
+    opInFlight: !!repoState?.op,
     pickRepo,
     doSync,
+    doUndo,
+    runOp,
     reloadBranches,
-    openModal: setModal
+    openModal: setModal,
+    switchTab,
+    setThemePref,
+    openAbout: () => setAboutOpen(true),
+    toggleSearch: () => setSearchOpen((open) => !open),
+    fail
   })
+
+  // The watcher refresh, the focus refresh, the quiet background fetch and the
+  // menu subscription — see useOsIntegration.
+  useOsIntegration({ repo, repoRef, busyRef, syncRef, refreshRef, runCommand })
 
   // ── About dialog + auto-update ─────────────────────────────────────────────
   useEffect(() => {
@@ -1251,8 +1261,6 @@ export function App() {
       .then(setAppInfo)
       .catch(() => {})
   }, [])
-
-  useEffect(() => window.gitgrove.onShowAbout(() => setAboutOpen(true)), [])
 
   // Window title = the open repo, so multiple GitGrove windows stay tellable
   // apart in the Window menu, Alt-Tab/Mission Control and the taskbar. (The
