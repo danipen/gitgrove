@@ -2,21 +2,19 @@
 // actions are disabled until one is open). On Windows/Linux the renderer's
 // custom menu bar pops these same native submenus, so every action and role
 // here works without being reimplemented in the UI.
+//
+// App actions come from the shared command registry (shared/commands.ts) — the
+// same list the command palette searches — so the two surfaces can never
+// disagree on a label or a shortcut. Clicking one just sends its id to the
+// focused window's renderer, which runs it.
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
-import { IPC, type MenuCommand } from '@shared/ipc'
-import {
-  app,
-  type BrowserWindow,
-  clipboard,
-  Menu,
-  type MenuItemConstructorOptions,
-  shell
-} from 'electron'
+import { type AppCommandId, appCommand, commandTitle } from '@shared/commands'
+import { IPC } from '@shared/ipc'
+import { app, type BrowserWindow, Menu, type MenuItemConstructorOptions, shell } from 'electron'
 import { REPO_URL } from './app-info'
-import { getRemoteWebUrl } from './git/read'
 
 /**
  * What the menu needs from the app. GitGrove is multi-window: `getWindow` is
@@ -36,9 +34,23 @@ export interface MenuContext {
 export function buildMenu(ctx: MenuContext): void {
   const { getWindow, getRepoPath } = ctx
   const repoPath = getRepoPath()
-  const send = (channel: string, ...args: unknown[]) =>
-    getWindow()?.webContents.send(channel, ...args)
-  const sendCommand = (command: MenuCommand) => send(IPC.menuCommand, command)
+  const sendCommand = (id: AppCommandId) => getWindow()?.webContents.send(IPC.menuCommand, id)
+
+  /** A registry command as a menu item: its title, shortcut and repo gate. */
+  const commandItem = (id: AppCommandId): MenuItemConstructorOptions => {
+    const command = appCommand(id)
+    return {
+      label: commandTitle(id, process.platform),
+      accelerator: command.accelerator,
+      enabled: !command.needsRepo || !!repoPath,
+      click: () => sendCommand(id)
+    }
+  }
+  const checkForUpdatesItem: MenuItemConstructorOptions = {
+    label: commandTitle('check-updates', process.platform),
+    // Runs in main: it must work even with no window to send a command to.
+    click: () => ctx.checkForUpdates()
+  }
 
   const isMac = process.platform === 'darwin'
   const template: MenuItemConstructorOptions[] = [
@@ -47,20 +59,10 @@ export function buildMenu(ctx: MenuContext): void {
           {
             label: app.name,
             submenu: [
-              {
-                label: `About ${app.name}`,
-                click: () => send(IPC.menuShowAbout)
-              },
-              {
-                label: 'Check for Updates…',
-                click: () => ctx.checkForUpdates()
-              },
+              commandItem('about'),
+              checkForUpdatesItem,
               { type: 'separator' as const },
-              {
-                label: 'Settings…',
-                accelerator: 'CmdOrCtrl+,',
-                click: () => sendCommand('settings')
-              },
+              commandItem('settings'),
               { type: 'separator' as const },
               { role: 'hide' as const },
               { role: 'hideOthers' as const },
@@ -83,28 +85,11 @@ export function buildMenu(ctx: MenuContext): void {
           click: () => ctx.newWindow()
         },
         { type: 'separator' },
-        {
-          label: 'Open Repository…',
-          accelerator: 'CmdOrCtrl+O',
-          click: () => send(IPC.menuOpenRepo)
-        },
-        {
-          label: 'Clone Repository…',
-          accelerator: 'CmdOrCtrl+Shift+O',
-          click: () => sendCommand('clone')
-        },
+        commandItem('open-repo'),
+        commandItem('clone'),
         { type: 'separator' },
         // macOS hosts this in the app menu (the conventional settings slot).
-        ...(isMac
-          ? []
-          : [
-              {
-                label: 'Settings…',
-                accelerator: 'CmdOrCtrl+,',
-                click: () => sendCommand('settings')
-              } as MenuItemConstructorOptions,
-              { type: 'separator' as const }
-            ]),
+        ...(isMac ? [] : [commandItem('settings'), { type: 'separator' as const }]),
         isMac ? { role: 'close' } : { role: 'quit' }
       ]
     },
@@ -113,97 +98,33 @@ export function buildMenu(ctx: MenuContext): void {
       // open in the renderer; disabled until one is.
       label: 'Repository',
       submenu: [
-        {
-          label: 'Fetch',
-          accelerator: 'CmdOrCtrl+Shift+F',
-          enabled: !!repoPath,
-          click: () => sendCommand('fetch')
-        },
-        {
-          label: 'Pull',
-          accelerator: 'CmdOrCtrl+Shift+P',
-          enabled: !!repoPath,
-          click: () => sendCommand('pull')
-        },
-        {
-          label: 'Push',
-          accelerator: 'CmdOrCtrl+P',
-          enabled: !!repoPath,
-          click: () => sendCommand('push')
-        },
+        commandItem('fetch'),
+        commandItem('pull'),
+        commandItem('push'),
         { type: 'separator' },
-        {
-          label: 'New Branch…',
-          accelerator: 'CmdOrCtrl+Shift+N',
-          enabled: !!repoPath,
-          click: () => sendCommand('new-branch')
-        },
-        {
-          label: 'Stash All Changes…',
-          enabled: !!repoPath,
-          click: () => sendCommand('stash')
-        },
+        commandItem('new-branch'),
+        commandItem('stash'),
         { type: 'separator' },
-        // No accelerator: a global Cmd/Ctrl+Z here would hijack text undo in
-        // the commit composer. The Changes banner is the primary affordance.
-        {
-          label: 'Undo Last Action',
-          enabled: !!repoPath,
-          click: () => sendCommand('undo')
-        },
+        commandItem('undo'),
         { type: 'separator' },
-        {
-          label: 'Speed Up Large Repository',
-          enabled: !!repoPath,
-          click: () => sendCommand('optimize')
-        },
+        commandItem('optimize'),
         { type: 'separator' },
-        {
-          label: 'Worktrees…',
-          enabled: !!repoPath,
-          click: () => sendCommand('worktrees')
-        },
-        {
-          label: 'Submodules…',
-          enabled: !!repoPath,
-          click: () => sendCommand('submodules')
-        },
+        commandItem('worktrees'),
+        commandItem('submodules'),
         { type: 'separator' },
-        {
-          label: isMac
-            ? 'Reveal in Finder'
-            : process.platform === 'win32'
-              ? 'Show in Explorer'
-              : 'Open Folder',
-          enabled: !!repoPath,
-          click: () => repoPath && shell.openPath(repoPath)
-        },
-        {
-          label: 'Open in Terminal',
-          enabled: !!repoPath,
-          click: () => repoPath && openTerminal(repoPath)
-        },
+        commandItem('reveal-repo'),
+        commandItem('open-terminal'),
         { type: 'separator' },
-        {
-          label: 'Copy Repository Path',
-          enabled: !!repoPath,
-          click: () => repoPath && clipboard.writeText(repoPath)
-        },
-        {
-          label: 'View on Remote',
-          enabled: !!repoPath,
-          click: async () => {
-            if (!repoPath) return
-            const url = await getRemoteWebUrl(repoPath)
-            if (url) shell.openExternal(url)
-          }
-        }
+        commandItem('copy-repo-path'),
+        commandItem('view-on-remote')
       ]
     },
     { role: 'editMenu' },
     {
       label: 'View',
       submenu: [
+        commandItem('search-everything'),
+        { type: 'separator' },
         { role: 'reload' },
         { role: 'forceReload' },
         { role: 'toggleDevTools' },
@@ -229,17 +150,7 @@ export function buildMenu(ctx: MenuContext): void {
         },
         ...(isMac
           ? []
-          : [
-              { type: 'separator' as const },
-              {
-                label: 'Check for Updates…',
-                click: () => ctx.checkForUpdates()
-              },
-              {
-                label: `About ${app.name}`,
-                click: () => send(IPC.menuShowAbout)
-              }
-            ])
+          : [{ type: 'separator' as const }, checkForUpdatesItem, commandItem('about')])
       ]
     }
   ]

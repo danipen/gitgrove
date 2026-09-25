@@ -401,6 +401,33 @@ export interface BranchInfo {
   recent: string[]
 }
 
+/** A branch or tag, as the command palette lists it. */
+export interface RefEntry {
+  kind: 'local' | 'remote' | 'tag'
+  /** Short name: `main`, `origin/main`, `v1.2.0`. */
+  name: string
+  /** The commit it points at (annotated tags peeled to their commit). */
+  hash: string
+  /** Unix seconds: a branch's last commit, an annotated tag's tagging time. */
+  date: number
+}
+
+/** One tracked file matching a command-palette query. */
+export interface FileSearchMatch {
+  /** Repo-relative, `/`-separated (as git reports it on every platform). */
+  path: string
+  score: number
+  /** Indexes into `path` of the matched characters, for highlighting. */
+  positions: number[]
+}
+
+export interface FileSearchResult {
+  /** The best matches, best first. */
+  matches: FileSearchMatch[]
+  /** How many tracked files matched in all (≥ matches.length). */
+  total: number
+}
+
 export interface RepoInfo {
   path: string
   name: string

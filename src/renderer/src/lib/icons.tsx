@@ -183,6 +183,14 @@ export const Icon = {
       <path d="m21 21-4.3-4.3" />
     </Svg>
   ),
+  /** Horizontal ellipsis — a row's "more actions" trigger. */
+  More: (p: IconProps) => (
+    <Svg {...p}>
+      <circle cx="5.5" cy="12" r="1.1" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.1" fill="currentColor" />
+      <circle cx="18.5" cy="12" r="1.1" fill="currentColor" />
+    </Svg>
+  ),
   Check: (p: IconProps) => (
     <Svg {...p}>
       <path d="m5 12 5 5L20 6" />

@@ -35,6 +35,7 @@ import { ChangesView } from './components/changes/ChangesView'
 import type { ComposerDraft } from './components/changes/CommitComposer'
 import { ConflictPanel } from './components/changes/ConflictPanel'
 import { useCommitSelections } from './components/changes/useCommitSelections'
+import type { BranchAction } from './components/common/branchMenuItems'
 import type { ContextMenuItem } from './components/common/ContextMenu'
 import { type DiffMode, DiffViewer } from './components/common/DiffViewer'
 import { Resizer } from './components/common/Resizer'
@@ -43,6 +44,7 @@ import { TooltipLayer } from './components/common/TooltipLayer'
 import { GraphDetailPane } from './components/graph/GraphDetailPane'
 import { GraphView } from './components/graph/GraphView'
 import { branchKey, type GraphRow } from './components/graph/layout'
+import type { GraphRevealRequest, GraphRevealTarget } from './components/graph/reveal'
 import { useBranchRange } from './components/graph/useBranchRange'
 import { CommitSummary } from './components/history/CommitSummary'
 import { commitMenuItems } from './components/history/commitMenuItems'
@@ -50,8 +52,8 @@ import { FileHistoryOverlay, type FileHistoryTarget } from './components/history
 import { HistoryView } from './components/history/HistoryView'
 import { useCommitDetail } from './components/history/useCommitDetail'
 import { useCommitLog } from './components/history/useCommitLog'
+import { SearchPalette } from './components/palette/SearchPalette'
 import { SettingsDialog } from './components/settings/SettingsDialog'
-import type { BranchAction } from './components/toolbar/BranchSwitcher'
 import { Toolbar } from './components/toolbar/Toolbar'
 import { useSyncActions } from './components/toolbar/useSyncActions'
 import { buildCommitSelection, buildStashSelection } from './lib/commit-selection'
@@ -61,6 +63,7 @@ import { usePersistentState } from './lib/persist'
 import type { BranchPrs } from './lib/pr-order'
 import { createRepoGeneration } from './lib/repoGeneration'
 import { useTheme } from './lib/theme'
+import { type AppTab, useAppCommands } from './lib/useAppCommands'
 import { useCredentialPrompts } from './lib/useCredentialPrompts'
 import { useDiffLoader } from './lib/useDiffLoader'
 import { useGitAvailability } from './lib/useGitAvailability'
@@ -71,7 +74,7 @@ import { usePullRequests } from './lib/usePullRequests'
 import { type MissingRepoInfo, useRepoRecovery } from './lib/useRepoRecovery'
 import { useUpdateBanner } from './lib/useUpdateBanner'
 
-type Tab = 'changes' | 'history' | 'graph'
+type Tab = AppTab
 
 /** Stable stand-in while sync status hasn't loaded: a fresh `[]` per render
  *  would re-run the Graph layout every render, and the layout's report-up
@@ -541,6 +544,49 @@ export function App() {
       clearDiff,
       fail
     ]
+  )
+
+  // ── Reveal from the command palette ────────────────────────────────────────
+  // A branch or tag asked for from the palette is shown in the Graph: switch
+  // there and hand GraphView the target; it selects and frames it once loaded
+  // (see its revealRequest). The nonce makes revealing the same thing twice fire.
+  const [graphReveal, setGraphReveal] = useState<GraphRevealRequest | null>(null)
+  const revealNonce = useRef(0)
+  const revealInGraph = useCallback(
+    (target: GraphRevealTarget) => {
+      setFileHistory(null)
+      switchTab('graph')
+      setGraphReveal({ target, nonce: ++revealNonce.current })
+    },
+    [switchTab]
+  )
+
+  /** The Graph couldn't show the target: a commit falls back to History (which
+   *  pages as deep as it takes); a branch gets an explanation. */
+  const onGraphRevealMissed = useCallback(
+    ({ target }: GraphRevealRequest) => {
+      if (target.kind === 'commit') revealCommit(target.hash)
+      else
+        setNotice(
+          `${target.name} isn’t in the graph’s current view — the view options may hide it, ` +
+            'or it’s older than the history loaded.'
+        )
+    },
+    [revealCommit]
+  )
+
+  /** A file from the palette: its pending change in Changes, else its history. */
+  const openPaletteFile = useCallback(
+    (path: string, change: ChangedFile | null) => {
+      setFileHistory(null)
+      if (!change) {
+        openFileHistory(path, 'diff', null)
+        return
+      }
+      setTab('changes')
+      selectWorkingFile(path, undefined, { force: true })
+    },
+    [openFileHistory, selectWorkingFile]
   )
 
   // ── Refresh: pulls every panel up to date (watcher + post-op) ─────────────
@@ -1227,22 +1273,31 @@ export function App() {
     [loadLog, fail, markLogStale]
   )
 
-  // ── OS integration: menu commands + filesystem change notifications ────────
-  // Native menu commands, the watcher refresh, the focus refresh and the quiet
-  // background fetch — see useOsIntegration.
-  useOsIntegration({
+  // ── Named commands + OS integration ───────────────────────────────────────
+  // The one dispatcher behind the native menu and the command palette — see
+  // useAppCommands.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const { runCommand, availableCommands } = useAppCommands({
     repo,
-    repoRef,
-    busyRef,
-    syncRef,
-    refreshRef,
-    doUndoRef,
-    runOpRef,
+    sync,
+    undo,
+    opInFlight: !!repoState?.op,
     pickRepo,
     doSync,
+    doUndo,
+    runOp,
     reloadBranches,
-    openModal: setModal
+    openModal: setModal,
+    switchTab,
+    setThemePref,
+    openAbout: () => setAboutOpen(true),
+    toggleSearch: () => setSearchOpen((open) => !open),
+    fail
   })
+
+  // The watcher refresh, the focus refresh, the quiet background fetch and the
+  // menu subscription — see useOsIntegration.
+  useOsIntegration({ repo, repoRef, busyRef, syncRef, refreshRef, runCommand })
 
   // ── About dialog + auto-update ─────────────────────────────────────────────
   useEffect(() => {
@@ -1251,8 +1306,6 @@ export function App() {
       .then(setAppInfo)
       .catch(() => {})
   }, [])
-
-  useEffect(() => window.gitgrove.onShowAbout(() => setAboutOpen(true)), [])
 
   // Window title = the open repo, so multiple GitGrove windows stay tellable
   // apart in the Window menu, Alt-Tab/Mission Control and the taskbar. (The
@@ -1420,6 +1473,32 @@ export function App() {
         />
       )}
       {modals}
+      <SearchPalette
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        commands={availableCommands}
+        repoPath={repoPath ?? null}
+        currentBranch={branch && !branch.detached ? branch.current : null}
+        changes={changes}
+        stashes={stashes}
+        githubWebUrl={githubWebUrl}
+        prByBranch={prByBranch}
+        theme={theme}
+        actions={{
+          repoPath: repoPath ?? null,
+          runCommand,
+          revealInGraph,
+          revealCommit: (commit) => revealCommit(commit.hash),
+          openFile: openPaletteFile,
+          openFileHistory: (path, mode) => openFileHistory(path, mode, null),
+          openRepo: openRepoByPath,
+          checkout,
+          branchAction: onBranchAction,
+          openModal: setModal,
+          commitMenuFor,
+          runOp
+        }}
+      />
     </>
   )
 
@@ -1445,6 +1524,7 @@ export function App() {
           onRefresh={refresh}
           onThemeChange={setThemePref}
           onAbout={() => setAboutOpen(true)}
+          onSearch={() => setSearchOpen(true)}
         />
         <div className="app__body">
           {git === null ? (
@@ -1505,6 +1585,7 @@ export function App() {
         onRefresh={refresh}
         onThemeChange={setThemePref}
         onAbout={() => setAboutOpen(true)}
+        onSearch={() => setSearchOpen(true)}
       />
       <div
         className="app__body"
@@ -1670,6 +1751,8 @@ export function App() {
               onCheckoutBranch={checkout}
               onBranchAction={onBranchAction}
               onOpenChanges={() => switchTab('changes')}
+              revealRequest={graphReveal}
+              onRevealMissed={onGraphRevealMissed}
               onError={fail}
             />
             {tab === 'graph' && (selectedCommit || branchRange) && (

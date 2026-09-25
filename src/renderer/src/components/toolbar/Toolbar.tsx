@@ -1,15 +1,19 @@
 import type { BranchInfo, RepoSummary, SyncStatus } from '@shared/types'
 import { useState } from 'react'
+import type { BranchAction } from '@/components/common/branchMenuItems'
+import { Shortcut } from '@/components/common/Shortcut'
 import { Icon } from '@/lib/icons'
 import { isMac } from '@/lib/platform'
 import type { BranchPrs } from '@/lib/pr-order'
 import type { ResolvedTheme, ThemePref } from '@/lib/theme'
-import { type BranchAction, BranchSwitcher } from './BranchSwitcher'
+import { BranchSwitcher } from './BranchSwitcher'
 import { MenuBar } from './MenuBar'
 import { RepoSwitcher } from './RepoSwitcher'
 import { type SyncAction, SyncButton } from './SyncButton'
 import { ThemeSwitcher } from './ThemeSwitcher'
 import { WindowControls } from './WindowControls'
+
+// styles: styles/features/toolbar.css
 
 interface Props {
   repo: RepoSummary | null
@@ -44,6 +48,8 @@ interface Props {
   onRefresh: () => void
   onThemeChange: (pref: ThemePref) => void
   onAbout: () => void
+  /** Open the command palette (also Cmd/Ctrl+K, from the menu). */
+  onSearch: () => void
 }
 
 // Persist whether the (Windows/Linux) menu bar is expanded, mirroring how the
@@ -81,7 +87,8 @@ export function Toolbar({
   onCheckout,
   onRefresh,
   onThemeChange,
-  onAbout
+  onAbout,
+  onSearch
 }: Props) {
   const [menuExpanded, setMenuExpanded] = useState(readMenuExpanded)
 
@@ -146,6 +153,16 @@ export function Toolbar({
         />
       )}
       <div className="toolbar__spacer" />
+      <button
+        type="button"
+        className="toolbar__search"
+        data-tip="Search commands, branches, files and more"
+        onClick={onSearch}
+      >
+        <Icon.Search size={14} />
+        <span className="toolbar__search-label">Search everything</span>
+        <Shortcut accelerator="CmdOrCtrl+K" />
+      </button>
       {repo && (
         <button
           className={`toolbar__refresh${refreshing ? ' is-spinning' : ''}`}

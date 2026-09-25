@@ -1,8 +1,16 @@
-import { branchUrl, headPullRequestsUrl } from '@shared/git-host-urls'
 import type { BranchInfo, PullRequestInfo } from '@shared/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  type BranchAction,
+  type BranchMenuActions,
+  type BranchMenuContext,
+  branchGithubItems,
+  localBranchMenuItems,
+  remoteBranchMenuItems,
+  remoteHeadRef
+} from '@/components/common/branchMenuItems'
 import { ClearButton } from '@/components/common/ClearButton'
-import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
+import { ContextMenu } from '@/components/common/ContextMenu'
 import { Popover } from '@/components/common/Popover'
 import { PrGlyph, PrHoverCard } from '@/components/common/PrHoverCard'
 import { useVirtualScroll, VScrollbar } from '@/components/common/VirtualScroll'
@@ -11,9 +19,6 @@ import { highlightMatch } from '@/lib/highlight'
 import { Icon } from '@/lib/icons'
 import { type BranchPrs, hasMultiplePrs } from '@/lib/pr-order'
 import { useListKeyNav } from '@/lib/useListKeyNav'
-
-/** Branch operations surfaced from the switcher (beyond plain checkout). */
-export type BranchAction = 'new' | 'merge' | 'rename' | 'delete'
 
 /** The `#123` pill marking a branch's most important PR: a state glyph + the
  *  number, tinted for merged (purple) / closed (red). One badge per branch; when
@@ -144,7 +149,7 @@ interface Props {
 /** A row's head-ref name for PR matching. A local row already is it; a remote
  *  row like `origin/foo` maps to `foo` — a remote branch is exactly what a PR's
  *  head ref names, so it's matched and fetched under the bare name. */
-const headRef = (name: string, local: boolean) => (local ? name : name.slice(name.indexOf('/') + 1))
+const headRef = (name: string, local: boolean) => (local ? name : remoteHeadRef(name))
 
 /** Fixed row height used by the virtualizer (must match the inline row height below). */
 const ROW_H = 32
@@ -267,114 +272,20 @@ export function BranchSwitcher({
     return () => clearTimeout(timer)
   }, [open, visibleBranches])
 
-  // A local branch is browsable on the host only once it exists on a remote;
-  // `branch.remote` holds entries like `origin/feature/x`, so comparing the
-  // part after the remote name avoids offering a link that would 404.
-  const isPublished = (name: string) =>
-    branch?.remote.some((r) => r.slice(r.indexOf('/') + 1) === name) ?? false
-
-  /** The GitHub group for a branch's menu, under a single leading separator (or
-   *  nothing when none apply): one "Open Pull Request #N" entry when the branch
-   *  has a single PR, or a "Pull Requests (N)" submenu listing them (plus a "View
-   *  all on GitHub" entry when the host has more than we fetched) when it has
-   *  several — so the menu never spills 10 rows. Then "View Branch on GitHub"
-   *  when the branch is published. */
-  const githubMenuItems = (name: string): ContextMenuItem[] => {
-    const entry = prByBranch?.get(name)
-    const prs = entry?.prs ?? []
-    const total = entry?.total ?? prs.length
-    const items: ContextMenuItem[] = []
-
-    if (total === 1 && prs.length === 1) {
-      const pr = prs[0]
-      items.push({
-        label: `Open Pull Request #${pr.number} on GitHub`,
-        icon: <Icon.Github size={15} />,
-        onClick: () => window.gitgrove.openExternal(pr.url)
-      })
-    } else if (prs.length > 0) {
-      const submenu: ContextMenuItem[] = prs.map((pr) => ({
-        label: `Open Pull Request #${pr.number} on GitHub`,
-        icon: <Icon.Github size={15} />,
-        onClick: () => window.gitgrove.openExternal(pr.url)
-      }))
-      if (githubWebUrl && total > prs.length) {
-        const web = githubWebUrl
-        submenu.push(
-          {},
-          {
-            label: `View all ${total} on GitHub`,
-            icon: <Icon.External size={15} />,
-            onClick: () => window.gitgrove.openExternal(headPullRequestsUrl(web, name))
-          }
-        )
-      }
-      items.push({ label: `Pull Requests (${total})`, icon: <Icon.PrOpen size={15} />, submenu })
-    }
-
-    if (githubWebUrl && isPublished(name)) {
-      items.push({
-        label: 'View Branch on GitHub',
-        icon: <Icon.Github size={15} />,
-        onClick: () => window.gitgrove.openExternal(branchUrl(githubWebUrl, name))
-      })
-    }
-    return items.length > 0 ? [{}, ...items] : []
+  const menuContext: BranchMenuContext = {
+    current: branch?.current ?? null,
+    remote: branch?.remote ?? [],
+    githubWebUrl,
+    prByBranch
   }
-
-  /** The full context menu for a local branch row. */
-  const localBranchMenuItems = (name: string) => {
-    if (!onBranchAction) return []
-    return [
-      {
-        label: 'Checkout',
-        icon: <Icon.Check size={15} />,
-        disabled: name === branch?.current,
-        onClick: () => {
-          setOpen(false)
-          select(name)
-        }
-      },
-      {},
-      {
-        // The single entry point for bringing a branch in: the dialog offers
-        // merge, squash AND rebase, each explained, with a conflict preview —
-        // a bare "rebase onto this" item would duplicate it minus the safety.
-        label: `Merge into ${branch?.current ?? 'current'}…`,
-        icon: <Icon.Merge size={15} />,
-        disabled: name === branch?.current,
-        onClick: () => {
-          setOpen(false)
-          onBranchAction('merge', name)
-        }
-      },
-      {},
-      {
-        label: 'Rename…',
-        icon: <Icon.Pencil size={15} />,
-        onClick: () => {
-          setOpen(false)
-          onBranchAction('rename', name)
-        }
-      },
-      {
-        label: 'Delete…',
-        icon: <Icon.Trash size={15} />,
-        danger: true,
-        disabled: name === branch?.current,
-        onClick: () => {
-          setOpen(false)
-          onBranchAction('delete', name)
-        }
-      },
-      {},
-      {
-        label: 'Copy Branch Name',
-        icon: <Icon.Copy size={15} />,
-        onClick: () => window.gitgrove.clipboardWrite(name)
-      },
-      ...githubMenuItems(name)
-    ]
+  // Every action dismisses the switcher first: it runs in App, which may open
+  // a dialog the popover would otherwise sit on top of.
+  const menuActions: BranchMenuActions = {
+    checkout: select,
+    branchAction: (action, name) => {
+      setOpen(false)
+      onBranchAction?.(action, name)
+    }
   }
 
   const label = switching
@@ -571,7 +482,7 @@ export function BranchSwitcher({
               icon: <Icon.Pencil size={15} />,
               onClick: () => onBranchAction('rename', branch.current)
             },
-            ...githubMenuItems(branch.current)
+            ...branchGithubItems(branch.current, menuContext)
           ]}
         />
       )}
@@ -583,17 +494,8 @@ export function BranchSwitcher({
           onClose={() => setMenu(null)}
           items={
             menu.local
-              ? localBranchMenuItems(menu.name)
-              : [
-                  {
-                    label: 'Copy Branch Name',
-                    icon: <Icon.Copy size={15} />,
-                    onClick: () => window.gitgrove.clipboardWrite(menu.name)
-                  },
-                  // A remote row matches PRs by its bare ref, so its menu links to
-                  // them (and to the branch on the host) just like a local one.
-                  ...githubMenuItems(headRef(menu.name, false))
-                ]
+              ? localBranchMenuItems(menu.name, menuContext, menuActions)
+              : remoteBranchMenuItems(menu.name, menuContext, menuActions)
           }
         />
       )}

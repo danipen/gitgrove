@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import { isValidElement, type ReactNode } from 'react'
-import { highlightMatch, highlightTerms } from './highlight'
+import { highlightMatch, highlightPositions, highlightTerms } from './highlight'
 
 // Flatten a highlight result into ordered text/marked tokens so we can assert on
 // what's highlighted without rendering to a DOM.
@@ -57,5 +57,27 @@ describe('highlightTerms', () => {
 
   it('returns plain text when no term matches', () => {
     expect(highlightTerms('gitgrove', ['zzz'])).toBe('gitgrove')
+  })
+})
+
+describe('highlightPositions', () => {
+  it('returns the plain text untouched without positions', () => {
+    expect(highlightPositions('GraphView', [])).toBe('GraphView')
+  })
+
+  it('merges adjacent positions into one mark', () => {
+    expect(tokens(highlightPositions('GraphView', [0, 5, 6, 7, 8]))).toEqual([
+      { text: 'G', marked: true },
+      { text: 'raph', marked: false },
+      { text: 'View', marked: true }
+    ])
+  })
+
+  it('shifts by the offset and ignores positions outside the slice', () => {
+    // "src/App.tsx" matched at 0 (the folder) and 4 (the file name); show the name alone.
+    expect(tokens(highlightPositions('App.tsx', [0, 4], 4))).toEqual([
+      { text: 'A', marked: true },
+      { text: 'pp.tsx', marked: false }
+    ])
   })
 })

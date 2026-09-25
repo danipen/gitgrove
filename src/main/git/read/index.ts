@@ -28,5 +28,7 @@ export {
   parseMergeTreeNames
 } from './merge'
 export { getPatchIds } from './patch-ids'
+export { getRefs, parseRefs } from './refs'
 export { getRemoteCloneUrl, getRemoteWebUrl, toWebUrl } from './remotes'
 export { getSquashLandings } from './squash-landings'
+export { getIndexPath, listTrackedFiles } from './tracked-files'

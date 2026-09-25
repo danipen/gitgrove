@@ -2,6 +2,7 @@
 // preload script exposes on `window.gitgrove`. Both the main process handlers
 // and the renderer client import from here so the contract stays in one place.
 
+import type { AppCommandId } from './commands'
 import type {
   AddAccountResult,
   AiBranchNameRequest,
@@ -31,6 +32,7 @@ import type {
   DiffArea,
   DiffPayload,
   DiscardItem,
+  FileSearchResult,
   GitAvailability,
   GitIdentity,
   GlobalIdentity,
@@ -44,6 +46,7 @@ import type {
   PullRequestLookup,
   RebaseTodoItem,
   RecentRepo,
+  RefEntry,
   RemoteRepo,
   RemoteRepoPage,
   RepoHostInfo,
@@ -80,6 +83,9 @@ export const IPC = {
   graphPatchIds: 'repo:graph:patch-ids',
   graphSquashLandings: 'repo:graph:squash-landings',
   commitIndex: 'repo:commit:index',
+  // command palette
+  refs: 'repo:refs',
+  searchFiles: 'repo:search:files',
   fileHistory: 'repo:file-history',
   blame: 'repo:blame',
   commitFiles: 'repo:commit:files',
@@ -193,9 +199,7 @@ export const IPC = {
   repoChanged: 'repo:changed',
   /** Open this repo path in this window (launcher shortcuts reusing a welcome-screen window). */
   openRepoRequest: 'repo:open-request',
-  menuOpenRepo: 'menu:open-repo',
-  menuShowAbout: 'menu:about',
-  /** Generic application-menu command (payload: a MenuCommand string). */
+  /** An application-menu command for the renderer to run (payload: an AppCommandId). */
   menuCommand: 'menu:command',
   cloneProgress: 'repo:clone-progress',
   /** A network op needs a credential — show the dialog (CredentialPromptRequest). */
@@ -217,20 +221,6 @@ export const IPC = {
   updateStatus: 'update:status',
   windowMaximized: 'window:maximized'
 } as const
-
-/** Commands the application menu sends to the renderer to act on. */
-export type MenuCommand =
-  | 'settings'
-  | 'clone'
-  | 'fetch'
-  | 'pull'
-  | 'push'
-  | 'new-branch'
-  | 'undo'
-  | 'stash'
-  | 'worktrees'
-  | 'submodules'
-  | 'optimize'
 
 export interface GitGroveApi {
   /** Host platform, resolved synchronously at preload so the UI can branch on it. */
@@ -322,6 +312,15 @@ export interface GitGroveApi {
    *  in `git log HEAD`), so the History list can page far enough to reveal it.
    *  `-1` when `hash` isn't an ancestor of HEAD. */
   commitIndex(repoPath: string, hash: string): Promise<number>
+  /** Every local branch, remote branch and tag, most recently touched first —
+   *  the command palette's ref list. */
+  refs(repoPath: string): Promise<RefEntry[]>
+  /**
+   * The `limit` tracked files best fuzzy-matching `query`, ranked in main so
+   * the full path list never crosses IPC. Resolves null when a newer query
+   * from this window superseded it mid-scan (the caller drops it anyway).
+   */
+  searchFiles(repoPath: string, query: string, limit: number): Promise<FileSearchResult | null>
   /** Commits that touched a single file, newest first (follows renames). */
   fileHistory(repoPath: string, path: string, ref?: string): Promise<Commit[]>
   /** Per-line authorship for a file; no `ref` blames the working tree. */
@@ -616,12 +615,8 @@ export interface GitGroveApi {
    * recent landing in this window because it was idling on the welcome screen.
    */
   onOpenRepoRequest(handler: (path: string) => void): () => void
-  /** Subscribe to the application menu "Open Repository" command. */
-  onMenuOpenRepo(handler: () => void): () => void
-  /** Subscribe to the "About GitGrove" menu command. */
-  onShowAbout(handler: () => void): () => void
-  /** Subscribe to generic application-menu commands (fetch, pull, stash, …). */
-  onMenuCommand(handler: (command: MenuCommand) => void): () => void
+  /** Subscribe to application-menu commands (fetch, pull, stash, …). */
+  onMenuCommand(handler: (command: AppCommandId) => void): () => void
   /** Subscribe to clone progress pushes while a clone runs. */
   onCloneProgress(handler: (progress: CloneProgress) => void): () => void
   /** Subscribe to credential prompts from running network operations. */

@@ -19,6 +19,7 @@ import { registerHistoryHandlers } from './history'
 import { registerIntegrationHandlers } from './integrate'
 import { registerMaintenanceHandlers } from './maintenance'
 import { registerRepoHandlers } from './repo'
+import { registerSearchHandlers } from './search'
 import { registerStagingHandlers } from './staging'
 import { registerStashHandlers } from './stash'
 import { registerSyncHandlers } from './sync'
@@ -39,6 +40,7 @@ export function registerIpc(ctx: IpcContext): void {
 
   registerRepoHandlers(deps)
   registerHistoryHandlers()
+  registerSearchHandlers()
   registerStagingHandlers(deps)
   registerSyncHandlers(deps)
   registerAccountHandlers(deps)
