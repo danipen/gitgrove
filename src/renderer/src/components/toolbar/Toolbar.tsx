@@ -160,7 +160,7 @@ export function Toolbar({
         onClick={onSearch}
       >
         <Icon.Search size={14} />
-        <span className="toolbar__search-label">Search</span>
+        <span className="toolbar__search-label">Search everything</span>
         <Shortcut accelerator="CmdOrCtrl+K" />
       </button>
       {repo && (
