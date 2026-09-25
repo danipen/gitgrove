@@ -7,8 +7,8 @@
 
 import type { BranchInfo, Commit } from '@shared/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { BranchAction } from '@/components/common/branchMenuItems'
 import { ContextMenu, type ContextMenuItem } from '@/components/common/ContextMenu'
-import type { BranchAction } from '@/components/toolbar/BranchSwitcher'
 import { filterTerms } from '@/lib/commitFilter'
 import { Icon } from '@/lib/icons'
 import { usePersistentState } from '@/lib/persist'

@@ -1,4 +1,11 @@
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react'
 import { createPortal } from 'react-dom'
 
 export interface ContextMenuItem {
@@ -18,6 +25,9 @@ interface Props {
   /** Viewport coordinates (typically the cursor) to anchor the menu's corner to. */
   x: number
   y: number
+  /** A trigger to hang the menu from instead (a "⋯" button): opens below it,
+   *  right-aligned to its edge, flipping above when there's no room. */
+  anchor?: DOMRect
   items: ContextMenuItem[]
   onClose: () => void
 }
@@ -27,14 +37,18 @@ interface Props {
  * a portal, measures itself once mounted to flip away from the right/bottom
  * edges, and closes on outside click, a second right-click, or Escape. Items
  * carrying a `submenu` open a nested panel on hover (one level deep).
+ *
+ * Fully keyboard-drivable: the first item takes focus on open (the ring only
+ * shows for keyboard users — `:focus-visible`), arrows/Home/End move between
+ * items, → opens a submenu and ← closes it, Enter/Space activate.
  */
-export function ContextMenu({ x, y, items, onClose }: Props) {
+export function ContextMenu({ x, y, anchor, items, onClose }: Props) {
   useEffect(() => {
     // Capture-phase + stopPropagation so Escape dismisses *this* menu only —
     // when the menu is layered over another overlay (e.g. the branch switcher
     // popover, whose own window-level Escape would otherwise also fire) one
     // Escape peels just the top layer, leaving the surface beneath open.
-    const onKey = (e: KeyboardEvent) => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape') return
       e.stopPropagation()
       onClose()
@@ -53,7 +67,13 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
           onClose()
         }}
       />
-      <MenuPanel items={items} onClose={onClose} at={{ left: x, top: y, right: x, bottom: y }} />
+      <MenuPanel
+        items={items}
+        onClose={onClose}
+        at={anchor ?? { left: x, top: y, right: x, bottom: y }}
+        hangBelow={!!anchor}
+        autoFocus
+      />
     </>,
     document.body
   )
@@ -62,6 +82,14 @@ export function ContextMenu({ x, y, items, onClose }: Props) {
 /** Just enough to anchor a panel: the cursor point for the root menu, or a parent
  *  item's bounds for a submenu (which opens to the item's right). */
 type AnchorRect = Pick<DOMRect, 'left' | 'top' | 'right' | 'bottom'>
+
+/** The enabled items of a panel, in order — the keyboard's stops. */
+function focusableItems(panel: HTMLElement): HTMLButtonElement[] {
+  // Submenus nest inside their parent's panel; only this panel's own items count.
+  return [...panel.querySelectorAll<HTMLButtonElement>('.ctx-menu__item')].filter(
+    (el) => !el.disabled && el.closest('.ctx-menu') === panel
+  )
+}
 
 /**
  * One menu surface — the root menu or a submenu. Positions itself away from the
@@ -74,19 +102,30 @@ function MenuPanel({
   onClose,
   at,
   isSub = false,
+  hangBelow = false,
+  autoFocus = false,
   onHoverEnter,
-  onHoverLeave
+  onHoverLeave,
+  onBack
 }: {
   items: ContextMenuItem[]
   onClose: () => void
   at: AnchorRect
   isSub?: boolean
+  /** Hang below `at` (a trigger button), right-aligned, instead of at its corner. */
+  hangBelow?: boolean
+  /** Focus the first item once positioned (root menus; keyboard-opened submenus). */
+  autoFocus?: boolean
   onHoverEnter?: () => void
   onHoverLeave?: () => void
+  /** ← inside a submenu: close it and return focus to its parent item. */
+  onBack?: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const [openIdx, setOpenIdx] = useState<number | null>(null)
+  // A submenu opened from the keyboard focuses its first item; by hover it doesn't.
+  const [subByKeyboard, setSubByKeyboard] = useState(false)
   const itemEls = useRef<Record<number, HTMLButtonElement | null>>({})
   const closeT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
@@ -96,22 +135,53 @@ function MenuPanel({
     const { width, height } = el.getBoundingClientRect()
     const m = 8
     // A submenu opens to the right of its parent item (overlapping the border a
-    // touch), flipping to the left when it would run off-screen; the root opens
-    // at the cursor. Either way, clamp inside the viewport.
-    let left = isSub ? at.right - 4 : at.left
+    // touch), flipping to the left when it would run off-screen; a hanging menu
+    // drops below its trigger (above when the bottom is too close); the root
+    // opens at the cursor. Either way, clamp inside the viewport.
+    let left = isSub ? at.right - 4 : hangBelow ? at.right - width : at.left
     if (isSub && left + width > window.innerWidth - m) left = at.left - width + 4
-    let top = isSub ? at.top - 5 : at.top
+    let top = isSub ? at.top - 5 : hangBelow ? at.bottom + 4 : at.top
+    if (hangBelow && top + height > window.innerHeight - m) top = at.top - height - 4
     left = Math.max(m, Math.min(left, window.innerWidth - width - m))
     top = Math.max(m, Math.min(top, window.innerHeight - height - m))
     setPos({ top, left })
-  }, [at, isSub])
+  }, [at, isSub, hangBelow])
+
+  useEffect(() => {
+    if (pos && autoFocus && ref.current) focusableItems(ref.current)[0]?.focus()
+  }, [pos, autoFocus])
 
   const openSub = (i: number) => {
     clearTimeout(closeT.current)
+    setSubByKeyboard(false)
     setOpenIdx(i)
   }
   const scheduleClose = () => {
     closeT.current = setTimeout(() => setOpenIdx(null), 150)
+  }
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const panel = ref.current
+    // Keys inside an open submenu belong to it (it handles them first).
+    if (!panel || (e.target as HTMLElement).closest('.ctx-menu') !== panel) return
+    const stops = focusableItems(panel)
+    const at = stops.indexOf(document.activeElement as HTMLButtonElement)
+    const move = (i: number) => stops[(i + stops.length) % stops.length]?.focus()
+    const key = e.key
+    if (key === 'ArrowDown') move(at + 1)
+    else if (key === 'ArrowUp') move(at < 0 ? -1 : at - 1)
+    else if (key === 'Home') move(0)
+    else if (key === 'End') move(-1)
+    else if (key === 'ArrowRight' && at >= 0 && stops[at].getAttribute('aria-haspopup')) {
+      const index = Object.entries(itemEls.current).find(([, el]) => el === stops[at])?.[0]
+      if (index === undefined) return
+      setSubByKeyboard(true)
+      setOpenIdx(Number(index))
+    } else if (key === 'ArrowLeft' && onBack) onBack()
+    else return
+    // Handled: keep the keys from scrolling or driving the list behind the menu.
+    e.preventDefault()
+    e.stopPropagation()
   }
 
   return (
@@ -126,6 +196,7 @@ function MenuPanel({
       }
       onMouseEnter={onHoverEnter}
       onMouseLeave={onHoverLeave}
+      onKeyDown={onKeyDown}
     >
       {items.map((item, i) => {
         if (item.label === undefined) {
@@ -160,8 +231,13 @@ function MenuPanel({
                   items={submenu}
                   onClose={onClose}
                   at={itemEls.current[i]!.getBoundingClientRect()}
+                  autoFocus={subByKeyboard}
                   onHoverEnter={() => clearTimeout(closeT.current)}
                   onHoverLeave={scheduleClose}
+                  onBack={() => {
+                    setOpenIdx(null)
+                    itemEls.current[i]?.focus()
+                  }}
                 />
               )}
             </div>
