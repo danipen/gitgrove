@@ -16,6 +16,7 @@ import {
 import type { ContextMenuItem } from '@/components/common/ContextMenu'
 import { copyPathItems } from '@/components/common/copyPathItems'
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
+import { revealFileItem } from '@/components/common/revealFileItem'
 import type { GraphRevealTarget } from '@/components/graph/reveal'
 import { Icon } from '@/lib/icons'
 import { platform } from '@/lib/platform'
@@ -158,6 +159,8 @@ export function itemMenu(
           disabled: change?.status === 'deleted',
           onClick: () => gg.openFileInEditor(repoPath, path)
         },
+        revealFileItem(file, repoPath),
+        {},
         ...copyPathItems([file], repoPath)
       ]
     }

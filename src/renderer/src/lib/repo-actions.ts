@@ -1,5 +1,5 @@
-// Shared labels for the repository context-menu actions. Kept platform-aware so
-// the menu reads natively ("Reveal in Finder" on macOS, "Show in Explorer" on
+// Shared labels for the repository (and working-tree file) context-menu
+// actions. Kept platform-aware so the menu reads natively ("Reveal in Finder" on macOS, "Show in Explorer" on
 // Windows) and names the remote host the user actually has.
 
 import { isMac, platform } from './platform'

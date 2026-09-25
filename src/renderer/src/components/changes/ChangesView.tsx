@@ -14,6 +14,7 @@ import { DEFAULT_FILTER_TYPES, useFileFilter } from '@/components/common/FileFil
 import { type FileHistoryMode, fileHistoryItems } from '@/components/common/fileHistoryItems'
 import { Popover } from '@/components/common/Popover'
 import { Resizer } from '@/components/common/Resizer'
+import { revealFileItem } from '@/components/common/revealFileItem'
 import { TrimmedPath } from '@/components/common/TrimmedPath'
 import { WorkingFileList } from '@/components/common/WorkingFileList'
 import type { FileSelection } from '@/lib/commit-selection'
@@ -450,6 +451,7 @@ export function ChangesView({
           icon: <Icon.External size={15} />,
           onClick: () => gg.openFileInEditor(repoPath, file.path)
         },
+        revealFileItem(file, repoPath),
         {},
         ...copyPathItems([file], repoPath)
       ]
@@ -493,6 +495,7 @@ export function ChangesView({
         icon: <Icon.External size={15} />,
         onClick: () => gg.openFileInEditor(repoPath, file.path)
       },
+      revealFileItem(file, repoPath),
       {},
       ...copyPathItems([file], repoPath)
     ]

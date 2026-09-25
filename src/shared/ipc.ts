@@ -145,6 +145,7 @@ export const IPC = {
   openMergeTool: 'repo:conflict:merge-tool',
   mergeToolName: 'repo:conflict:merge-tool-name',
   openFileInEditor: 'repo:open-file',
+  revealFile: 'repo:reveal-file',
   // stash
   stashList: 'repo:stash:list',
   stashFiles: 'repo:stash:files',
@@ -483,6 +484,8 @@ export interface GitGroveApi {
   mergeToolName(repoPath: string): Promise<string | null>
   /** Open a repo file with the OS default application. */
   openFileInEditor(repoPath: string, path: string): Promise<void>
+  /** Select a working-tree file in the OS file manager (Finder/Explorer/…). */
+  revealFile(repoPath: string, path: string): Promise<void>
   // ── Stash ──
   stashList(repoPath: string): Promise<StashEntry[]>
   stashSave(
