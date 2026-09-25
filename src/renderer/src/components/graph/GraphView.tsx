@@ -26,6 +26,7 @@ import {
 import { linkableChains, twinHashes } from './links'
 import { relatedBranches } from './related'
 import { releaseLineVersion, releaseVersionWithOverride } from './releases'
+import { type GraphRevealRequest, resolveReveal } from './reveal'
 import { isPrLookupRow, rowPullRequests } from './rowPrs'
 import { computeSearchHits } from './searchGlow'
 import { squashedBranchesByLanding } from './squash'
@@ -70,6 +71,11 @@ interface Props {
   /** Each row's PRs keyed by branchKey, re-reported per layout — what the
    *  detail pane lists for the open branch. */
   onRowPrsChange: (byBranch: ReadonlyMap<string, BranchPrs>) => void
+  /** Select and frame a branch or commit asked for from elsewhere (the
+   *  command palette), once the graph has loaded. */
+  revealRequest: GraphRevealRequest | null
+  /** The requested target isn't in the loaded graph, even unfiltered. */
+  onRevealMissed: (request: GraphRevealRequest) => void
   onError: (e: unknown) => void
 }
 
@@ -94,6 +100,8 @@ export function GraphView({
   prByBranch,
   onNeedPrs,
   onRowPrsChange,
+  revealRequest,
+  onRevealMissed,
   onError
 }: Props) {
   const [branchFilter, setBranchFilter] = useState<Set<string> | null>(null)
@@ -283,6 +291,41 @@ export function GraphView({
       controls.current?.reveal(activeHit.hash)
     }
   }, [activeHit, layout])
+
+  // A reveal from elsewhere lands once the graph has settled on fresh data.
+  // A miss first drops this session's own filters (focus, branch/author/date
+  // picks) — they're what most likely hides the target — and retries on the
+  // re-laid-out graph; only a miss with nothing left to clear is reported.
+  // The persisted view options (structure only, hide merged) are the user's
+  // standing choice and stay as they are.
+  const handledRevealRef = useRef<number | null>(null)
+  // biome-ignore lint/correctness/useExhaustiveDependencies: fires on the request, and re-tries as the layout changes; the callbacks are read live.
+  useEffect(() => {
+    if (!revealRequest || !active || !loaded || loading) return
+    if (handledRevealRef.current === revealRequest.nonce) return
+    const hit = resolveReveal(revealRequest.target, layout, remotes)
+    if (hit?.kind === 'row') {
+      handledRevealRef.current = revealRequest.nonce
+      onSelectBranch(hit.row)
+      controls.current?.revealAt(hit.row.startColumn, hit.row.index)
+      return
+    }
+    if (hit?.kind === 'node') {
+      handledRevealRef.current = revealRequest.nonce
+      onSelectCommit(hit.node.commit)
+      controls.current?.reveal(hit.node.commit.hash)
+      return
+    }
+    if (branchFilter || focus || authorFilter || datePreset !== 'all') {
+      setFocus(null)
+      setBranchFilter(null)
+      setAuthorFilter(null)
+      setDatePreset('all')
+      return
+    }
+    handledRevealRef.current = revealRequest.nonce
+    onRevealMissed(revealRequest)
+  }, [revealRequest, active, loaded, loading, layout])
 
   const stepMatch = (dir: 1 | -1) => {
     if (matchList.length === 0) return

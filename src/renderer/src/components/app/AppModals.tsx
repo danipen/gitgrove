@@ -27,6 +27,7 @@ export type Modal =
   | { kind: 'rename-branch'; name: string }
   | { kind: 'delete-branch'; name: string; force: boolean }
   | { kind: 'create-tag'; hash: string; shortHash: string }
+  | { kind: 'delete-tag'; name: string }
   | { kind: 'reset'; hash: string; shortHash: string; mode: ResetMode }
   | { kind: 'revert'; hash: string; shortHash: string }
   | { kind: 'checkout-commit'; hash: string; shortHash: string }
@@ -186,6 +187,23 @@ export function AppModals({
               })
             )
           }
+          onCancel={onClose}
+        />
+      )
+    case 'delete-tag':
+      return (
+        <ConfirmDialog
+          title={`Delete tag ${modal.name}?`}
+          danger
+          busy={busy}
+          body={
+            <>
+              The local tag <code>{modal.name}</code> will be deleted. A copy already pushed to a
+              remote is untouched.
+            </>
+          }
+          confirmLabel="Delete"
+          onConfirm={() => runModalOp(() => gg.deleteTag(repoPath, modal.name))}
           onCancel={onClose}
         />
       )
