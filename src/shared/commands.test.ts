@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { APP_COMMANDS, appCommand, commandTitle, formatAccelerator } from './commands'
+import { APP_COMMANDS, acceleratorKeys, appCommand, commandTitle } from './commands'
 
 describe('APP_COMMANDS', () => {
   it('has unique ids', () => {
@@ -25,19 +25,19 @@ describe('commandTitle', () => {
   })
 })
 
-describe('formatAccelerator', () => {
+describe('acceleratorKeys', () => {
   it('uses glyphs in canonical order on macOS', () => {
-    expect(formatAccelerator('CmdOrCtrl+Shift+F', 'darwin')).toBe('⇧⌘F')
-    expect(formatAccelerator('CmdOrCtrl+K', 'darwin')).toBe('⌘K')
-    expect(formatAccelerator('Shift+Alt+Ctrl+X', 'darwin')).toBe('⌃⌥⇧X')
+    expect(acceleratorKeys('CmdOrCtrl+Shift+F', 'darwin')).toEqual(['⇧', '⌘', 'F'])
+    expect(acceleratorKeys('CmdOrCtrl+K', 'darwin')).toEqual(['⌘', 'K'])
+    expect(acceleratorKeys('Shift+Alt+Ctrl+X', 'darwin')).toEqual(['⌃', '⌥', '⇧', 'X'])
   })
 
   it('spells modifiers out elsewhere', () => {
-    expect(formatAccelerator('CmdOrCtrl+Shift+F', 'win32')).toBe('Ctrl+Shift+F')
-    expect(formatAccelerator('CmdOrCtrl+,', 'linux')).toBe('Ctrl+,')
+    expect(acceleratorKeys('CmdOrCtrl+Shift+F', 'win32')).toEqual(['Ctrl', 'Shift', 'F'])
+    expect(acceleratorKeys('CmdOrCtrl+,', 'linux')).toEqual(['Ctrl', ','])
   })
 
   it('never repeats Ctrl when both spellings are present', () => {
-    expect(formatAccelerator('CmdOrCtrl+Ctrl+A', 'win32')).toBe('Ctrl+A')
+    expect(acceleratorKeys('CmdOrCtrl+Ctrl+A', 'win32')).toEqual(['Ctrl', 'A'])
   })
 })

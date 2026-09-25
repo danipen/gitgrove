@@ -106,19 +106,18 @@ const MAC_MODIFIERS: [string, string][] = [
 ]
 
 /**
- * An Electron accelerator as the platform writes shortcuts: `⇧⌘F` on macOS,
- * `Ctrl+Shift+F` elsewhere.
+ * An Electron accelerator's keys as the platform names them, one per key cap:
+ * `['⇧', '⌘', 'F']` on macOS, `['Ctrl', 'Shift', 'F']` elsewhere.
  */
-export function formatAccelerator(accelerator: string, platform: NodeJS.Platform): string {
+export function acceleratorKeys(accelerator: string, platform: NodeJS.Platform): string[] {
   const parts = accelerator.split('+')
   const key = parts[parts.length - 1]
   const modifiers = new Set(parts.slice(0, -1))
   if (platform === 'darwin') {
-    const glyphs = MAC_MODIFIERS.filter(([name]) => modifiers.has(name)).map(([, glyph]) => glyph)
-    return `${glyphs.join('')}${key}`
+    return [...MAC_MODIFIERS.filter(([name]) => modifiers.has(name)).map(([, glyph]) => glyph), key]
   }
   const names = ['CmdOrCtrl', 'Ctrl', 'Alt', 'Shift']
     .filter((name) => modifiers.has(name))
     .map((name) => (name === 'CmdOrCtrl' ? 'Ctrl' : name))
-  return [...new Set(names), key].join('+')
+  return [...new Set(names), key]
 }

@@ -52,3 +52,39 @@ export function highlightTerms(text: string, terms: string[]): ReactNode {
   if (from < text.length) parts.push(text.slice(from))
   return parts
 }
+
+/**
+ * Fuzzy-match highlight: wrap the characters at `positions` (indexes into
+ * `text`, ascending — what shared/fuzzy reports), merging runs of adjacent
+ * positions into one <mark>. `offset` shifts the positions first, for showing
+ * one slice of the matched string (a path's file name apart from its folder).
+ */
+export function highlightPositions(
+  text: string,
+  positions: readonly number[],
+  offset = 0
+): ReactNode {
+  const parts: ReactNode[] = []
+  let from = 0
+  let i = 0
+  while (i < positions.length) {
+    const start = positions[i] - offset
+    let end = start + 1
+    while (i + 1 < positions.length && positions[i + 1] - offset === end) {
+      end++
+      i++
+    }
+    i++
+    if (start < 0 || start >= text.length) continue
+    if (start > from) parts.push(text.slice(from, start))
+    parts.push(
+      <mark key={start} className="hl">
+        {text.slice(start, Math.min(end, text.length))}
+      </mark>
+    )
+    from = Math.min(end, text.length)
+  }
+  if (parts.length === 0) return text
+  if (from < text.length) parts.push(text.slice(from))
+  return parts
+}
